@@ -25,8 +25,6 @@ pub struct AgentRunRequest {
     #[serde(default)]
     pub run_in_background: bool,
     #[serde(default)]
-    pub max_turns: Option<usize>,
-    #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
     pub mode: Option<String>,
@@ -53,14 +51,6 @@ impl AgentRunRequest {
             if value.is_some_and(|value| value.trim().is_empty()) {
                 return Err(ToolError::InvalidInput(format!("{field} is empty")));
             }
-        }
-        if self
-            .max_turns
-            .is_some_and(|turns| !(1..=96).contains(&turns))
-        {
-            return Err(ToolError::InvalidInput(
-                "maxTurns must be between 1 and 96".into(),
-            ));
         }
         if self.mode.as_deref().is_some_and(|mode| {
             !matches!(
@@ -148,7 +138,6 @@ impl Tool for AgentRunTool {
                 "model": {"type": "string", "description": "Model for this sub-agent. Use the exact catalog ID when known; a spoken name such as \"gpt 6.1 sol\" is resolved against the provider catalog before start, and an unknown or ambiguous name fails with the closest IDs."},
                 "resume": {"type": "string"},
                 "runInBackground": {"type": "boolean", "default": false, "description": "Return the agent ID immediately so independent work can overlap. Decide whether to delegate using the same Occam's razor criteria at every level. Nesting is limited to 3. Wait with agent_wait, then read results with agent_result."},
-                "maxTurns": {"type": "integer", "minimum": 1, "maximum": 96},
                 "name": {"type": "string"},
                 "mode": {"type": "string", "enum": ["default", "acceptEdits", "dontAsk", "bypassPermissions", "plan", "auto"]},
                 "cwd": {"type": "string", "description": "Child working directory relative to the current workspace"},
@@ -248,6 +237,23 @@ fn blocked(reason: &str) -> Risk {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn child_agent_contract_rejects_step_budgets() {
+        let schema = AgentRunTool.parameters_schema();
+        assert!(schema["properties"].get("maxTurns").is_none());
+        assert_eq!(schema["additionalProperties"], false);
+        let context = ToolContext::new(std::env::temp_dir());
+        for field in ["maxTurns", "max_turns"] {
+            let input = json!({"prompt": "inspect", field: 14});
+            let risk = AgentRunTool.evaluate_risk(&context, &input);
+            assert_eq!(risk.level, RiskLevel::Blocked);
+            assert!(risk.reason.contains(field));
+            let error = AgentRunTool.execute(&context, input).await.unwrap_err();
+            assert!(matches!(error, ToolError::InvalidInput(_)));
+            assert!(error.to_string().contains(field));
+        }
+    }
 
     #[test]
     fn worktree_isolation_schema_matches_runtime_validation() {

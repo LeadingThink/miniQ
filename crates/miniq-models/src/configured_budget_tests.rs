@@ -48,6 +48,16 @@ impl Fixture {
                     async move { (status, Json(metadata)) }
                 }),
             )
+            // A missing catalog must not change the metadata probe count.
+            .route(
+                "/v1/models/details",
+                get(|| async {
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(json!({"error": "no catalog"})),
+                    )
+                }),
+            )
             .fallback(post(move |uri: Uri, bytes: Bytes| {
                 let path = uri.path().to_owned();
                 completion_requests.lock().unwrap().completion.push((path.clone(), bytes));

@@ -19,6 +19,7 @@ mod installer_tests;
 mod keep_awake;
 mod link_download;
 mod local_file;
+mod local_upload;
 mod office_preview;
 mod task_sound;
 mod terminal_install;
@@ -382,6 +383,8 @@ pub fn run() {
                 local_path_kind,
                 read_local_text_file,
                 read_local_file_preview,
+                local_upload::local_upload_file_info,
+                local_upload::read_local_upload_chunk,
                 convert_office_preview,
                 office_preview_capabilities,
                 open_html_preview,

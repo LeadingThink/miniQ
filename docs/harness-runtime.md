@@ -66,10 +66,16 @@ git_status, git_diff, doc_read, skill_read, memory_search
 
 ## 失控保护
 
-- 交互式会话不设置固定的模型 step 上限；取消、重复工具批次检测和上下文压缩仍会阻止失控任务。子 agent 仍默认最多执行 32 个 step，也可通过 `maxTurns` 显式设置 1 到 96 的预算。
+- 交互式会话和子 agent 默认不设置固定的模型 step 上限；模型给出最终结果后结束，取消、重复工具批次检测和上下文压缩继续生效。子 agent 的 `agent_run` 不接受 `maxTurns`，原生 `Task` / `Agent` 适配也不接受 `max_turns`。CLI 显式传入的主回合 `--max-turns` 和内部计划审核的独立限制仍由各自调用方设置。
 - 完全相同的工具调用批次连续出现 4 次时主动停止，避免模型重复读取或执行同一动作。
 - 原有取消信号在每个 step 和工具执行阶段继续生效。
 - 写操作仍经过风险分级、审批、checkpoint 和审计链路。
+
+子 agent 步数行为对照 Codex 官方源码提交 `23934d31b15b1127c83535f84854e5009f7cd51d`（2026-10-29）：
+[创建参数](https://github.com/openai/codex/blob/23934d31b15b1127c83535f84854e5009f7cd51d/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs#L201)没有步数预算字段；
+[回合循环](https://github.com/openai/codex/blob/23934d31b15b1127c83535f84854e5009f7cd51d/codex-rs/core/src/session/turn.rs#L475)根据后续工具工作和待处理输入继续执行，不按固定步数停止。
+Codex 可选的 rollout budget 是根会话树共享的用量预算，与每个子 agent 的模型步数上限不同。
+数据库迁移 `0031_agent_step_limits` 一次性移除已存任务请求中的旧预算字段，保留任务历史和结果。
 
 ## 代码位置
 

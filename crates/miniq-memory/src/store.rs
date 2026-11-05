@@ -180,8 +180,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0030_session_redo",
         include_str!("../../../migrations/0030_session_redo.sql"),
     ),
+    (
+        "0031_agent_step_limits",
+        include_str!("../../../migrations/0031_agent_step_limits.sql"),
+    ),
 ];
 
+#[cfg(test)]
+mod memory_automatic_tests;
 #[cfg(test)]
 mod memory_concurrency_tests;
 #[cfg(test)]

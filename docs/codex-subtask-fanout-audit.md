@@ -77,7 +77,7 @@
    `agent_tasks.rs:439` 为后台任务直接启动 Tokio task。
    `ActivityGate` 用于关闭/更新时的活动跟踪，不是并发限额。
 5. `agent_tasks.rs:174` 的 `maxTurns` 是每个任务独立的模型步骤上限，默认 32；
-   它既不限制子任务数量，也不是父子共享的总预算。
+   它既不限制子任务数量，也不是父子共享的总预算。（这是本次审计时的行为；2026-11-05 已移除子任务步数预算，当前规则见 [harness-runtime.md](harness-runtime.md#失控保护)。）
 6. `crates/miniq-tools/src/agent.rs:138` 的工具说明也强调启动 cohort，强化了系统策略。
 
 UI 的 `agent.list` 查询整个 session 的任务，包含所有层级与终态任务；

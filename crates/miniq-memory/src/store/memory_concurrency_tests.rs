@@ -105,7 +105,7 @@ fn memory_recall_switch_keeps_pending_auto_save_sources_and_verifies_source_span
             &job,
             &[MemoryCandidate {
                 content: evidence.into(),
-                kind: MemoryKind::Preference,
+                kind: MemoryCandidateKind::Preference,
                 key: "report.order".into(),
                 evidence: evidence.into(),
             }],

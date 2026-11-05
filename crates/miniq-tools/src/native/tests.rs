@@ -210,6 +210,23 @@ fn rejects_conflicting_arguments_and_maps_agent_orchestration() {
 }
 
 #[test]
+fn native_agent_calls_reject_step_budgets() {
+    for (name, prompt_key) in [
+        ("Task", "prompt"),
+        ("Agent", "prompt"),
+        ("spawn_agent", "message"),
+    ] {
+        for field in ["max_turns", "maxTurns"] {
+            let error =
+                adapt_native_tool_call(&call(name, json!({prompt_key: "inspect", field: 64})))
+                    .unwrap_err();
+            assert_eq!(error.code, "invalid_native_tool_input");
+            assert!(error.message.contains(field));
+        }
+    }
+}
+
+#[test]
 fn maps_claude_task_graph_messages_and_plan_mode() {
     let create = adapt_native_tool_call(&call(
         "TaskCreate",

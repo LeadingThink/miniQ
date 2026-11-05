@@ -10,7 +10,7 @@ describe("memory consent", () => {
     const call = vi.fn((method, params) => Promise.resolve(method === "memory.settings" ? { recallEnabled: true, autoSave: false } : params));
     const client = { call, onStatus: () => () => {} } as unknown as RpcClient;
     render(<MemorySettingsControls client={client} />);
-    const auto = screen.getByRole("checkbox", { name: "自动保存项目偏好和事实" });
+    const auto = screen.getByRole("checkbox", { name: "自动记住偏好和项目事实" });
     await waitFor(() => expect((auto as HTMLInputElement).disabled).toBe(false));
     expect((auto as HTMLInputElement).checked).toBe(false);
     fireEvent.click(auto);
@@ -22,7 +22,7 @@ describe("memory consent", () => {
   it("preserves the saved switch after a rejected update", async () => {
     const call = vi.fn((method) => method === "memory.settings" ? Promise.resolve({ recallEnabled: true, autoSave: false }) : Promise.reject(new Error("保存失败")));
     render(<MemorySettingsControls client={{ call, onStatus: () => () => {} } as unknown as RpcClient} />);
-    const auto = screen.getByRole("checkbox", { name: "自动保存项目偏好和事实" });
+    const auto = screen.getByRole("checkbox", { name: "自动记住偏好和项目事实" });
     await waitFor(() => expect((auto as HTMLInputElement).disabled).toBe(false));
     fireEvent.click(auto);
     await screen.findByText("保存失败");

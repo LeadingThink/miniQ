@@ -101,7 +101,7 @@ fn enabled() -> bool {
 pub struct MemorySettings {
     #[serde(default = "enabled")]
     pub recall_enabled: bool,
-    /// Narrow consent to extract project facts from future successful turns.
+    /// Extract project facts and shared user preferences from future successful turns.
     #[serde(default)]
     pub auto_save: bool,
 }
@@ -157,13 +157,25 @@ pub struct MemorySource {
     pub byte_end: usize,
 }
 
+/// Extraction classifies scope without letting the model select another workspace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryCandidateKind {
+    /// A preference specific to the source project.
+    Preference,
+    Fact,
+    Project,
+    /// A durable personal preference that applies independently of this project.
+    GlobalPreference,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MemoryCandidate {
     #[serde(deserialize_with = "text")]
     #[schemars(regex(pattern = r"\S"))]
     pub content: String,
-    pub kind: MemoryKind,
+    pub kind: MemoryCandidateKind,
     #[serde(deserialize_with = "text")]
     #[schemars(regex(pattern = r"\S"))]
     pub key: String,
@@ -171,6 +183,32 @@ pub struct MemoryCandidate {
     #[serde(deserialize_with = "text")]
     #[schemars(regex(pattern = r"\S"))]
     pub evidence: String,
+}
+
+impl MemoryCandidate {
+    pub fn write_params(&self, workspace_id: &str) -> MemoryWriteParams {
+        let target = if self.kind == MemoryCandidateKind::GlobalPreference {
+            MemoryTarget::Global {}
+        } else {
+            MemoryTarget::Workspace {
+                workspace_id: workspace_id.into(),
+            }
+        };
+        let kind = match self.kind {
+            MemoryCandidateKind::GlobalPreference | MemoryCandidateKind::Preference => {
+                MemoryKind::Preference
+            }
+            MemoryCandidateKind::Fact => MemoryKind::Fact,
+            MemoryCandidateKind::Project => MemoryKind::Project,
+        };
+        MemoryWriteParams {
+            target,
+            content: self.content.clone(),
+            kind,
+            key: Some(self.key.clone()),
+            replaces: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -216,5 +254,62 @@ mod tests {
         );
         let schema = serde_json::to_value(schemars::schema_for!(MemorySettings)).unwrap();
         assert_eq!(schema["properties"]["autoSave"]["default"], false);
+    }
+
+    #[test]
+    fn memory_candidates_derive_scope_from_a_closed_classification() {
+        for (kind, scope, stored_kind) in [
+            ("preference", "workspace", MemoryKind::Preference),
+            ("fact", "workspace", MemoryKind::Fact),
+            ("project", "workspace", MemoryKind::Project),
+            ("global_preference", "global", MemoryKind::Preference),
+        ] {
+            let candidate: MemoryCandidate = serde_json::from_value(json!({
+                "content":"用户习惯先看结论", "kind":kind,
+                "key":"user.explanation.order", "evidence":"我习惯先看结论"
+            }))
+            .unwrap();
+            let params = candidate.write_params("source-workspace");
+            assert_eq!(params.target.parts().0, scope);
+            assert_eq!(
+                params.target.parts().1,
+                (scope == "workspace").then_some("source-workspace")
+            );
+            assert_eq!(params.kind, stored_kind);
+            assert!(params.replaces.is_none());
+        }
+        let base = json!({"content":"用户习惯先看结论", "kind":"global_preference",
+            "key":"user.explanation.order", "evidence":"我习惯先看结论"});
+        for patch in [
+            json!({"kind":"global_fact"}),
+            json!({"workspaceId":"other"}),
+            json!({"target":{"scope":"global"}}),
+            json!({"evidence":" "}),
+        ] {
+            let mut invalid = base.clone();
+            invalid
+                .as_object_mut()
+                .unwrap()
+                .extend(patch.as_object().unwrap().clone());
+            assert!(serde_json::from_value::<MemoryCandidate>(invalid).is_err());
+        }
+        let schema = serde_json::to_value(schemars::schema_for!(MemoryCandidate)).unwrap();
+        let kinds = schema["definitions"]["MemoryCandidateKind"]["oneOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|variant| variant["enum"].as_array().unwrap())
+            .map(|value| value.as_str().unwrap())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            kinds,
+            std::collections::BTreeSet::from([
+                "preference",
+                "fact",
+                "project",
+                "global_preference"
+            ])
+        );
+        assert_eq!(schema["additionalProperties"], false);
     }
 }

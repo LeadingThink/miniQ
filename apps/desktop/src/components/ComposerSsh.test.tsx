@@ -43,7 +43,7 @@ afterEach(() => {
   fake.drop = null;
 });
 
-it("attaches an explicitly selected remote path and rejects a local drag without sending its path", async () => {
+it("requires a project for local uploads while still accepting an explicit remote path", async () => {
   const onSend = vi.fn(async () => true);
   const onError = vi.fn();
   const client = {
@@ -63,7 +63,7 @@ it("attaches an explicitly selected remote path and rejects a local drag without
   );
   await waitFor(() => expect(fake.drop).not.toBeNull());
   fake.drop!({ payload: { type: "drop", paths: ["/Users/me/private.pdf"] } });
-  expect(onError).toHaveBeenCalledWith(expect.stringContaining("先将文件传到该电脑"));
+  expect(onError).toHaveBeenCalledWith(expect.stringContaining("请先选择远程项目"));
   expect(screen.queryByText("private.pdf")).toBeNull();
   fireEvent.click(screen.getByTitle("附加远程文件"));
   const dialog = screen.getByRole("dialog", { name: "附加远程文件" });

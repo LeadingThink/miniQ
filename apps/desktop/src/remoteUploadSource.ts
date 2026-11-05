@@ -5,6 +5,11 @@ import { Sha256 } from "./incrementalSha256";
 
 export const MAX_REMOTE_FILE_BYTES = 200 * 1024 * 1024;
 export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
+export interface UploadFileInput {
+  name: string;
+  size: number;
+  readChunk: (start: number, end: number) => Promise<ArrayBuffer>;
+}
 interface UploadMetadata { name: string; size: number; sha256: string; release: () => Promise<void> }
 export type RemoteUploadSource = UploadMetadata & (
   { kind: "browser"; file: File } | { kind: "native"; id: string }
@@ -40,6 +45,14 @@ function once(action: () => Promise<void>): () => Promise<void> {
 /** Snapshot before queuing network work. The provider File is read once, in
  * bounded slices; PUT retries never reopen its permission lease. */
 export async function stageBrowserUploadSources(files: readonly File[], signal?: AbortSignal): Promise<RemoteUploadSource[]> {
+  return stageUploadInputs(files.map((file) => ({
+    name: file.name, size: file.size,
+    readChunk: (start, end) => file.slice(start, end).arrayBuffer(),
+  })), signal);
+}
+
+/** All inputs share bounded disk staging, hashing, cancellation and cleanup. */
+export async function stageUploadInputs(files: readonly UploadFileInput[], signal?: AbortSignal): Promise<RemoteUploadSource[]> {
   throwIfAborted(signal);
   for (const file of files) validateUploadSize(file.size);
   if (!files.length) return [];
@@ -68,7 +81,7 @@ export async function stageBrowserUploadSources(files: readonly File[], signal?:
   }
 }
 
-async function stageFile(directory: FileSystemDirectoryHandle, file: File, signal?: AbortSignal): Promise<RemoteUploadSource> {
+async function stageFile(directory: FileSystemDirectoryHandle, file: UploadFileInput, signal?: AbortSignal): Promise<RemoteUploadSource> {
   throwIfAborted(signal);
   const id = `${Date.now()}-${crypto.randomUUID()}`;
   const release = once(() => directory.removeEntry(id));
@@ -80,7 +93,7 @@ async function stageFile(directory: FileSystemDirectoryHandle, file: File, signa
     for (let offset = 0; offset < file.size; offset += UPLOAD_CHUNK_BYTES) {
       throwIfAborted(signal);
       const end = Math.min(offset + UPLOAD_CHUNK_BYTES, file.size);
-      const bytes = new Uint8Array(await file.slice(offset, end).arrayBuffer());
+      const bytes = new Uint8Array(await file.readChunk(offset, end));
       throwIfAborted(signal);
       if (bytes.byteLength !== end - offset) throw new Error("所选文件内容已变化，请重新选择");
       hash.update(bytes);

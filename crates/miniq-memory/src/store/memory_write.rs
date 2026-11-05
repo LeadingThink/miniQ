@@ -1,5 +1,7 @@
 use super::{memories, memory_index, new_id, now_iso, MemoryError, MemoryRow, Result, Store};
-use miniq_protocol::{MemoryTarget, MemoryWriteParams, MemoryWriteResult, MemoryWriteStatus};
+use miniq_protocol::{
+    MemoryKind, MemoryTarget, MemoryWriteParams, MemoryWriteResult, MemoryWriteStatus,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 
@@ -65,7 +67,9 @@ pub(super) fn excluded(
     input: &MemoryWriteParams,
     evidence: &MemoryEvidence,
 ) -> Result<bool> {
-    Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM memory_exclusions WHERE scope_key IN (?1,'global') AND
+    // A later scope classification must not resurrect a fact forgotten in its source project.
+    Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM memory_exclusions WHERE scope_key IN (?1,'global',
+        (SELECT 'workspace:' || s.workspace_id FROM messages m JOIN sessions s ON s.id=m.session_id WHERE m.id=?2)) AND
         ((kind='source' AND value=?2) OR (kind='content' AND value=?3) OR (kind='key' AND value=?4)))",
         params![scope_key(&input.target), evidence.message_id, hash(input.content.trim()), input.key.as_deref().map(hash)], |r| r.get(0))?)
 }
@@ -95,9 +99,17 @@ pub(super) fn write(
             "automatic memory requires evidence".into(),
         ));
     }
-    if automatic && (input.replaces.is_some() || matches!(input.target, MemoryTarget::Global {})) {
+    if automatic && input.replaces.is_some() {
         return Err(MemoryError::InvalidData(
-            "automatic extraction cannot overwrite facts or expand to global scope".into(),
+            "automatic extraction cannot overwrite facts".into(),
+        ));
+    }
+    if automatic
+        && matches!(input.target, MemoryTarget::Global {})
+        && input.kind != MemoryKind::Preference
+    {
+        return Err(MemoryError::InvalidData(
+            "automatic global memory must be a user preference".into(),
         ));
     }
     let (scope, workspace) = input.target.parts();

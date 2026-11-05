@@ -48,7 +48,10 @@ import { expandPastes, isLargePaste, nextContextPlaceholder, nextPlaceholder, ty
 import { ComposerField as ComposerFieldView } from "./ComposerField";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { RemotePathDialog } from "./RemotePathDialog";
-import { ComposerRemoteUpload } from "./ComposerRemoteUpload";
+import { ComposerRemotePicker } from "./ComposerRemotePicker";
+import { ComposerUploadList } from "./ComposerUploadList";
+import type { ComposerUploadSelection } from "../composerUploads";
+import { useComposerUploads } from "../hooks/useComposerUploads";
 import type { RemoteUploadScope } from "../remoteTransfer";
 import { useTouchComposerInput } from "../hooks/useTouchComposerInput";
 import { useDroppedFiles } from "../hooks/useDroppedFiles";
@@ -159,7 +162,12 @@ export function ComposerCard(props: {
   const uploadScope = useRef({ client: props.client, scopeKey: remoteUploadKey, draftKey: props.draftKey });
   uploadScope.current = { client: props.client, scopeKey: remoteUploadKey, draftKey: props.draftKey };
   const canAttach = isTauriRuntime() || !!remoteHost;
-  const [showRemoteAttachment, setShowRemoteAttachment] = useState(false);
+  const [remoteAttachment, setRemoteAttachmentState] = useState(false);
+  const remoteAttachmentRef = useRef(remoteAttachment);
+  const setRemoteAttachment = (value: typeof remoteAttachment) => {
+    remoteAttachmentRef.current = value;
+    setRemoteAttachmentState(value);
+  };
   const [draft, setDraftState] = useState(() => readDraft(props.draftKey));
   const [caret, setCaret] = useState(-1);
   // Caret requested by programmatic edits (mention pick, insert bus); applied
@@ -186,10 +194,21 @@ export function ComposerCard(props: {
   const pastesRef = useRef(pastes);
   pastesRef.current = pastes;
   const [sending, setSending] = useState(false);
+  const [waitingUploads, setWaitingUploads] = useState(false);
+  const sendRequest = useRef<AbortController | null>(null);
+  const sendBlockedRef = useRef(props.sendBlocked);
+  sendBlockedRef.current = props.sendBlocked;
   const [goalMode, setGoalMode] = useState(false);
   const sendingRef = useRef(false);
   const mountedRef = useRef(true);
   const draftKeyRef = useRef(props.draftKey);
+  const cancelWaitingSend = () => {
+    sendRequest.current?.abort();
+    sendRequest.current = null;
+    sendingRef.current = false;
+    setSending(false);
+    setWaitingUploads(false);
+  };
   const fieldRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLElement | null>(null);
   const syncTextarea = () => {
@@ -226,7 +245,7 @@ export function ComposerCard(props: {
   }, [plusOpen]);
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => { mountedRef.current = false; sendRequest.current?.abort(); sendRequest.current = null; };
   }, []);
   useEffect(() => {
     if (!props.autoFocus) return;
@@ -245,10 +264,17 @@ export function ComposerCard(props: {
     setPastes(readPastes(props.draftKey));
     setGoalMode(false);
     setVoicePreview(null);
-    setShowRemoteAttachment(false);
+    setRemoteAttachment(false);
   }, [props.draftKey]);
 
-  useEffect(() => { setShowRemoteAttachment(false); }, [props.client, remoteUploadKey]);
+  useEffect(() => {
+    setRemoteAttachment(false);
+    sendRequest.current?.abort();
+    sendRequest.current = null;
+    sendingRef.current = false;
+    setSending(false);
+    setWaitingUploads(false);
+  }, [props.client, remoteUploadKey, props.draftKey]);
 
   /** One writer for the attachment list so the ref never drifts from the draft. */
   const applyAttachments = (next: string[]) => {
@@ -265,6 +291,9 @@ export function ComposerCard(props: {
   };
 
   const setDraft = (value: string) => {
+    // External paste/insert actions can still arrive while the field is read-only.
+    // Editing the draft cancels the pending send instead of discarding the edit.
+    if (waitingUploads) cancelWaitingSend();
     draftValueRef.current = value;
     setDraftState(value);
     storeDraft(props.draftKey, value);
@@ -341,15 +370,38 @@ export function ComposerCard(props: {
     if (merged.dropped > 0) props.onError?.(attachmentLimitMessage(merged.dropped));
   };
 
+  const uploads = useComposerUploads(props.client, remoteUploadScope, props.draftKey, (paths) => {
+    const active = uploadScope.current;
+    if (!mountedRef.current || active.client !== props.client || active.scopeKey !== remoteUploadKey || active.draftKey !== props.draftKey) {
+      storeAttachments(props.draftKey, [...new Set([...readAttachments(props.draftKey), ...paths])]);
+      return;
+    }
+    applyAttachments([...new Set([...attachmentsRef.current, ...paths])]);
+  });
+  const hasInput = canSendComposer(draft, attachments) || uploads.items.length > 0;
+  const uploadFiles = async (selection: ComposerUploadSelection) => {
+    if (sendingRef.current) return;
+    if (!uploads.queue) {
+      props.onError?.("请先选择远程项目或打开一个会话，再上传文件。");
+      return;
+    }
+    try {
+      await uploads.queue.select(selection, attachmentsRef.current.length);
+    } catch (cause) {
+      props.onError?.(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
   const receiveDroppedFiles = (paths: string[]) => {
-    if (remoteHost) {
-      props.onError?.("当前连接远程电脑，请先将文件传到该电脑，再通过附件按钮填写文件路径。");
-    } else addAttachments(paths);
+    if (remoteHost) void uploadFiles({ paths: [...new Set(paths)] });
+    else addAttachments(paths);
   };
   useDroppedFiles(textareaRef, receiveDroppedFiles, props.onError);
 
   const pickFiles = async () => {
-    if (remoteHost) { setShowRemoteAttachment(true); return; }
+    if (remoteHost) {
+      if (!remoteAttachmentRef.current) setRemoteAttachment(true);
+      return;
+    }
     try {
       const selected = await attachmentReads.run(async () => {
         const { open } = await import("@tauri-apps/plugin-dialog");
@@ -364,11 +416,11 @@ export function ComposerCard(props: {
     }
   };
 
-  /** Saves clipboard files in the app cache and attaches them to this draft. */
+  /** Uploads remote clipboard files or saves local files before attaching. */
   const attachPastedFiles = async (files: File[]) => {
     if (sendingRef.current || files.length === 0) return;
     if (remoteHost) {
-      props.onError?.("当前连接远程电脑，剪贴板文件需先传到该电脑，再附加远程文件路径。");
+      await uploadFiles(files);
       return;
     }
     if (!isTauriRuntime()) {
@@ -449,27 +501,36 @@ export function ComposerCard(props: {
   const send = async () => {
     if (
       sendingRef.current ||
+      remoteAttachmentRef.current ||
       attachmentReads.hasPending() ||
       slash.pending ||
       voicePreview !== null ||
       props.sendBlocked ||
-      !canSendComposer(draft, attachments)
+      !hasInput
     )
       return;
     sendingRef.current = true;
     setSending(true);
+    const request = new AbortController();
+    sendRequest.current = request;
+    setWaitingUploads(uploads.items.length > 0);
     const key = props.draftKey;
     // Collapsed pastes only exist while editing; the message carries their text.
     const content = expandPastes(draft, pastesRef.current).trim();
     try {
+      if (uploads.queue && !await uploads.queue.wait(request.signal)) return;
+      if (sendRequest.current !== request || sendBlockedRef.current) return;
+      const paths = [...attachmentsRef.current];
+      if (!canSendComposer(content, paths)) return;
+      setWaitingUploads(false);
       const accepted = goalMode
-        ? await props.onSend(content, attachments, true)
-        : await props.onSend(content, attachments);
+        ? await props.onSend(content, paths, true)
+        : await props.onSend(content, paths);
       if (accepted === false) return;
       storeDraft(key, "");
       storeAttachments(key, []);
       storePastes(key, []);
-      if (draftKeyRef.current === key) {
+      if (sendRequest.current === request && draftKeyRef.current === key) {
         draftValueRef.current = "";
         setDraftState("");
         attachmentsRef.current = [];
@@ -479,10 +540,14 @@ export function ComposerCard(props: {
         setGoalMode(false);
       }
     } catch (cause) {
-      props.onError?.(cause instanceof Error ? cause.message : String(cause));
+      if (sendRequest.current === request) props.onError?.(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      sendingRef.current = false;
-      setSending(false);
+      if (sendRequest.current === request) {
+        sendRequest.current = null;
+        sendingRef.current = false;
+        setSending(false);
+        setWaitingUploads(false);
+      }
     }
   };
 
@@ -496,7 +561,7 @@ export function ComposerCard(props: {
             {
               id: "attach",
               name: "附加文件",
-              description: remoteHost ? "附加远程电脑上已有的文件" : "选择图片或文件作为当前消息的附件",
+              description: remoteHost ? "上传本机文件或附加远程电脑上的文件" : "选择图片或文件作为当前消息的附件",
               group: "工具",
               icon: "file" as const,
               keywords: ["attach", "file", "附件", "文件"],
@@ -648,26 +713,20 @@ export function ComposerCard(props: {
     <div ref={card} className="composer-card">
       {props.queueSlot}
       {props.chipSlot && <div className="composer-context">{contextControls}</div>}
-      {showRemoteAttachment && remoteHost && (props.client?.mode === "remote" && remoteUploadScope ?
-        <ComposerRemoteUpload client={props.client} scope={remoteUploadScope} count={attachments.length}
-          run={attachmentReads.run} onClose={() => setShowRemoteAttachment(false)}
-          onAttach={(paths) => {
-            const active = uploadScope.current;
-            if (!mountedRef.current || active.client !== props.client || active.scopeKey !== remoteUploadKey || active.draftKey !== props.draftKey) {
-              storeAttachments(props.draftKey, mergeAttachments(readAttachments(props.draftKey), paths).paths);
-              return;
-            }
-            addAttachments(paths);
-          }} /> : <RemotePathDialog host={remoteHost} purpose="attachment" uploadNeedsProject={props.client?.mode === "remote"}
+      {remoteHost && (props.client?.mode === "remote" && remoteUploadScope ?
+        <ComposerRemotePicker open={remoteAttachment} count={attachments.length + (uploads.queue?.pendingCount ?? 0)}
+          onSelect={uploadFiles} onClose={() => setRemoteAttachment(false)} onAttach={addAttachments} />
+        : remoteAttachment && <RemotePathDialog host={remoteHost} purpose="attachment" uploadNeedsProject={props.client?.mode === "remote"}
           onSubmit={async (path) => {
             if (attachments.length >= MAX_COMPOSER_ATTACHMENTS) {
               throw new Error(`每条消息最多附加 ${MAX_COMPOSER_ATTACHMENTS} 个文件`);
             }
             addAttachments([path]);
-          }} onClose={() => setShowRemoteAttachment(false)} />)}
+          }} onClose={() => setRemoteAttachment(false)} />)}
       {voicePreview && <VoiceTranscript preview={voicePreview} />}
       {slash.menu}
       {!slash.menu && mention.menu}
+      <ComposerUploadList items={uploads.items} onRetry={id => uploads.queue?.retry(id, attachmentsRef.current.length)} onRemove={id => uploads.queue?.remove(id)} />
       {attachments.length > 0 && (
         <div className="attach-row">
           {attachments.map((path) => (
@@ -837,7 +896,7 @@ export function ComposerCard(props: {
                 <Square size={14} fill="currentColor" aria-label="停止任务" />
               </button>
             )}
-            {shouldShowComposerSend(props.busy, draft, attachments) && (
+            {(shouldShowComposerSend(props.busy, draft, attachments) || uploads.items.length > 0) && (
               <button
                 type="button"
                 className="send-btn"
@@ -850,11 +909,12 @@ export function ComposerCard(props: {
                 }
                 disabled={
                   sending ||
+                  remoteAttachment ||
                   attachmentReads.pending ||
                   slash.pending ||
                   voicePreview !== null ||
                   props.sendBlocked ||
-                  !canSendComposer(draft, attachments)
+                  !hasInput
                 }
                 onClick={send}
               >
@@ -873,6 +933,9 @@ export function ComposerCard(props: {
         </div>
       </div>
       {attachmentReads.pending && <p className="composer-send-status" role="status">正在准备附件，完成后可发送</p>}
+      {waitingUploads && <p className="composer-send-status" role="status">正在等待附件，完成后自动发送
+        <button type="button" onClick={cancelWaitingSend}>取消等待发送</button>
+      </p>}
       {props.sendBlocked && <p className="composer-send-status" role="status">
         {props.sendBlockedReason ?? "暂时无法发送，草稿会保留"}
       </p>}

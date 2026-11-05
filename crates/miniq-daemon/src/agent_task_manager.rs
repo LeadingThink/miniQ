@@ -570,7 +570,6 @@ fn inherit_request(request: &mut AgentRunRequest, previous: &AgentRunRequest) {
         .take()
         .or_else(|| previous.subagent_type.clone());
     request.model = request.model.take().or_else(|| previous.model.clone());
-    request.max_turns = request.max_turns.or(previous.max_turns);
     request.mode = request.mode.take().or_else(|| previous.mode.clone());
     request.cwd = request.cwd.take().or_else(|| previous.cwd.clone());
     request.isolation = request

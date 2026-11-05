@@ -99,7 +99,7 @@ fn memory_forget_removes_versions_index_snapshot_and_blocks_source_replay() {
     assert!(store.get_model_context(&session).unwrap().is_none());
     let candidate = MemoryCandidate {
         content: "工作报告结论在前".into(),
-        kind: MemoryKind::Preference,
+        kind: MemoryCandidateKind::Preference,
         key: "different.key".into(),
         evidence: source.content.clone(),
     };
@@ -262,7 +262,7 @@ fn memory_jobs_paginate_every_byte_and_commit_cursor_atomically_across_restart()
     assert!(store.claim_memory_job().unwrap().is_none());
     let invalid = MemoryCandidate {
         content: "假证据".into(),
-        kind: MemoryKind::Fact,
+        kind: MemoryCandidateKind::Fact,
         key: "x".into(),
         evidence: "不在原文".into(),
     };

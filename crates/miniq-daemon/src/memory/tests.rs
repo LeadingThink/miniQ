@@ -36,6 +36,27 @@ fn save(state: &AppState) -> miniq_protocol::MemoryRecord {
     .unwrap();
     state.store.write_memory(&p, None).unwrap().memory.unwrap()
 }
+
+async fn complete_turn(state: &AppState, session: &str, text: &str) {
+    state
+        .store
+        .append_message(session, Role::User, text)
+        .unwrap();
+    let mut events = state.events.subscribe();
+    let cancel = state.begin_turn(session).unwrap();
+    crate::turn::spawn_turn(state.clone(), session.into(), cancel);
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            match events.recv().await.unwrap() {
+                miniq_protocol::Event::TurnCompleted { .. } => break,
+                miniq_protocol::Event::TurnFailed { error, .. } => panic!("{error}"),
+                _ => {}
+            }
+        }
+    })
+    .await
+    .unwrap();
+}
 #[tokio::test]
 async fn memory_recall_only_enters_task_wire_requests_and_deletion_revalidates() {
     let mock = Arc::new(MockProvider::new(vec![vec![], vec![], vec![]]));
@@ -83,24 +104,7 @@ async fn memory_is_used_by_real_turn_but_not_saved_in_snapshot() {
     let mock = Arc::new(MockProvider::text("报告已完成。"));
     let (state, _, session) = fixture(mock.clone());
     save(&state);
-    state
-        .store
-        .append_message(&session, Role::User, "写报告")
-        .unwrap();
-    let mut events = state.events.subscribe();
-    let cancel = state.begin_turn(&session).unwrap();
-    crate::turn::spawn_turn(state.clone(), session.clone(), cancel);
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        loop {
-            match events.recv().await.unwrap() {
-                miniq_protocol::Event::TurnCompleted { .. } => break,
-                miniq_protocol::Event::TurnFailed { error, .. } => panic!("{error}"),
-                _ => {}
-            }
-        }
-    })
-    .await
-    .unwrap();
+    complete_turn(&state, &session, "写报告").await;
     let requests = mock.requests.lock().unwrap();
     assert!(requests[0]
         .messages
@@ -108,6 +112,70 @@ async fn memory_is_used_by_real_turn_but_not_saved_in_snapshot() {
         .any(|m| m.content.contains("工作报告先给结论")));
     let snapshot = state.store.get_model_context(&session).unwrap().unwrap();
     assert!(!snapshot.history.to_string().contains("工作报告先给结论"));
+}
+
+#[tokio::test]
+async fn memory_normal_chat_extracts_and_injects_shared_preferences_without_tools() {
+    let extraction = json!([
+        {"content":"用户习惯先看结论再看解释", "kind":"global_preference",
+         "key":"user.explanation.order", "evidence":"我习惯先看结论再看解释"},
+        {"content":"这个项目的代码注释用英文", "kind":"preference",
+         "key":"project.comments.language", "evidence":"这个项目的代码注释用英文"}
+    ])
+    .to_string();
+    let mock = Arc::new(MockProvider::new(vec![
+        vec![ChatDelta::Text("好的。".into())],
+        vec![ChatDelta::Text(extraction)],
+        vec![ChatDelta::Text("结论：可以。".into())],
+    ]));
+    let (state, _, writer) = fixture(mock.clone());
+    state
+        .store
+        .update_memory_settings(&MemorySettings {
+            recall_enabled: true,
+            auto_save: true,
+        })
+        .unwrap();
+    complete_turn(
+        &state,
+        &writer,
+        "我习惯先看结论再看解释。这个项目的代码注释用英文。",
+    )
+    .await;
+    let job = state.store.claim_memory_job().unwrap().unwrap();
+    worker::process(&state, &job).await.unwrap();
+    let other = state
+        .store
+        .create_workspace("D:/other-memory-project", "other")
+        .unwrap();
+    let reader = state.store.create_session(&other.id, "new chat").unwrap();
+    complete_turn(&state, &reader.id, "帮我检查一个函数").await;
+
+    let requests = mock.requests.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        requests[1].trace.purpose,
+        ModelCallPurpose::MemoryExtraction
+    );
+    assert!(requests[1].tools.is_empty());
+    assert_eq!(requests[2].trace.purpose, ModelCallPurpose::Task);
+    let context = requests[2]
+        .messages
+        .iter()
+        .find(|m| m.content.starts_with("Saved background data"))
+        .unwrap();
+    assert!(context.content.contains("用户习惯先看结论再看解释"));
+    assert!(!context.content.contains("代码注释用英文"));
+    assert!(requests.iter().all(|r| r
+        .messages
+        .iter()
+        .all(|m| m.role != miniq_models::ChatRole::Tool)));
+    drop(requests);
+    let snapshot = state.store.get_model_context(&reader.id).unwrap().unwrap();
+    assert!(!snapshot
+        .history
+        .to_string()
+        .contains("用户习惯先看结论再看解释"));
 }
 #[tokio::test]
 async fn memory_extraction_respects_approval_and_uses_source_evidence() {

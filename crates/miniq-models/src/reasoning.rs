@@ -4,9 +4,20 @@ use serde_json::{json, Value};
 
 use crate::{ApiProtocol, ProviderConfig};
 
+/// Vendors namespace route IDs (`hy/deepseek-v4.1-flash`). Family contracts are
+/// stated on the bare ID, so match the last path segment only.
+fn family_name(model: &str) -> String {
+    model
+        .rsplit('/')
+        .next()
+        .unwrap_or(model)
+        .to_ascii_lowercase()
+        .replace('.', "-")
+}
+
 pub fn reasoning_efforts(model: &str, protocol: ApiProtocol) -> Vec<ReasoningEffort> {
     use ReasoningEffort::*;
-    let name = model.to_ascii_lowercase().replace('.', "-");
+    let name = family_name(model);
     // Specialized GPT variants have their own effort contracts. Use advertised
     // capabilities for those IDs instead of inheriting the base family list.
     if name.starts_with("gpt-") && (name.contains("-pro") || name.contains("-codex")) {
@@ -83,7 +94,7 @@ pub(crate) fn apply_reasoning(body: &mut Value, config: &ProviderConfig, protoco
     let Some(effort) = config.reasoning_effort else {
         return;
     };
-    let name = config.model.to_ascii_lowercase().replace('.', "-");
+    let name = family_name(&config.model);
     if name.starts_with("deepseek-v4-") && protocol != ApiProtocol::Responses {
         body["thinking"] =
             json!({ "type": if effort == ReasoningEffort::None { "disabled" } else { "enabled" } });
@@ -176,6 +187,44 @@ mod tests {
             reasoning_efforts("gemini-2.5-flash", ApiProtocol::ChatCompletions)
                 .contains(&ReasoningEffort::None)
         );
+    }
+
+    #[test]
+    fn namespaced_route_ids_keep_the_family_contract() {
+        for protocol in [
+            ApiProtocol::ChatCompletions,
+            ApiProtocol::AnthropicMessages,
+            ApiProtocol::Responses,
+        ] {
+            assert_eq!(
+                reasoning_efforts("hy/deepseek-v4.1-flash-exp", protocol),
+                vec![
+                    ReasoningEffort::None,
+                    ReasoningEffort::Low,
+                    ReasoningEffort::High,
+                    ReasoningEffort::Max
+                ]
+            );
+            assert_eq!(
+                reasoning_efforts("anthropic/claude-sonnet-4.6", protocol),
+                reasoning_efforts("claude-sonnet-4.6", protocol)
+            );
+        }
+        let mut config = ProviderConfig {
+            base_url: "https://test/v1".into(),
+            api_key: String::new(),
+            model: "hy/deepseek-v4.1-flash-exp".into(),
+            api_protocol: ApiProtocol::ChatCompletions,
+            reasoning_effort: Some(ReasoningEffort::Max),
+        };
+        let mut body = json!({});
+        apply_reasoning(&mut body, &config, ApiProtocol::ChatCompletions);
+        assert_eq!(body["thinking"]["type"], "enabled");
+        assert_eq!(body.pointer("/reasoning_effort"), Some(&json!("max")));
+        config.reasoning_effort = Some(ReasoningEffort::None);
+        let mut body = json!({});
+        apply_reasoning(&mut body, &config, ApiProtocol::ChatCompletions);
+        assert_eq!(body, json!({"thinking":{"type":"disabled"}}));
     }
 
     #[test]

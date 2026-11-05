@@ -7,8 +7,8 @@ use tokio::sync::{Mutex, Semaphore};
 #[path = "agent_tasks_tests/cancellation.rs"]
 mod cancellation;
 
-#[path = "agent_tasks_tests/step_budget.rs"]
-mod step_budget;
+#[path = "agent_tasks_tests/run_limits.rs"]
+mod run_limits;
 
 #[path = "agent_tasks_tests/retry.rs"]
 mod retry;
@@ -33,7 +33,6 @@ fn request(prompt: &str) -> AgentRunRequest {
         model: None,
         resume: None,
         run_in_background: false,
-        max_turns: Some(4),
         name: Some("researcher".into()),
         mode: None,
         cwd: None,

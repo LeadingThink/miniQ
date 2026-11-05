@@ -184,7 +184,6 @@ impl DaemonAgentBridge {
                         manager: self.state.agent_tasks.clone(),
                         record: record.clone(),
                     })),
-                    max_steps: Some(request.max_turns.unwrap_or(32)),
                     ..RunLimits::default()
                 },
             )

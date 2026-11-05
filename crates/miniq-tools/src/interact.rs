@@ -212,7 +212,12 @@ impl Tool for AskUserTool {
         "ask_user"
     }
     fn description(&self) -> &str {
-        "Ask the user only when a decision is needed, and wait for their answer. \
+        "Ask the user for essential information, a consequential decision, missing \
+         authorization, or an action only they can complete. When such a blocker \
+         cannot be resolved from existing context or available tools, use this tool \
+         instead of ending the turn with a plain-text request. Explain the blocker \
+         and the smallest input or action needed to proceed. Avoid questions about \
+         discoverable facts or routine, reversible choices. \
          Send one final, concise user-facing question, not draft alternatives, \
          self-corrections or repeated requests to choose. Put suggested answers \
          in options instead of repeating an option list in prompt. Use questions \

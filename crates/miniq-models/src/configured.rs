@@ -112,7 +112,25 @@ impl ConfiguredProvider {
         self.model_capabilities().await.max_output_tokens
     }
 
+    /// Endpoint metadata first, then the catalog row. OneAPI-style gateways
+    /// publish `supported_reasoning_efforts` only in the paginated
+    /// `/models/details` catalog, and their per-model route may be missing --
+    /// or unreachable for namespaced IDs such as `hy/deepseek-v4.1-flash-1017`,
+    /// which the detail URL encodes as one path segment.
     async fn fetch_model_capabilities(&self) -> ModelCapabilities {
+        let detail = self.fetch_model_detail().await;
+        let capabilities = if detail.reasoning_efforts.is_some() {
+            detail
+        } else {
+            self.fetch_catalog_row()
+                .await
+                .map(|row| merge_capabilities(detail.clone(), extract_capabilities(&row)))
+                .unwrap_or(detail)
+        };
+        cap_model_context(&self.config.model, capabilities)
+    }
+
+    async fn fetch_model_detail(&self) -> ModelCapabilities {
         let Ok(mut url) = reqwest::Url::parse(&self.config.base_url) else {
             return ModelCapabilities::default();
         };
@@ -136,7 +154,80 @@ impl ConfiguredProvider {
             Ok(payload) => payload,
             Err(_) => return ModelCapabilities::default(),
         };
-        cap_model_context(&self.config.model, extract_capabilities(&payload))
+        extract_capabilities(&payload)
+    }
+
+    async fn fetch_catalog_row(&self) -> Option<Value> {
+        let base = reqwest::Url::parse(&self.config.base_url).ok()?;
+        let wanted = self.config.model.trim().to_ascii_lowercase();
+        for page in 1..=CATALOG_PAGE_LIMIT {
+            let mut url = base.clone();
+            {
+                let mut segments = url.path_segments_mut().ok()?;
+                segments.pop_if_empty();
+                segments.push("models");
+                segments.push("details");
+            }
+            url.query_pairs_mut()
+                .append_pair("page", &page.to_string())
+                .append_pair("page_size", &CATALOG_PAGE_SIZE.to_string());
+            let mut request = self.metadata_client.get(url);
+            if !self.config.api_key.is_empty() {
+                request = request.bearer_auth(&self.config.api_key);
+            }
+            let payload: Value = match request.send().await {
+                Ok(response) if response.status().is_success() => match response.json().await {
+                    Ok(payload) => payload,
+                    Err(_) => return None,
+                },
+                _ => return None,
+            };
+            let rows = payload.pointer("/data/models").and_then(Value::as_array)?;
+            if let Some(row) = rows
+                .iter()
+                .find(|row| matches_requested_model(row, &wanted))
+            {
+                return Some(row.clone());
+            }
+            let received = rows.len();
+            let complete = match payload.pointer("/data/total").and_then(Value::as_u64) {
+                Some(total) => u64::from(page) * u64::from(CATALOG_PAGE_SIZE) >= total,
+                None => received < CATALOG_PAGE_SIZE as usize,
+            };
+            if received == 0 || complete {
+                return None;
+            }
+        }
+        None
+    }
+}
+
+const CATALOG_PAGE_SIZE: u32 = 100;
+const CATALOG_PAGE_LIMIT: u32 = 10;
+
+fn matches_requested_model(row: &Value, wanted: &str) -> bool {
+    ["model_id", "id", "name"].iter().any(|key| {
+        row.get(*key)
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case(wanted))
+    })
+}
+
+/// The detail route wins where it answers; the catalog fills the rest.
+fn merge_capabilities(
+    primary: ModelCapabilities,
+    fallback: ModelCapabilities,
+) -> ModelCapabilities {
+    ModelCapabilities {
+        preferred_api_protocol: primary
+            .preferred_api_protocol
+            .or(fallback.preferred_api_protocol),
+        supported_api_protocols: primary
+            .supported_api_protocols
+            .or(fallback.supported_api_protocols),
+        max_output_tokens: primary.max_output_tokens.or(fallback.max_output_tokens),
+        max_context_tokens: primary.max_context_tokens.or(fallback.max_context_tokens),
+        reasoning_efforts: primary.reasoning_efforts.or(fallback.reasoning_efforts),
     }
 }
 
@@ -410,5 +501,68 @@ mod tests {
                 .max_output_tokens,
             Some(128_000)
         );
+    }
+
+    /// The gateway in the report answered `/models/{model}` with an empty body
+    /// and published `supported_reasoning_efforts` only in the paginated
+    /// catalog. Namespaced IDs also break the single-segment detail route.
+    #[tokio::test]
+    async fn catalog_details_supply_reasoning_efforts_for_namespaced_models() {
+        use crate::provider::ReasoningEffort;
+
+        let app = Router::new()
+            .route(
+                "/v1/models/details",
+                get(|| async {
+                    Json(json!({
+                        "code": "0",
+                        "msg": "ok",
+                        "data": {
+                            "models": [
+                                {
+                                    "model_id": "hy/deepseek-v4.1-flash-1017",
+                                    "max_tokens": 300_144,
+                                    "max_output": 128_000,
+                                    "supported_reasoning_efforts": ["none", "low", "high", "max"]
+                                },
+                                {"model_id": "unrelated-model"}
+                            ],
+                            "total": 2
+                        }
+                    }))
+                }),
+            )
+            .route(
+                "/v1/models/{model}",
+                get(|| async {
+                    (
+                        axum::http::StatusCode::NOT_FOUND,
+                        Json(json!({"error": "not found"})),
+                    )
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let provider = ConfiguredProvider::new(ProviderConfig {
+            base_url: format!("http://{address}/v1"),
+            api_key: "catalog-secret".into(),
+            model: "hy/deepseek-v4.1-flash-1017".into(),
+            api_protocol: ApiProtocol::Auto,
+            reasoning_effort: None,
+        });
+
+        let capabilities = provider.capabilities().await;
+        assert_eq!(
+            capabilities.reasoning_efforts,
+            Some(vec![
+                ReasoningEffort::None,
+                ReasoningEffort::Low,
+                ReasoningEffort::High,
+                ReasoningEffort::Max,
+            ])
+        );
+        assert_eq!(capabilities.max_context_tokens, Some(300_144));
+        assert_eq!(capabilities.max_output_tokens, Some(128_000));
     }
 }

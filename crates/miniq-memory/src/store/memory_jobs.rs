@@ -4,7 +4,7 @@ use super::{
     memory_write::{self, hash},
     new_id, MemoryError, MemoryEvidence, Result, Store,
 };
-use miniq_protocol::{MemoryCandidate, MemoryTarget, MemoryWriteParams, MemoryWriteResult};
+use miniq_protocol::{MemoryCandidate, MemoryTarget, MemoryWriteResult};
 use rusqlite::{params, Connection, OptionalExtension};
 
 #[derive(Debug, Clone)]
@@ -142,13 +142,7 @@ impl Store {
             evidence.byte_end = evidence.byte_start + candidate.evidence.len();
             results.push(memory_write::write(
                 &tx,
-                &MemoryWriteParams {
-                    target: target.clone(),
-                    content: candidate.content.clone(),
-                    kind: candidate.kind,
-                    key: Some(candidate.key.clone()),
-                    replaces: None,
-                },
+                &candidate.write_params(&job.workspace_id),
                 Some(&evidence),
                 true,
             )?);

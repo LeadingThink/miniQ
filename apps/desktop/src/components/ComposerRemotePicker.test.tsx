@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ComposerCard } from "./Composer";
 import { uploadRemoteFile } from "../remoteTransfer";
+import { stageBrowserUploadSources, type RemoteUploadSource } from "../remoteUploadSource";
 import { readAttachments, storeAttachments } from "../composerDraft";
 import type { RpcClient } from "../rpc";
 vi.mock("../runtime", () => ({ isTauriRuntime: () => false }));
@@ -14,12 +15,16 @@ vi.mock("../remoteUploadSource", () => ({
 }));
 vi.mock("./VoiceInput", () => ({ VoiceInput: () => null }));
 beforeEach(() => {
+  client = { mode: "remote", call: vi.fn().mockResolvedValue({ skills: [] }) } as unknown as RpcClient;
+  base.client = client;
+  projectBase.client = client;
+  vi.mocked(uploadRemoteFile).mockReset();
   HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   HTMLDialogElement.prototype.close = function () { this.open = false; };
 });
 afterEach(() => { cleanup(); localStorage.clear(); vi.clearAllMocks(); });
-const client = { mode: "remote", call: vi.fn().mockResolvedValue({ skills: [] }) } as unknown as RpcClient;
-const base = { busy: false, placeholder: "消息", client, sessionId: "session-A", draftKey: "upload-A", onSend: vi.fn() };
+let client = { mode: "remote", call: vi.fn().mockResolvedValue({ skills: [] }) } as unknown as RpcClient;
+const base = { busy: false, placeholder: "消息", client, sessionId: "session-A", draftKey: "upload-A", onSend: vi.fn(), onError: vi.fn() };
 const receipt = (path: string) => ({ status: "completed" as const, path, size: 1, sha256: "a".repeat(64) });
 function open() {
   fireEvent.click(screen.getByRole("button", { name: "更多输入方式" }));
@@ -42,7 +47,8 @@ it("offers original photos and files, waits for actual receipt, preserves text a
   expect(readAttachments("upload-A")).toEqual([]);
   act(() => vi.mocked(uploadRemoteFile).mock.calls[0][4]?.(1, 2));
   expect(screen.getByRole("progressbar").getAttribute("value")).toBe("50");
-  expect((screen.getByRole("button", { name: "发送消息" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect((screen.getByRole("button", { name: "发送消息" }) as HTMLButtonElement).disabled).toBe(false);
   await act(async () => finish(receipt("/project/inbox/actual.heic")));
   expect(readAttachments("upload-A")).toEqual(["/project/inbox/actual.heic"]);
   expect((screen.getByRole("textbox", { name: "消息" }) as HTMLTextAreaElement).value).toBe("我的草稿");
@@ -63,22 +69,22 @@ it.each(["session", "client", "unmount"])("keeps late committed receipt in origi
   expect(screen.queryByText("late.heic")).toBeNull();
   expect(base.onSend).not.toHaveBeenCalled();
 });
-it("cancels current transfer and does not upload remaining selection", async () => {
+it("removes the current transfer and continues uploading the remaining selection", async () => {
   vi.mocked(uploadRemoteFile).mockImplementationOnce((_client, _session, _file, signal) => new Promise((_resolve, reject) => {
     signal?.addEventListener("abort", () => reject(new DOMException("cancelled", "AbortError")));
   }));
+  vi.mocked(uploadRemoteFile).mockResolvedValueOnce(receipt("/project/inbox/second.heic"));
   render(<ComposerCard {...base} />);
   open(); await choose("选择本机文件", 2);
-  fireEvent.click(screen.getByRole("button", { name: "取消上传" }));
-  await screen.findByText("已取消上传");
-  expect(uploadRemoteFile).toHaveBeenCalledTimes(1);
-  expect(readAttachments("upload-A")).toEqual([]);
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "移除待上传附件 0.heic" })));
+  expect(uploadRemoteFile).toHaveBeenCalledTimes(2);
+  expect(readAttachments("upload-A")).toEqual(["/project/inbox/second.heic"]);
 });
 it("rejects above ten including existing attachments without uploading a subset", async () => {
   storeAttachments("upload-A", Array.from({ length: 9 }, (_, i) => `/existing/${i}.txt`));
   render(<ComposerCard {...base} />);
   open(); await choose("选择本机文件", 2);
-  expect(screen.getByRole("alert").textContent).toContain("最多附加 10");
+  expect(base.onError).toHaveBeenCalledWith(expect.stringContaining("最多附加 10"));
   expect(uploadRemoteFile).not.toHaveBeenCalled();
   expect(readAttachments("upload-A")).toHaveLength(9);
 });
@@ -100,16 +106,17 @@ it("shows failure without attaching a guessed path", async () => {
   expect(readAttachments("upload-A")).toEqual([]);
   expect(base.onSend).not.toHaveBeenCalled();
 });
-it("lists every selected file with its own state and marks untouched files as not uploaded after a failure", async () => {
+it("retains a failed file while independently attaching the rest of the selection", async () => {
   vi.mocked(uploadRemoteFile).mockRejectedValueOnce(new Error("桌面离线"));
+  vi.mocked(uploadRemoteFile).mockResolvedValueOnce(receipt("/project/inbox/1.heic"));
+  vi.mocked(uploadRemoteFile).mockResolvedValueOnce(receipt("/project/inbox/2.heic"));
   render(<ComposerCard {...base} />);
   open(); await choose("选择本机文件", 3);
   await screen.findByText("桌面离线");
-  const rows = screen.getByRole("list", { name: "上传队列" }).querySelectorAll("li");
-  expect([...rows].map((row) => row.getAttribute("data-state"))).toEqual(["failed", "skipped", "skipped"]);
-  expect(screen.getByText(/失败 · /)).toBeTruthy();
-  expect(screen.getAllByText(/未上传 · /)).toHaveLength(2);
-  expect(screen.getAllByRole("button", { name: "关闭" })).toHaveLength(2);
+  const rows = screen.getByRole("list", { name: "待上传附件" }).querySelectorAll("li");
+  expect([...rows].map((row) => row.getAttribute("data-state"))).toEqual(["failed"]);
+  expect(screen.getByRole("button", { name: "重试上传 0.heic" })).toBeTruthy();
+  expect(readAttachments("upload-A")).toEqual(["/project/inbox/1.heic", "/project/inbox/2.heic"]);
 });
 
 const projectBase = { ...base, sessionId: undefined, workspaceId: "project-A", draftKey: "hero-A" };
@@ -141,7 +148,7 @@ it("enforces the ten attachment limit for the workspace scope", async () => {
   storeAttachments("hero-A", Array.from({ length: 9 }, (_, i) => `/existing/${i}.txt`));
   render(<ComposerCard {...projectBase} />);
   open(); await choose("选择本机文件", 2);
-  expect(screen.getByRole("alert").textContent).toContain("最多附加 10");
+  expect(base.onError).toHaveBeenCalledWith(expect.stringContaining("最多附加 10"));
   expect(uploadRemoteFile).not.toHaveBeenCalled();
 });
 it("closes the upload sheet when the project changes", () => {
@@ -158,4 +165,29 @@ it("falls back to the path dialog and explains that a project is required when n
   expect(within(dialog).getByRole("note").textContent).toContain("请先选择一个项目");
   expect(within(dialog).queryByRole("button", { name: "上传照片原件" })).toBeNull();
   expect(uploadRemoteFile).not.toHaveBeenCalled();
+});
+
+it("retains each browser input while staging even when another selection starts", async () => {
+  let staged!: (sources: RemoteUploadSource[]) => void;
+  vi.mocked(stageBrowserUploadSources).mockImplementationOnce(() => new Promise(resolve => { staged = resolve; }));
+  vi.mocked(uploadRemoteFile).mockImplementation(async (_client, _scope, source) => receipt(`/inbox/${source.name}`));
+  render(<ComposerCard {...base} />);
+  open();
+  const input = screen.getByLabelText("选择本机文件") as HTMLInputElement;
+  let selectionValue = "C:\\fakepath\\first.heic";
+  Object.defineProperty(input, "value", { configurable: true, get: () => selectionValue, set: value => { selectionValue = value; } });
+  const originals = [new File(["x"], "first.heic"), new File(["y"], "second.heic")];
+  fireEvent.change(input, { target: { files: originals } });
+  expect(stageBrowserUploadSources).toHaveBeenCalledWith(originals, expect.any(AbortSignal));
+  expect(uploadRemoteFile).not.toHaveBeenCalled();
+  expect(input.isConnected).toBe(true);
+  expect(selectionValue).toContain("fakepath");
+  open();
+  expect(screen.getByLabelText("选择本机文件")).not.toBe(input);
+  await choose();
+  expect(input.isConnected).toBe(true);
+  await act(async () => staged(originals.map(file => ({ kind: "browser", file, name: file.name, size: file.size, sha256: "a".repeat(64), release: async () => {} }))));
+  expect(input.isConnected).toBe(false);
+  expect(selectionValue).toBe("");
+  expect(readAttachments("upload-A")).toEqual(["/inbox/0.heic", "/inbox/first.heic", "/inbox/second.heic"]);
 });

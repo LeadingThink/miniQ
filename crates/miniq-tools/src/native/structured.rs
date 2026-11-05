@@ -149,7 +149,6 @@ pub(super) fn adapt_agent(call: &ToolCallRequest) -> Result<Value, NativeToolErr
         "model",
         "resume",
         "run_in_background",
-        "max_turns",
         "name",
         "mode",
         "cwd",
@@ -179,7 +178,6 @@ pub(super) fn adapt_agent(call: &ToolCallRequest) -> Result<Value, NativeToolErr
     copy_field(input, &mut output, "model", "model");
     copy_field(input, &mut output, "resume", "resume");
     copy_field(input, &mut output, "run_in_background", "runInBackground");
-    copy_field(input, &mut output, "max_turns", "maxTurns");
     copy_field(input, &mut output, "name", "name");
     copy_field(input, &mut output, "mode", "mode");
     copy_field(input, &mut output, "cwd", "cwd");
