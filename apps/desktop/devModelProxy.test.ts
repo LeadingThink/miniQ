@@ -11,7 +11,7 @@ it("forwards the configured service with exactly one version prefix", () => {
   const rule = mobileModelProxy({ VITE_MINIQ_API_BASE_URL: "https://staging.example/v1/" })["/__miniq_model_api"];
   expect(rule.target).toBe("https://staging.example/v1");
   expect(rule.rewrite?.("/__miniq_model_api/models?test=1")).toBe("/models?test=1");
-  expect(mobileModelProxy({})["/__miniq_model_api"].target).toBe("https://oneapi.zaiwenai.com/v1");
+  expect(mobileModelProxy({})["/__miniq_model_api"].target).toBe("https://miniqai.top/v1");
 });
 
 it.each([false, true])("preserves authorization and streaming without the WebView origin (network proxy: %s)", async (useNetworkProxy) => {

@@ -1,6 +1,7 @@
 import { Capacitor, CapacitorCookies, CapacitorHttp } from "@capacitor/core";
 import { invoke } from "@tauri-apps/api/core";
 import { MOBILE_API_BASE_URL } from "./mobileApiConfig";
+import { DESKTOP_API_BASE_URL } from "./mobileApiEndpoints";
 import { isTauriRuntime } from "./runtime";
 
 export type IapEnvironment = "Sandbox" | "Production";
@@ -35,7 +36,7 @@ export class IapApiError extends Error {
 export async function oneApiRequest(path: string, body?: unknown): Promise<unknown> {
   if (isTauriRuntime()) {
     const response = await invoke<{ status: number; data: unknown }>("desktop_account_request", {
-      request: { baseUrl: MOBILE_API_BASE_URL, path, method: body === undefined ? "GET" : "POST", body: body ?? null },
+      request: { baseUrl: DESKTOP_API_BASE_URL, path, method: body === undefined ? "GET" : "POST", body: body ?? null },
     }).catch(() => { throw new Error("无法连接账户服务，请检查网络后重试。"); });
     return handleAccountResponse(response.status, response.data);
   }

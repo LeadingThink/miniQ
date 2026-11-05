@@ -29,8 +29,8 @@ Product ID 逐字一致，服务端按白名单发放上述固定人民币额度
 
 ## 客户端与后端联调
 
-- 账户默认使用 `https://oneapi.zaiwenai.com/v1`，原生 HTTP 自动携带 Cookie，不需要 Bearer 登录改造。
-- `VITE_MINIQ_API_BASE_URL` 在构建时统一指定账户、内购、模型和语音 API。测试使用 `https://apidev.zaiask.com/v1`，正式使用 `https://oneapi.zaiwenai.com/v1`。域名切换不能替代后端账本隔离；具体见 [测试环境联调](ios-iap-staging-test.md)。
+- 移动端账户默认使用 `https://miniqai.top/v1`，原生 HTTP 自动携带 Cookie，不需要 Bearer 登录改造。
+- `VITE_MINIQ_API_BASE_URL` 在构建时统一指定账户、内购、模型和语音 API。测试使用 `https://apidev.zaiask.com/v1`，正式使用 `https://miniqai.top/v1`。域名切换不能替代后端账本隔离；具体见 [测试环境联调](ios-iap-staging-test.md)。
 - 模型、语音仍走已有 `/v1` 接口与用户填写的 Key。
 - 先部署交接文档中的 context、transactions、notifications 及账本处理，再测试付款。
 - 未完成购买启动/回到前台时自动尝试处理，账户页面也提供手动检查。已完成消耗型交易的余额由账户账本保存。

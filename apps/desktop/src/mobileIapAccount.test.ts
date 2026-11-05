@@ -36,9 +36,9 @@ it("uses native cookie requests and the real phone login schema, then validates 
   mocks.request.mockResolvedValueOnce(success({ token: "secret-jwt" })).mockResolvedValueOnce(success(account));
   expect(await loginIapAccount(" 13800000000 ", " 123456 ")).toEqual(account);
   expect(mocks.request.mock.calls[0][0]).toMatchObject({
-    url: "https://oneapi.zaiwenai.com/v1/user/login", method: "POST", data: { phone: "13800000000", sms_code: "123456" }, disableRedirects: true,
+    url: "https://miniqai.top/v1/user/login", method: "POST", data: { phone: "13800000000", sms_code: "123456" }, disableRedirects: true,
   });
-  expect(mocks.request.mock.calls[1][0]).toMatchObject({ url: "https://oneapi.zaiwenai.com/v1/user", method: "GET" });
+  expect(mocks.request.mock.calls[1][0]).toMatchObject({ url: "https://miniqai.top/v1/user", method: "GET" });
   for (const [options] of mocks.request.mock.calls) {
     expect(options.headers.Authorization).toBeUndefined();
     expect(JSON.stringify(options)).not.toContain("secret-jwt");
@@ -53,7 +53,7 @@ it("uses the channel's actual SMS endpoint and request field", async () => {
   mocks.request.mockResolvedValue(success());
   await requestIapLoginCode("13800000000");
   expect(mocks.request).toHaveBeenCalledWith(expect.objectContaining({
-    url: "https://oneapi.zaiwenai.com/v1/user/send_sms_code",
+    url: "https://miniqai.top/v1/user/send_sms_code",
     method: "POST",
     data: { phone: "13800000000" },
   }));
@@ -78,17 +78,23 @@ it("preserves a full page of keys and supports subsequent pages", async () => {
   const keys = Array.from({ length: 10 }, (_, index) => ({ ...key, key_id: `key-${index}` }));
   mocks.request.mockResolvedValue(success({ total: 31, keys }));
   expect(await loadOneApiKeys(3)).toEqual({ total: 31, keys });
-  expect(mocks.request.mock.calls[0][0].url).toBe("https://oneapi.zaiwenai.com/v1/keys?page=3&page_size=10");
+  expect(mocks.request.mock.calls[0][0].url).toBe("https://miniqai.top/v1/keys?page=3&page_size=10");
 });
 it("logs out server-side before clearing the native login cookie", async () => {
   mocks.request.mockResolvedValue(success());
   await logoutIapAccount();
-  expect(mocks.request.mock.calls[0][0].url).toBe("https://oneapi.zaiwenai.com/v1/user/logout");
-  expect(mocks.deleteCookie).toHaveBeenCalledWith({ url: "https://oneapi.zaiwenai.com/v1", key: "token" });
+  expect(mocks.request.mock.calls[0][0].url).toBe("https://miniqai.top/v1/user/logout");
+  expect(mocks.deleteCookie).toHaveBeenCalledWith({ url: "https://miniqai.top/v1", key: "token" });
 });
 it("rejects malformed account binding before any StoreKit purchase", async () => {
   mocks.request.mockResolvedValue(success({ accountId: "u1", appAccountToken: "invalid", environment: "Production" }));
   await expect(loadIapPurchaseContext()).rejects.toThrow("购买账户信息无效");
+});
+it("loads StoreKit account binding from the same production domain as mobile login", async () => {
+  const context = { accountId: "u1", appAccountToken: "12345678-1234-1234-1234-123456789abc", environment: "Production" };
+  mocks.request.mockResolvedValue(success(context));
+  expect(await loadIapPurchaseContext()).toEqual(context);
+  expect(mocks.request).toHaveBeenCalledWith(expect.objectContaining({ url: "https://miniqai.top/v1/iap/apple/context" }));
 });
 
 it("keeps desktop SMS and login requests identical to the working iOS contract", async () => {

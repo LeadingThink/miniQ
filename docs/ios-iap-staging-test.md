@@ -30,7 +30,7 @@ VITE_MINIQ_API_BASE_URL=https://apidev.zaiask.com/v1
 
 它是构建时变量，修改服务器或本地文件不会改变已经上传的 TestFlight 包。原来的 `VITE_MINIQ_IAP_API_BASE_URL` 已删除，避免只切账户而模型还在正式环境。
 
-正式构建不设置该变量时默认 `https://oneapi.zaiwenai.com/v1`。测试包有明显提示，保存的 API Key 与正式包分开，不会自动读取或覆盖正式 Key。Cookie 由域名隔离。当前没有测试 relay 的地址和认证配置，因此测试包暂不开放远程桌面；本次验证登录、充值、创建 Key 和移动问答。
+正式构建不设置该变量时默认 `https://miniqai.top/v1`。测试包有明显提示，保存的 API Key 与正式包分开，不会自动读取或覆盖正式 Key。Cookie 由域名隔离。当前没有测试 relay 的地址和认证配置，因此测试包暂不开放远程桌面；本次验证登录、充值、创建 Key 和移动问答。
 
 本地 Windows 构建（目录 `apps/desktop`）：
 

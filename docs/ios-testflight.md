@@ -2,6 +2,10 @@
 
 miniQ 的 iOS 包由 `.github/workflows/ios-testflight.yml` 在 GitHub 的 macOS Runner 上签名，并直接上传 App Store Connect。工作流只允许手动触发，不会创建 Git tag、GitHub Release 或桌面更新。
 
+生产构建使用 `https://miniqai.top/v1`，统一用于移动端账户、内购校验、模型列表、聊天和语音请求。地址由 `src/mobileApiEndpoints.ts` 定义，工作流的 production 环境直接使用该默认值；staging 环境通过 `VITE_MINIQ_API_BASE_URL` 切换到 `https://apidev.zaiask.com/v1`。生产域名迁移保留已有 API Key 的存储标识，测试环境仍使用独立存储。桌面账户和远程中继继续使用各自的既有服务地址。
+
+切换 API 域名前，验证模型和语音端点的预检与实际响应都允许 `capacitor://localhost`（iOS）和 `https://localhost`（Android），以及对应的 GET/POST、Authorization 和 Content-Type。账户 Cookie 必须使用 host-only 或与新域名匹配的 Domain；旧域名 Cookie 不会随 App 更新迁移，用户需要重新登录账户。
+
 ## 前置配置
 
 仓库 `Settings -> Secrets and variables -> Actions` 必须包含：

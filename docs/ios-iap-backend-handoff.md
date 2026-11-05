@@ -15,7 +15,7 @@
 
 ## 2. 客户端已按哪些接口编写
 
-默认 API 根地址：`https://oneapi.zaiwenai.com/v1`。当前联调地址：`https://apidev.zaiask.com/v1`，通过 `VITE_MINIQ_API_BASE_URL` 同时切换账户、内购、模型和语音请求。
+默认移动端 API 根地址：`https://miniqai.top/v1`。当前联调地址：`https://apidev.zaiask.com/v1`，通过 `VITE_MINIQ_API_BASE_URL` 同时切换账户、内购、模型和语音请求。
 
 miniQ 使用 `CapacitorHttp.request` 原生 HTTP 和系统 Cookie 存储。登录响应的 `Set-Cookie`、后续 `/user` 刷新 Cookie 均由原生层处理。客户端不把 JWT 存到 localStorage，也不改为 Bearer 登录。
 

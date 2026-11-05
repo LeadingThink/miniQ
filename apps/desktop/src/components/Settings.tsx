@@ -24,6 +24,7 @@ import { SkillsPanel } from "./Skills";
 import { McpPanel } from "./Mcp";
 import { PluginsPanel } from "./Plugins";
 import { isTauriRuntime } from "../runtime";
+import { DESKTOP_API_BASE_URL } from "../mobileApiEndpoints";
 import { TerminalSettings } from "./TerminalSettings";
 import { ProviderKeyField } from "./ProviderKeyField";
 import { DesktopAccountLogin } from "./DesktopAccountLogin";
@@ -31,7 +32,7 @@ import { DataDirectorySettings } from "./DataDirectorySettings";
 import { AdvancedSettings } from "./AdvancedSettings";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
-export const ZAIWEN_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
+export const ZAIWEN_API_BASE_URL = DESKTOP_API_BASE_URL;
 export const DEFAULT_PROVIDER_MODEL = "gpt-5.6-sol";
 
 interface ProviderView {

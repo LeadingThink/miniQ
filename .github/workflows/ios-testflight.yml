@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       api_environment:
-        description: Backend for this build (staging uses apidev.zaiask.com; never submit a staging build for release)
+        description: Backend for this build (production uses miniqai.top; never submit a staging build for release)
         type: choice
         options: [production, staging]
         default: production
@@ -82,10 +82,11 @@ jobs:
         run: node scripts/ios_testflight.mjs validate
       - name: Test and build mobile frontend
         env:
-          MINIQ_BUILD_API_BASE_URL: ${{ inputs.api_environment == 'staging' && 'https://apidev.zaiask.com/v1' || 'https://oneapi.zaiwenai.com/v1' }}
+          MINIQ_BUILD_API_BASE_URL: ${{ inputs.api_environment == 'staging' && 'https://apidev.zaiask.com/v1' || '' }}
         run: |
           node --test scripts/ios_testflight.node-test.mjs scripts/ios_testflight_status.node-test.mjs
           npm run test:mobile
+          npx vitest run --maxWorkers=4 devModelProxy.test.ts src/mobileVoice.test.ts
           VITE_MINIQ_API_BASE_URL="$MINIQ_BUILD_API_BASE_URL" npm run build
           npx cap sync ios
           xcodebuild -list -json -project ios/App/App.xcodeproj | tee "$IOS_CI_DIR-project.json"

@@ -11,16 +11,24 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 it("defaults to the production service and preserves production credential storage", async () => {
   const config = await import("./mobileApiConfig");
-  expect(config.MOBILE_API_BASE_URL).toBe("https://oneapi.zaiwenai.com/v1");
+  expect(config.MOBILE_API_BASE_URL).toBe("https://miniqai.top/v1");
   expect(config.MOBILE_MODEL_API_BASE_URL).toBe(config.MOBILE_API_BASE_URL);
   expect(config.IS_MOBILE_TEST_API).toBe(false);
   expect(config.mobileCredentialStorageKey("miniq.remote.credentials")).toBe("miniq.remote.credentials");
+});
+it("keeps existing production Keys available after the domain change", async () => {
+  const previous = { apiKey: "sk-production", deviceId: "prod-device", deviceName: "iPhone" };
+  native.keys.mockResolvedValue({ value: ["miniq.remote.credentials"] });
+  native.get.mockResolvedValue({ value: JSON.stringify(previous) });
+  const { loadRemoteCredentials } = await import("./remoteAccess");
+  expect(await loadRemoteCredentials()).toMatchObject(previous);
+  expect(native.get).toHaveBeenCalledExactlyOnceWith({ key: "miniq.remote.credentials" });
 });
 it("proxies model requests in development without treating production Keys as staging Keys", async () => {
   vi.stubEnv("DEV", true);
   const config = await import("./mobileApiConfig");
   expect(config.MOBILE_MODEL_API_BASE_URL).toBe("/__miniq_model_api");
-  expect(config.MOBILE_API_BASE_URL).toBe("https://oneapi.zaiwenai.com/v1");
+  expect(config.MOBILE_API_BASE_URL).toBe("https://miniqai.top/v1");
   expect(config.IS_MOBILE_TEST_API).toBe(false);
   expect(config.mobileCredentialStorageKey("miniq.remote.credentials")).toBe("miniq.remote.credentials");
 });
