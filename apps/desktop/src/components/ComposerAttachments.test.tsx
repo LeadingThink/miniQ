@@ -57,6 +57,21 @@ it("keeps image removal inside the thumbnail and clears the last attachment", as
   }
 });
 
+it("opens an attached image in a centered viewer without removing it", async () => {
+  fake.preview.mockResolvedValueOnce({ mimeType: "image/png", dataBase64: "aW1hZ2U=" });
+  localStorage.setItem("miniq.draft.preview-image.attachments", JSON.stringify(["/work/image.png"]));
+  render(<ComposerCard {...props} draftKey="preview-image" />);
+  const thumbnail = await screen.findByRole("button", { name: "放大查看 image.png" });
+  fireEvent.click(thumbnail);
+  const dialog = screen.getByRole("dialog", { name: "image.png" });
+  expect(dialog.querySelector<HTMLImageElement>(".image-lightbox-image")?.src).toContain("data:image/png;base64,aW1hZ2U=");
+  expect(screen.getByRole("button", { name: "关闭图片预览" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "移除图片 image.png" })).toBeTruthy();
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "image.png" })).toBeNull();
+  expect(screen.getByRole("button", { name: "放大查看 image.png" })).toBeTruthy();
+});
+
 it("removes a selected file from the preview, saved draft and outgoing message", async () => {
   fake.open.mockResolvedValueOnce(["/work/cancel.pdf", "/work/keep.pdf"]);
   const onSend = vi.fn().mockResolvedValue(true);

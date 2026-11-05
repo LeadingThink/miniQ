@@ -80,6 +80,17 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
   const webEntry = readFileSync(new URL("./main.tsx", import.meta.url), "utf8");
   expect(webEntry).toContain('import "./styles/base.css"');
 
+  const attachmentPreview = readFileSync(
+    new URL("./components/AttachmentPreview.tsx", import.meta.url),
+    "utf8",
+  );
+  const messageAttachmentPreview = readFileSync(
+    new URL("./components/MessageAttachmentPreview.tsx", import.meta.url),
+    "utf8",
+  );
+  expect(attachmentPreview).toContain("<ImageLightbox");
+  expect(messageAttachmentPreview).toContain("<ImageLightbox");
+
   const baseCss = readFileSync(new URL("./styles/base.css", import.meta.url), "utf8");
   expect(baseCss).toContain('@import "./conversation-v2.css"');
   const conversationCss = readFileSync(

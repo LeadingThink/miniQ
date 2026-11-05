@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Paperclip, X } from "lucide-react";
 import { readImagePreview } from "../localFiles";
+import { ImageLightbox } from "./ImageLightbox";
 
 function fileName(path: string): string {
   const normalized = path.replace(/\\/g, "/");
@@ -18,6 +19,7 @@ export function AttachmentPreview(props: {
   remote?: boolean;
 }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   useEffect(() => {
     if (props.remote || !isImageAttachment(props.path)) return;
@@ -36,18 +38,22 @@ export function AttachmentPreview(props: {
   }, [props.path, props.remote]);
 
   if (imageUrl) {
+    const name = fileName(props.path);
     return (
       <span className="attach-image-chip" title={props.path}>
-        <img
-          src={imageUrl}
-          alt={fileName(props.path)}
-          className="attach-image-preview"
-        />
+        <button
+          type="button"
+          className="attach-image-view"
+          aria-label={`放大查看 ${name}`}
+          onClick={() => setViewerOpen(true)}
+        >
+          <img src={imageUrl} alt={name} className="attach-image-preview" />
+        </button>
         <button
           type="button"
           className="attach-remove attach-image-remove"
-          title={`移除图片 ${fileName(props.path)}`}
-          aria-label={`移除图片 ${fileName(props.path)}`}
+          title={`移除图片 ${name}`}
+          aria-label={`移除图片 ${name}`}
           disabled={props.sending}
           onClick={(event) => {
             event.stopPropagation();
@@ -56,6 +62,12 @@ export function AttachmentPreview(props: {
         >
           <X size={12} />
         </button>
+        <ImageLightbox
+          open={viewerOpen}
+          src={imageUrl}
+          alt={name}
+          onClose={() => setViewerOpen(false)}
+        />
       </span>
     );
   }

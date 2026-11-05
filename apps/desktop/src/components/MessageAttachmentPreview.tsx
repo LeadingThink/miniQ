@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MessageAttachment } from "../types";
 import { readImagePreview } from "../localFiles";
 import { useSessionFileAccess } from "../sessionFileAccess";
+import { ImageLightbox } from "./ImageLightbox";
 
 function isImageAttachment(attachment: MessageAttachment): boolean {
   return Boolean(attachment.mimeType?.startsWith("image/"))
@@ -15,6 +16,7 @@ export function MessageAttachmentPreview({
   attachment: MessageAttachment;
 }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const source = useRef<RemotePreviewSource | null>(null);
   const generation = useRef(0);
   const access = useSessionFileAccess();
@@ -49,21 +51,36 @@ export function MessageAttachmentPreview({
 
   if (imageUrl) {
     return (
-      <img
-        className="message-attachment-image"
-        src={imageUrl}
-        alt={attachment.name}
-        referrerPolicy="no-referrer"
-        onError={() => {
-          const current = source.current;
-          const id = generation.current;
-          if (!current) { setImageUrl(null); return; }
-          source.current = null;
-          void current.refresh().then(next => {
-            if (generation.current === id) { source.current = next; setImageUrl(next.getUrl); }
-          }).catch(() => { if (generation.current === id) setImageUrl(null); });
-        }}
-      />
+      <>
+        <button
+          type="button"
+          className="message-attachment-view"
+          aria-label={`放大查看 ${attachment.name}`}
+          onClick={() => setViewerOpen(true)}
+        >
+          <img
+            className="message-attachment-image"
+            src={imageUrl}
+            alt={attachment.name}
+            referrerPolicy="no-referrer"
+            onError={() => {
+              const current = source.current;
+              const id = generation.current;
+              if (!current) { setImageUrl(null); return; }
+              source.current = null;
+              void current.refresh().then(next => {
+                if (generation.current === id) { source.current = next; setImageUrl(next.getUrl); }
+              }).catch(() => { if (generation.current === id) setImageUrl(null); });
+            }}
+          />
+        </button>
+        <ImageLightbox
+          open={viewerOpen}
+          src={imageUrl}
+          alt={attachment.name}
+          onClose={() => setViewerOpen(false)}
+        />
+      </>
     );
   }
   return <span className="message-attachment-file">{attachment.name}</span>;
