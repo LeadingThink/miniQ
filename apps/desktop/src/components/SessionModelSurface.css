@@ -28,6 +28,8 @@
 .session-model-dialog .session-model-popover :is(input, button) { min-height: 44px; }
 .session-model-dialog .session-model-popover input { font-size: var(--font-callout); }
 .session-model-dialog .session-model-popover .model-picker-list {
+  flex: none;
+  min-height: auto;
   max-height: none;
   overflow: visible;
 }

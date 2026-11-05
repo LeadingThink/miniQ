@@ -44,8 +44,11 @@ it("stacks inline effort below the full-width mobile model button", async () => 
   const surfaceCss = readFileSync("src/components/SessionModelSurface.css", "utf8");
   const desktopRule = experienceCss.match(/\.model-picker-row\s*\{[^}]+\}/)?.[0];
   const mobileRule = surfaceCss.match(/\.session-model-dialog \.session-model-popover \.model-picker-row\s*\{[^}]+\}/)?.[0];
+  const mobileListRule = surfaceCss.match(/\.session-model-dialog \.session-model-popover \.model-picker-list\s*\{[^}]+\}/)?.[0];
   expect(desktopRule).toBeTruthy();
   expect(mobileRule).toBeTruthy();
+  expect(mobileListRule).toContain("flex: none;");
+  expect(mobileListRule).toContain("min-height: auto;");
   styles.textContent = `${desktopRule}\n${mobileRule}`;
   document.head.append(styles);
   try {

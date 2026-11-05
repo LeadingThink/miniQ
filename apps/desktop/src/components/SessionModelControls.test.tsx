@@ -14,6 +14,8 @@ it("limits hover interaction to the content grid and highlights the selected row
   const experienceCss = readFileSync("src/styles/experience.css", "utf8");
   const modelPopoverRule = experienceCss.match(/\.session-model-popover\s*\{[^}]+\}/)?.[0];
   const modelBodyRule = experienceCss.match(/\.model-picker-body\s*\{[^}]+\}/)?.[0];
+  const modelResultsRule = experienceCss.match(/\.model-picker-results\s*\{[^}]+\}/)?.[0];
+  const modelListRule = experienceCss.match(/\.model-picker-list\s*\{[^}]+\}/)?.[0];
   const modelRowStateRule = experienceCss.match(/\.model-picker-row\.active,[\s\S]*?\.model-picker-row\.selected\s*\{[^}]+\}/)?.[0];
   const modelButtonRule = experienceCss.match(/\.model-picker-row > button\s*\{[^}]+\}/)?.[0];
   const hoverTargetRule = experienceCss.match(/\.model-picker-hover-target\s*\{[^}]+\}/)?.[0];
@@ -23,6 +25,13 @@ it("limits hover interaction to the content grid and highlights the selected row
   const performanceRule = experienceCss.match(/\.model-performance\s*\{[^}]+\}/)?.[0];
   expect(modelPopoverRule).toContain("width: min(540px, calc(100vw - 32px));");
   expect(modelBodyRule).toContain("grid-template-columns: 168px minmax(0, 1fr);");
+  expect(modelBodyRule).toContain("height: min(336px, 46vh);");
+  expect(modelBodyRule).not.toContain("min-height:");
+  expect(modelResultsRule).toContain("display: flex;");
+  expect(modelResultsRule).toContain("flex-direction: column;");
+  expect(modelListRule).toContain("flex: 1;");
+  expect(modelListRule).toContain("min-height: 0;");
+  expect(modelListRule).not.toContain("max-height:");
   expect(modelButtonRule).toContain("display: flex;");
   expect(hoverTargetRule).toContain("grid-template-columns: minmax(0, 1fr) 116px;");
   expect(hoverTargetRule).toContain("width: 100%;");

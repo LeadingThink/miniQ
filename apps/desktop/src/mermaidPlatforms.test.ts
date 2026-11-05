@@ -79,6 +79,18 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
 
   const webEntry = readFileSync(new URL("./main.tsx", import.meta.url), "utf8");
   expect(webEntry).toContain('import "./styles/base.css"');
+  expect(webEntry).toContain('import "./styles/experience.css"');
+
+  const experienceCss = readFileSync(
+    new URL("./styles/experience.css", import.meta.url),
+    "utf8",
+  );
+  expect(experienceCss).toMatch(
+    /\.model-picker-body\s*\{[^}]*height:\s*min\(336px, 46vh\);/,
+  );
+  expect(experienceCss).toMatch(
+    /\.model-picker-list\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0;/,
+  );
 
   const attachmentPreview = readFileSync(
     new URL("./components/AttachmentPreview.tsx", import.meta.url),
