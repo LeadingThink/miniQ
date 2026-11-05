@@ -30,7 +30,7 @@ API Key 至少需要能够上传构建；现有“App 管理”权限可以使�
 3. `build_number` 填正整数。同一版本每次上传都必须大于以前的构建号，第一次可填 `1`，之后填 `2`、`3`。
 4. 点击 `Run workflow`，等待工作流完成。成功表示 Apple 已接收 IPA，不代表 Apple 已处理完构建。
 
-工作流会校验证书、Team ID、Bundle ID、App Store 描述文件和版本号，然后构建、签名并上传。源码和归档成品的 `Info.plist` 都必须包含有效的相机、麦克风用途说明；缺失、空值或未展开的构建变量会在上传前阻止发布。IPA 和 dSYM 会保留为 GitHub Actions Artifact 14 天，日志保留 7 天。
+工作流会校验证书、Team ID、Bundle ID、App Store 描述文件和版本号，然后构建、签名并上传。源码和归档成品的 `Info.plist` 都必须包含有效的相机、相册读取、相册写入、麦克风和语音识别用途说明；缺失、空值或未展开的构建变量会在上传前阻止发布。IPA 和 dSYM 会保留为 GitHub Actions Artifact 14 天，日志保留 7 天。
 
 ## 在 TestFlight 中测试
 
@@ -54,7 +54,9 @@ API Key 至少需要能够上传构建；现有“App 管理”权限可以使�
 4. 选择“照片图库 / Photo Library”和“选取文件 / Choose File”，分别选择与取消，确认照片预览、草稿和发送正常；在 iPad 横竖屏下重复上述步骤。
 5. 在远程桌面会话启用语音输入，分别测试首次允许麦克风、拒绝、从系统设置恢复权限、录音取消及转写。取消后不得继续占用麦克风。
 
-附件输入使用 WKWebView 的系统文件选择器。“拍照”需要 `NSCameraUsageDescription`；照片图库使用系统的 PHPicker 选取用户指定的照片，应用没有读取整个相册或保存照片到相册的能力，因此不添加完整相册读取或写入的权限声明。
+相册附件通过系统 PHPicker 选取用户指定的照片，拍照使用 Capacitor Camera 插件。该插件包含相册 API 引用，且会在打开相机前检查 `NSCameraUsageDescription`、`NSPhotoLibraryUsageDescription` 和 `NSPhotoLibraryAddUsageDescription` 三项声明。因此即使当前拍照配置没有开启 `saveToGallery`，三项用途说明仍须完整保留；声明本身不会触发相册授权或保存照片。
+
+2026-11-05，`1.6 (3)` 上传成功后收到 Apple `ITMS-90683`，原因是缺少 `NSPhotoLibraryUsageDescription`。修复补齐插件要求的两项相册用途说明，并将它们加入源码和归档校验；后续上传必须使用新的构建号。
 
 2026-09-18 审核反馈指向 `1.0 (2)` 的“Take Photo”崩溃。该构建的 IPA 确认缺少相机用途说明（也没有麦克风用途说明），缺少声明的相机访问会触发 iOS 隐私保护终止；尚未取得本次审核的 `.ips` 日志核对具体终止栈。此项修复需要新的 iOS 二进制构建，网页更新不能补齐已安装 IPA 的用途声明。修复后须完成以上真机验收，不能把构建成功等同于拍照验收通过。
 

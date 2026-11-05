@@ -26,6 +26,10 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>当你在移动问答中选择“拍照”添加附件时，miniQ 使用相机拍摄你要提问的内容；确认拍摄后，照片会作为待发送附件加入输入框。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>当你在对话中从照片图库添加图片时，miniQ 访问你选择的照片，用于预览图片附件，并在你点击发送后用于对话。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>当你选择保存拍摄的照片时，miniQ 将该照片写入系统相册，方便你之后查看和使用。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>当你使用语音输入时，miniQ 会采集你主动录制的声音，优先通过本机系统语音识别转写为输入文字；本机识别不可用时交由已配置的语音识别服务转写。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

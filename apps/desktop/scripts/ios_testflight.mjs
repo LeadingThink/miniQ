@@ -10,6 +10,9 @@ export const BUNDLE_IDS = [APP_BUNDLE_ID, NSE_BUNDLE_ID];
 
 const REQUIRED_PRIVACY_DESCRIPTIONS = [
   "NSCameraUsageDescription",
+  // Capacitor Camera checks both photo-library declarations before opening the camera.
+  "NSPhotoLibraryUsageDescription",
+  "NSPhotoLibraryAddUsageDescription",
   "NSMicrophoneUsageDescription",
   "NSSpeechRecognitionUsageDescription",
 ];
@@ -270,7 +273,7 @@ function main() {
     if (!path) throw new Error("validate-app requires the archived App.app/Info.plist path");
     const info = JSON.parse(execFileSync("/usr/bin/plutil", ["-convert", "json", "-o", "-", path], { encoding: "utf8" }));
     validateBuiltApp(info, process.env.IOS_MARKETING_VERSION, process.env.IOS_BUILD_NUMBER);
-    console.log("Validated archived iOS app identity, version, camera, and microphone descriptions");
+    console.log("Validated archived iOS app identity, version, camera, photo library, microphone, and speech descriptions");
     return;
   }
   throw new Error("expected action: validate, prepare-profile, or validate-app");

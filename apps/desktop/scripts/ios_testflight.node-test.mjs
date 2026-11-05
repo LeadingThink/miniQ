@@ -117,6 +117,8 @@ test("export options use manual App Store Connect signing", () => {
 
 const privacyDescriptions = {
   NSCameraUsageDescription: "用于拍摄你主动添加到对话中的照片。",
+  NSPhotoLibraryUsageDescription: "用于读取你选择的照片并添加到对话。",
+  NSPhotoLibraryAddUsageDescription: "用于在你选择保存照片时写入系统相册。",
   NSMicrophoneUsageDescription: "用于将你主动录制的声音转成输入文字。",
   NSSpeechRecognitionUsageDescription: "用于在本机将你主动录制的语音转为输入文字。",
 };
@@ -148,7 +150,7 @@ test("the validator can be imported from a Node eval without invoking the releas
   }), "");
 });
 
-test("requires camera and microphone descriptions without requiring full photo library access", () => {
+test("requires camera, photo library, microphone, and speech purpose descriptions", () => {
   assert.doesNotThrow(() => validatePrivacyDescriptions(privacyDescriptions));
   assert.doesNotThrow(() => validatePrivacySource(privacySource()));
   for (const key of Object.keys(privacyDescriptions)) {
@@ -159,20 +161,19 @@ test("requires camera and microphone descriptions without requiring full photo l
 });
 
 test("source validation rejects missing, commented, non-string, and duplicate privacy declarations", () => {
-  const camera = "<key>NSCameraUsageDescription</key><string>允许添加照片。</string>";
-  const noCamera = privacySource({
-    NSMicrophoneUsageDescription: privacyDescriptions.NSMicrophoneUsageDescription,
-    NSSpeechRecognitionUsageDescription: privacyDescriptions.NSSpeechRecognitionUsageDescription,
-  });
-  for (const invalidSource of [
-    noCamera,
-    noCamera.replace("</dict>", `<!--${camera}--></dict>`),
-    privacySource().replace(/<string>[^<]+<\/string>/, "<true/>"),
-    privacySource().replace("</dict>", `${camera}</dict>`),
-    privacySource({ ...privacyDescriptions, NSCameraUsageDescription: "  " }),
-    privacySource({ ...privacyDescriptions, NSCameraUsageDescription: "$(CAMERA_REASON)" }),
-  ]) {
-    assert.throws(() => validatePrivacySource(invalidSource), /NSCameraUsageDescription/);
+  for (const [key, value] of Object.entries(privacyDescriptions)) {
+    const declaration = `<key>${key}</key><string>${value}</string>`;
+    const source = privacySource();
+    for (const invalidSource of [
+      source.replace(declaration, ""),
+      source.replace(declaration, `<!--${declaration}-->`),
+      source.replace(declaration, `<key>${key}</key><true/>`),
+      source.replace("</dict>", `${declaration}</dict>`),
+      privacySource({ ...privacyDescriptions, [key]: "  " }),
+      privacySource({ ...privacyDescriptions, [key]: "$(PRIVACY_REASON)" }),
+    ]) {
+      assert.throws(() => validatePrivacySource(invalidSource), new RegExp(key));
+    }
   }
 });
 
@@ -183,6 +184,8 @@ test("validates the archived app permissions and identity before upload", () => 
     CFBundleShortVersionString: "1.1",
     CFBundleVersion: "3",
     NSCameraUsageDescription: undefined,
+    NSPhotoLibraryUsageDescription: undefined,
+    NSPhotoLibraryAddUsageDescription: "",
     NSMicrophoneUsageDescription: "",
   })) {
     assert.throws(() => validateBuiltApp(appInfo({ [key]: value }), "1.0", "4"), new RegExp(key));
