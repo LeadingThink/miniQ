@@ -87,7 +87,7 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
     "utf8",
   );
   expect(conversationCss).toMatch(
-    /\.composer-field\.has-paste > textarea\.is-before-paste\s*\{[^}]*flex:\s*0 1 auto;/,
+    /\.composer-field\.has-paste > textarea\.is-before-paste\s*\{[^}]*flex:\s*0 0 auto;/,
   );
   const sideConversationCss = readFileSync(
     new URL("./components/SideConversationPanel.css", import.meta.url),

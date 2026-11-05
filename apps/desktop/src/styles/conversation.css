@@ -189,8 +189,20 @@
 }
 
 .composer-field.has-paste > textarea.is-before-paste {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  width: max-content;
   min-width: 0;
+  max-width: 100%;
+  height: 1.5em;
+  overflow: hidden;
+}
+
+.composer-field.has-paste {
+  align-items: flex-start;
+}
+
+.composer-field.starts-with-paste {
+  align-items: flex-start;
 }
 
 /* Plain drafts have one scrolling owner. Keeping the wrapper fixed prevents

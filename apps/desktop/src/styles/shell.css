@@ -20,7 +20,7 @@
 }
 .app-toolbar-title {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   flex: 1 1 auto;
   min-width: 0;

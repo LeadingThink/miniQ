@@ -92,7 +92,13 @@ function resizeComposer(field: HTMLElement | null) {
     textarea.scrollTop = pinnedToEnd ? textarea.scrollHeight : scrollTop;
     return;
   }
-  for (const textarea of areas) textarea.style.height = "auto";
+  for (const textarea of areas) {
+    if (textarea.classList.contains("is-before-paste")) {
+      textarea.style.height = "";
+      continue;
+    }
+    textarea.style.height = "auto";
+  }
 }
 
 /** Unique attachment paths in order, capped at the limit the daemon enforces. */

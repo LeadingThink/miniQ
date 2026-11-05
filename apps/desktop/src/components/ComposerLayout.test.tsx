@@ -90,7 +90,9 @@ it("keeps pasted text inline, compact, and vertically centered", () => {
   expect(conversationCss).toMatch(/\.composer-card\s*\{[^}]*padding: 6px 8px 10px;/s);
   expect(conversationCss).toMatch(/\.composer-card textarea,\s*\.composer-field\s*\{[^}]*padding: 4px 4px 6px;/s);
   expect(conversationCss).toMatch(/\.composer-field\s*\{[^}]*align-items: center;[^}]*align-content: flex-start;/s);
-  expect(conversationCss).toMatch(/\.composer-field\.has-paste > textarea\.is-before-paste\s*\{[^}]*flex: 0 1 auto;[^}]*min-width: 0;/s);
+  expect(conversationCss).toMatch(/\.composer-field\.has-paste > textarea\.is-before-paste\s*\{[^}]*flex: 0 0 auto;[^}]*width: max-content;[^}]*min-width: 0;[^}]*max-width: 100%;[^}]*height: 1.5em;[^}]*overflow: hidden;/s);
+  expect(conversationCss).toMatch(/\.composer-field\.has-paste\s*\{[^}]*align-items: flex-start;/s);
+  expect(conversationCss).toMatch(/\.composer-field\.starts-with-paste\s*\{[^}]*align-items: flex-start;/s);
   expect(conversationCss).toMatch(/\.composer-field:not\(\.has-paste\)\s*\{[^}]*overflow-y: hidden;/s);
   expect(conversationV2Css).toMatch(/\.main \.composer-card\s*\{[^}]*padding: 6px 8px 10px;/s);
   expect(conversationV2Css).toMatch(/\.main \.composer-card textarea,\s*\.main \.composer-field\s*\{[^}]*padding: 6px 8px;/s);

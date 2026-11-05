@@ -1,7 +1,5 @@
 import { Fragment, useCallback, useRef, useState, type KeyboardEvent } from "react";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
-import { dispatchCommand, shortcutLabel } from "../shortcuts";
 import { captureEditingTarget } from "../menuEditing";
 import { isMacDesktop, isWindowsDesktop } from "../windowChrome";
 import { Menu, MenuItem, MenuSeparator } from "./ui/Menu";
@@ -40,17 +38,12 @@ export function AppMenuBar({ app }: { app: MiniqAppController | null }) {
       event.preventDefault(); close();
     }
   };
-  const sidebarLabel = app?.navigation.sidebarCollapsed ? "显示侧栏" : "隐藏侧栏";
   return <>
     <header className="app-menubar" data-tauri-drag-region>
       <div className="app-menubar-brand" data-tauri-drag-region>
         <img src="./miniq-icon.png" alt="" draggable={false} data-tauri-drag-region />
         <span data-tauri-drag-region>miniQ</span>
       </div>
-      <button type="button" className="app-menubar-sidebar" aria-label={sidebarLabel} title={`${sidebarLabel}（${shortcutLabel("toggleSidebar")}）`}
-        disabled={!app} onClick={() => dispatchCommand("toggleSidebar")}>
-        {app?.navigation.sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-      </button>
       {!isMacDesktop() && <nav role="menubar" aria-label="应用菜单" className="app-menubar-nav"
         onMouseDownCapture={() => { if (open === null) restoreEditor.current = captureEditingTarget(); }}
         onFocusCapture={(event) => {

@@ -15,6 +15,12 @@ function controller() {
   } as unknown as MiniqAppController;
 }
 
+it("keeps the sidebar toggle out of the top menu bar", () => {
+  render(<AppMenuBar app={controller()} />);
+  expect(screen.queryByRole("button", { name: "隐藏侧栏" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "显示侧栏" })).toBeNull();
+});
+
 it("runs menu commands once through the shared bus and closes the dropdown", async () => {
   render(<AppMenuBar app={controller()} />);
   const commands = vi.fn();

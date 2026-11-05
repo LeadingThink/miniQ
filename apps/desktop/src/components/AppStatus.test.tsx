@@ -65,6 +65,18 @@ describe("AppErrorBanner", () => {
 });
 
 describe("AppStatusBar", () => {
+  it("places the sidebar toggle before the session title and keeps its behavior", () => {
+    const app = appFixture(false);
+    const { container } = render(<AppStatusBar app={app} onOpenBrowser={vi.fn()} onToggleReview={vi.fn()} onOpenFile={vi.fn()} />);
+    const toolbar = container.querySelector<HTMLElement>(".app-toolbar")!;
+    const toggle = within(toolbar).getByRole("button", { name: "隐藏侧栏" });
+    const title = toolbar.querySelector<HTMLElement>(".app-toolbar-title")!;
+    expect(toolbar.firstElementChild).toBe(toggle);
+    expect(toolbar.firstElementChild).not.toBe(title);
+    fireEvent.click(toggle);
+    expect(app.navigation.setSidebarCollapsed).toHaveBeenCalledWith(true);
+  });
+
   it("places the phone session menu before reminders and opens the current summary from it", () => {
     vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
     const app = appFixture(true, "remote");

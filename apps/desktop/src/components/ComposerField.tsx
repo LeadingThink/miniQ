@@ -24,11 +24,12 @@ export function ComposerField(props: {
 }) {
   const segments = draftSegments(props.draft, props.pastes);
   const chipped = segments.some((segment) => segment.kind === "paste");
+  const startsWithPaste = chipped && segments[0]?.kind === "paste";
   let textIndex = 0;
   return (
     <div
       ref={props.fieldRef}
-      className={`composer-field${chipped ? " has-paste" : ""}`}
+      className={`composer-field${chipped ? " has-paste" : ""}${startsWithPaste ? " starts-with-paste" : ""}`}
     >
       {segments.map((segment, segmentIndex) => {
         if (segment.kind === "paste") {
