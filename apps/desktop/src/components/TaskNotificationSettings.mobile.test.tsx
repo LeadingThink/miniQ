@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const push = vi.hoisted(() => {
@@ -136,22 +136,24 @@ it("turns quiet hours on with a default window and saves edits", () => {
   render(<TaskNotificationSettings />);
   const toggle = screen.getByRole("checkbox", { name: /免打扰时段/ }) as HTMLInputElement;
   expect(toggle.checked).toBe(false);
-  expect(screen.queryByLabelText("开始")).toBeNull();
+  expect(screen.queryByRole("group", { name: "开始" })).toBeNull();
 
   fireEvent.click(toggle);
   expect(getQuietHours()).toMatchObject({ start: "23:00", end: "08:00" });
   expect(screen.getByText("每天 23:00 至次日 08:00")).toBeTruthy();
 
-  fireEvent.change(screen.getByLabelText("开始"), { target: { value: "22:30" } });
+  const pick = (label: string, option: string) => {
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    fireEvent.click(within(screen.getByRole("listbox", { name: label })).getByRole("option", { name: option }));
+  };
+  pick("开始小时", "22"); pick("开始分钟", "30");
   expect(getQuietHours()).toMatchObject({ start: "22:30", end: "08:00" });
-  fireEvent.change(screen.getByLabelText("结束"), { target: { value: "" } });
-  expect(getQuietHours()).toMatchObject({ start: "22:30", end: "08:00" });
-  fireEvent.change(screen.getByLabelText("结束"), { target: { value: "22:30" } });
+  pick("结束小时", "22"); pick("结束分钟", "30");
   expect(screen.getByText(/全天免打扰/)).toBeTruthy();
 
   fireEvent.click(screen.getByRole("checkbox", { name: /免打扰时段/ }));
   expect(getQuietHours()).toBeNull();
-  expect(screen.queryByLabelText("开始")).toBeNull();
+  expect(screen.queryByRole("group", { name: "开始" })).toBeNull();
 });
 
 it("reports a quiet hours save failure", async () => {

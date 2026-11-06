@@ -2,8 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 import type { ScheduleSpec, ScheduledTask, ScheduledTaskMode, Session, Workspace } from "../types";
 import { errorMessage } from "../errorMessage";
+import { MenuSelect, type MenuOption } from "./MenuSelect";
+import { TimeField } from "./TimeField";
 
 const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const FREQUENCY_OPTIONS: MenuOption<ScheduleSpec["type"]>[] = [
+  { value: "daily", label: "每天" }, { value: "weekly", label: "每周" },
+  { value: "weekdays", label: "自选星期" }, { value: "interval", label: "按间隔" },
+];
+const WEEKDAY_OPTIONS: MenuOption<string>[] = DAYS.map((day, index) => ({ value: String(index + 1), label: day }));
 export interface ScheduleTemplate {
   name: string;
   prompt: string;
@@ -59,6 +66,7 @@ export function ScheduleForm({ client, workspaces, defaultWorkspaceId, task, tem
   }, [client, mode, workspaceId, sessionRevision]);
 
   const schedule: ScheduleSpec = type === "daily" ? { type, time } : type === "weekly" ? { type, weekday, time } : type === "weekdays" ? { type, weekdays: [...new Set(weekdays)].sort((a, b) => a - b), time } : { type, minutes };
+  const workspaceOptions: MenuOption<string>[] = [{ value: "", label: "选择项目..." }, ...workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name }))];
   const save = async () => {
     if (saveLock.current) return;
     if (!name.trim() || !prompt.trim() || !workspaceId) return setError("请填写名称、任务内容并选择项目");
@@ -79,7 +87,7 @@ export function ScheduleForm({ client, workspaces, defaultWorkspaceId, task, tem
     <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, display: "contents" }}>
     <label>名称<input value={name} onChange={(e) => setName(e.target.value)} placeholder="每日简报" /></label>
     <label>任务内容<textarea rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} /></label>
-    <label>项目<select value={workspaceId} onChange={(e) => { setWorkspaceId(e.target.value); setTargetSessionId(""); setMemory(""); }}><option value="">选择项目...</option>{workspaces.map((workspace) => <option value={workspace.id} key={workspace.id}>{workspace.name}</option>)}</select></label>
+    <label>项目<MenuSelect ariaLabel="项目" menuLabel="项目" menuClassName="schedule-field-menu" value={workspaceId} options={workspaceOptions} onChange={(value) => { setWorkspaceId(value); setTargetSessionId(""); setMemory(""); }} /></label>
     <label>执行方式<select value={mode} onChange={(e) => { setMode(e.target.value as ScheduledTaskMode); setTargetSessionId(""); }}><option value="newSession">每次新建会话（推荐）</option><option value="heartbeat">续接已有会话</option></select></label>
     {mode === "heartbeat" && <>
       <label>目标会话<select value={targetSessionId} onChange={(e) => setTargetSessionId(e.target.value)} disabled={loadingSessions}><option value="">{loadingSessions ? "正在加载会话…" : "选择同项目会话…"}</option>{sessions.map((session) => <option value={session.id} key={session.id}>{session.title || "未命名会话"}</option>)}</select></label>
@@ -88,10 +96,10 @@ export function ScheduleForm({ client, workspaces, defaultWorkspaceId, task, tem
       {!loadingSessions && !sessionError && targetSessionId && !sessions.some((session) => session.id === targetSessionId) && <p role="alert">原目标会话已不可续接，请重新选择。</p>}
     </>}
     <label>任务记忆<textarea rows={3} value={memory} onChange={(e) => setMemory(e.target.value)} placeholder="每次运行附带的长期上下文（可选）" /></label>
-    <div className="schedule-when"><select aria-label="运行频率" value={type} onChange={(e) => setType(e.target.value as ScheduleSpec["type"])}><option value="daily">每天</option><option value="weekly">每周</option><option value="weekdays">自选星期</option><option value="interval">按间隔</option></select>
-      {type === "weekly" && <select aria-label="星期几" value={weekday} onChange={(e) => setWeekday(Number(e.target.value))}>{DAYS.map((day, index) => <option value={index + 1} key={day}>{day}</option>)}</select>}
+    <div className="schedule-when"><MenuSelect ariaLabel="运行频率" menuLabel="运行频率" menuClassName="schedule-when-menu" value={type} options={FREQUENCY_OPTIONS} onChange={setType} />
+      {type === "weekly" && <MenuSelect ariaLabel="星期几" menuLabel="星期几" menuClassName="schedule-when-menu" value={String(weekday)} options={WEEKDAY_OPTIONS} onChange={(value) => setWeekday(Number(value))} />}
       {type === "weekdays" && <div className="schedule-weekdays">{DAYS.map((day, index) => <label key={day}><input type="checkbox" checked={weekdays.includes(index + 1)} onChange={() => setWeekdays((current) => current.includes(index + 1) ? current.filter((value) => value !== index + 1) : [...current, index + 1])} />{day}</label>)}</div>}
-      {(type === "daily" || type === "weekly" || type === "weekdays") && <input aria-label="执行时间" type="time" value={time} onChange={(e) => setTime(e.target.value)} />}
+      {(type === "daily" || type === "weekly" || type === "weekdays") && <TimeField label="执行时间" value={time} onChange={setTime} />}
       {type === "interval" && <input aria-label="间隔分钟" type="number" min={1} max={10080} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />}
     </div>
     {error && <div className="settings-status" role="alert">{error}</div>}

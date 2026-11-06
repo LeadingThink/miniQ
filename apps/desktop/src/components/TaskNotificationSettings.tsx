@@ -2,6 +2,7 @@ import { Bell } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Switch } from "./ui/Switch";
 import { TaskSoundSettings } from "./TaskSoundSettings";
+import { TimeField } from "./TimeField";
 import "./NotificationSettings.css";
 import {
   getTaskNotificationPermission,
@@ -31,7 +32,6 @@ import {
 } from "../backgroundConnection";
 
 const DEFAULT_QUIET = { start: "23:00", end: "08:00" };
-const TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 const PUSH_COPY: Record<Exclude<RemotePushStatus, "off">, string> = {
   active: "离线推送已开启：App 被关闭或被系统挂起后，也能收到任务完成和需要你操作的提醒。",
@@ -155,7 +155,7 @@ function QuietHoursSetting({ onStatus, mobile = true }: { onStatus: (text: strin
     }
   };
   const update = (field: "start" | "end", value: string) => {
-    if (!quiet || !TIME.test(value)) return;
+    if (!quiet) return;
     save({ start: quiet.start, end: quiet.end, [field]: value });
   };
   return (
@@ -173,14 +173,8 @@ function QuietHoursSetting({ onStatus, mobile = true }: { onStatus: (text: strin
         />
       </label>
       {quiet && <div className="task-quiet-hours">
-        <label htmlFor="task-notification-quiet-start">
-          开始
-          <input id="task-notification-quiet-start" type="time" value={quiet.start} onChange={(event) => update("start", event.target.value)} />
-        </label>
-        <label htmlFor="task-notification-quiet-end">
-          结束
-          <input id="task-notification-quiet-end" type="time" value={quiet.end} onChange={(event) => update("end", event.target.value)} />
-        </label>
+        <div>开始<TimeField label="开始" value={quiet.start} onChange={(value) => update("start", value)} /></div>
+        <div>结束<TimeField label="结束" value={quiet.end} onChange={(value) => update("end", value)} /></div>
         <small>{quiet.start === quiet.end
           ? "开始和结束相同，表示全天免打扰。"
           : quiet.start > quiet.end ? `每天 ${quiet.start} 至次日 ${quiet.end}` : `每天 ${quiet.start} 至 ${quiet.end}`}</small>

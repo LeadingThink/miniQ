@@ -31,6 +31,7 @@ export function MenuSelect<T extends string>(props: {
   options: MenuOption<T>[];
   onChange: (value: T) => void;
   menuLabel: string;
+  ariaLabel?: string;
   title?: string;
   menuClassName?: string;
   disabled?: boolean;
@@ -81,6 +82,7 @@ export function MenuSelect<T extends string>(props: {
     const place = () => {
       if (!triggerRef.current || !menuRef.current) return;
       const viewport = window.visualViewport;
+      const menuRect = menuRef.current.getBoundingClientRect();
       const offsetLeft = Math.max(0, viewport?.offsetLeft ?? 0);
       const offsetTop = Math.max(0, viewport?.offsetTop ?? 0);
       const viewportWidth = viewport?.width ?? window.innerWidth;
@@ -89,8 +91,8 @@ export function MenuSelect<T extends string>(props: {
         menuPosition(
           triggerRef.current.getBoundingClientRect(),
           {
-            width: menuRef.current.getBoundingClientRect().width,
-            height: menuRef.current.scrollHeight,
+            width: menuRect.width,
+            height: menuRect.height,
           },
           {
             width: viewportWidth,
@@ -129,6 +131,7 @@ export function MenuSelect<T extends string>(props: {
         disabled={props.disabled}
         className={`mode-trigger${props.tone ? ` ${props.tone}` : ""}`}
         title={props.title ?? current.desc}
+        aria-label={props.ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}

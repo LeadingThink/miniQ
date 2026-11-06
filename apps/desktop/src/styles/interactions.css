@@ -515,6 +515,12 @@
   gap: 8px 10px;
 }
 
+.task-quiet-hours > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .task-quiet-hours small {
   grid-column: 1 / -1;
   color: var(--text-dim);

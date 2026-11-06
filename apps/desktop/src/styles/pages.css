@@ -115,6 +115,32 @@
   white-space: nowrap;
 }
 
+/* ---- in-window time field (replaces the native time popup) ---- */
+.time-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.time-field .mode-trigger {
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  font-size: var(--font-body);
+  font-variant-numeric: tabular-nums;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.time-field-menu {
+  width: 96px;
+}
+
+.time-field-menu-hours,
+.time-field-menu-minutes {
+  max-height: 216px !important;
+  overflow-y: auto;
+}
+
 /* ---- sidebar v2 ---- */
 .sidebar-scroll {
   flex: 1;

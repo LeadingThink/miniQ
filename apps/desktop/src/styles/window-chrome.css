@@ -1,4 +1,6 @@
-/* Native macOS traffic lights share the app title row. */
+/* Native macOS traffic lights share the app title row. tauri.conf.json
+   centers them vertically in the 44px bar; this inset leaves a 16px gap
+   between the zoom button and the brand. */
 .platform-macos .app-menubar {
-  padding-left: 84px;
+  padding-left: 92px;
 }

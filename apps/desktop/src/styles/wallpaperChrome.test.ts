@@ -33,6 +33,6 @@ it.each(["windows", "macos", "linux"])("keeps the complete %s desktop shell abov
   }
   expect(getComputedStyle(wallpaper).pointerEvents).toBe("none");
   if (platform === "macos") {
-    expect(getComputedStyle(document.querySelector(".app-menubar")!).paddingLeft).toBe("84px");
+    expect(getComputedStyle(document.querySelector(".app-menubar")!).paddingLeft).toBe("92px");
   }
 });

@@ -30,6 +30,17 @@ it("supports a larger viewport gap for wide anchored panels", () => {
   expect(rect.left + 360).toBe(984);
 });
 
+it("flips a form picker near the window bottom upward so it stays inside the window", () => {
+  const rect = menuPosition(
+    { left: 380, top: 606, bottom: 640 },
+    { width: 160, height: 160 },
+    { width: 1077, height: 716 },
+  );
+  expect(rect.top).toBe(438);
+  expect(rect.top + 160).toBeLessThanOrEqual(716 - 8);
+  expect(rect.maxHeight).toBe(590);
+});
+
 it("keeps menus inside the visible viewport safe area", () => {
   const rect = menuPosition(
     { left: 40, top: 220, bottom: 252 },

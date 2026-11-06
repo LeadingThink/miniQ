@@ -222,7 +222,10 @@ export function SchedulePanel(props: SchedulePanelProps) {
     openResult(result.sessionId);
   });
   return <div className="page"><div className="page-inner">
-    <div className="page-header"><div className="page-title">已安排</div><div className="page-sub">定时生成新结果，或持续跟进同一会话。任务记忆会在每次运行时提供给 agent。</div></div>
+    <div className="schedule-page-header">
+      <div><div className="page-title">已安排</div><div className="page-sub">定时生成新结果，或持续跟进同一会话。任务记忆会在每次运行时提供给 agent。</div></div>
+      {editor && <button type="button" className="ghost" disabled={saving} onClick={() => setEditor(null)}>返回</button>}
+    </div>
     {tasks.loading && <LoadingState label="正在读取定时任务" />}
     {tasks.error && <div className="settings-status" role="alert">{tasks.error}<button type="button" className="ghost" disabled={tasks.loading} onClick={() => void tasks.refresh()}>重新加载</button></div>}
     <ScheduledTaskList client={props.client} tasks={visibleTasks} latestRuns={tasks.latestRuns} runErrors={tasks.runErrors} onRetryRuns={() => void tasks.refresh()} workspaces={props.workspaces} pending={saving || tasks.pending !== null}

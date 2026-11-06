@@ -55,7 +55,8 @@ describe("SchedulePanel", () => {
     expect(screen.queryByRole("option", { name: "会话 archived" })).toBeNull();
     expect(screen.queryByRole("option", { name: "会话 external" })).toBeNull();
     expect((screen.getByLabelText("目标会话") as HTMLSelectElement).value).toBe("target");
-    expect((screen.getByLabelText("执行时间") as HTMLInputElement).value).toBe("04:30");
+    expect(screen.getByRole("button", { name: "执行时间小时" }).textContent).toBe("04");
+    expect(screen.getByRole("button", { name: "执行时间分钟" }).textContent).toBe("30");
     fireEvent.change(screen.getByLabelText("任务记忆"), { target: { value: "更新记忆" } });
     fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
     await waitFor(() => expect(call).toHaveBeenCalledWith("schedule.update", expect.objectContaining({ id: "scheduled", targetSessionId: "target", memory: "更新记忆", schedule: task.schedule })));
@@ -76,16 +77,45 @@ describe("SchedulePanel", () => {
     expect((screen.getByLabelText("名称") as HTMLInputElement).value).toBe("");
   });
 
+  it("returns from a template form to the template list", async () => {
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: /每日简报/ }));
+    expect(screen.getByRole("heading", { name: "创建定时任务" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(screen.queryByRole("heading", { name: "创建定时任务" })).toBeNull();
+    expect(screen.getByRole("button", { name: /每日简报/ })).toBeTruthy();
+  });
+
   it("preserves new-session memory and supports custom weekdays with a time", async () => {
     const { call } = setup();
     await createForm(); fill();
     fireEvent.change(screen.getByLabelText("任务记忆"), { target: { value: "长期上下文\n保留换行" } });
-    fireEvent.change(screen.getByLabelText("运行频率"), { target: { value: "weekdays" } });
+    fireEvent.click(screen.getByRole("button", { name: "运行频率" }));
+    fireEvent.click(within(screen.getByRole("listbox", { name: "运行频率" })).getByRole("option", { name: "自选星期" }));
     fireEvent.click(screen.getByLabelText("周二")); fireEvent.click(screen.getByLabelText("周四")); fireEvent.click(screen.getByLabelText("周六"));
-    fireEvent.change(screen.getByLabelText("执行时间"), { target: { value: "04:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "执行时间小时" }));
+    fireEvent.click(within(screen.getByRole("listbox", { name: "执行时间小时" })).getByRole("option", { name: "04" }));
+    fireEvent.click(screen.getByRole("button", { name: "执行时间分钟" }));
+    fireEvent.click(within(screen.getByRole("listbox", { name: "执行时间分钟" })).getByRole("option", { name: "00" }));
     fireEvent.click(screen.getByRole("button", { name: "创建任务" }));
     await waitFor(() => expect(call).toHaveBeenCalledWith("schedule.create", expect.objectContaining({ memory: "长期上下文\n保留换行", schedule: { type: "weekdays", weekdays: [1, 3, 5, 6], time: "04:00" } })));
     expect(describeSchedule({ type: "weekdays", weekdays: [6, 1, 3], time: "04:00" })).toBe("周一、周三、周六 04:00");
+  });
+
+  it("picks frequency and weekday from in-window listboxes instead of native popups", async () => {
+    const { call } = setup();
+    await createForm(); fill();
+    expect(document.querySelector(".schedule-when select, .schedule-when input[type=time]")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "运行频率" }));
+    const frequency = screen.getByRole("listbox", { name: "运行频率" });
+    expect(frequency.style.maxHeight).not.toBe("");
+    expect(within(frequency).getAllByRole("option").map((option) => option.textContent)).toEqual(["每天", "每周", "自选星期", "按间隔"]);
+    fireEvent.click(within(frequency).getByRole("option", { name: "每周" }));
+    expect(screen.queryByRole("listbox", { name: "运行频率" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "星期几" }));
+    fireEvent.click(within(screen.getByRole("listbox", { name: "星期几" })).getByRole("option", { name: "周五" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("schedule.create", expect.objectContaining({ schedule: { type: "weekly", weekday: 5, time: "09:00" } })));
   });
 
   it("clears project-specific target and memory and ignores a late previous-project list", async () => {
@@ -95,7 +125,8 @@ describe("SchedulePanel", () => {
     await createForm();
     fireEvent.change(screen.getByLabelText("执行方式"), { target: { value: "heartbeat" } });
     fireEvent.change(screen.getByLabelText("任务记忆"), { target: { value: "项目 one 的秘密" } });
-    fireEvent.change(screen.getByLabelText("项目"), { target: { value: "two" } });
+    fireEvent.click(screen.getByRole("button", { name: "项目" }));
+    fireEvent.click(within(screen.getByRole("listbox", { name: "项目" })).getByRole("option", { name: "项目 two" }));
     await screen.findByRole("option", { name: "会话 two" });
     await act(async () => { resolveOld({ sessions: [session("old")] }); });
     expect(screen.queryByRole("option", { name: "会话 old" })).toBeNull();

@@ -227,6 +227,22 @@
   gap: 10px;
 }
 
+.schedule-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.schedule-page-header > div {
+  min-width: 0;
+}
+
+.schedule-page-header > .ghost {
+  flex: none;
+  margin-top: 1px;
+}
+
 .schedule-form label {
   display: flex;
   flex-direction: column;
@@ -251,6 +267,24 @@
 .schedule-when {
   display: flex;
   gap: 8px;
+}
+
+/* Frequency pickers render an in-window listbox; native <select> popups can escape the WebView. */
+.schedule-when .mode-trigger {
+  height: 100%;
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  font-size: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.schedule-when-menu {
+  width: 160px;
+}
+
+.schedule-field-menu {
+  width: min(360px, calc(100vw - 32px));
 }
 
 /* ---- project picker ---- */
