@@ -12,6 +12,7 @@ import { uploadRemoteFile } from "../remoteTransfer";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { MessageAttachmentPreview } from "./MessageAttachmentPreview";
 import { Md } from "./Md";
+import { DeepThinking } from "./DeepThinking";
 import { WorkbenchResizer } from "./WorkbenchResizer";
 import "./SideConversationPanel.css";
 
@@ -25,7 +26,7 @@ interface Props {
   idleMs?: number;
 }
 
-interface SessionSnapshot { messages: Message[]; streamingText?: string; fork?: SessionForkInfo }
+interface SessionSnapshot { messages: Message[]; streamingText?: string; streamingReasoning?: string; fork?: SessionForkInfo }
 
 const SIDE_WIDTH_KEY = "miniq.sideConversationWidth";
 const SIDE_WIDTH_DEFAULT = 380;
@@ -49,6 +50,7 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
   const [conversation, setConversation] = useState<SideConversationState>(EMPTY_SIDE_CONVERSATION);
   const [messages, setMessages] = useState<Message[]>([]);
   const [streamingText, setStreamingText] = useState("");
+  const [streamingReasoning, setStreamingReasoning] = useState("");
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -71,6 +73,7 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
     if (conversationRef.current.sessionId !== sessionId) return;
     setMessages(snapshot.messages ?? []);
     setStreamingText(snapshot.streamingText ?? "");
+    setStreamingReasoning(snapshot.streamingReasoning ?? "");
     if (snapshot.fork) setForkInfo(snapshot.fork);
   };
   const release = async () => {
@@ -80,7 +83,7 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
       const released = await releaseSideConversation(client, current, { cancel: busyRef.current });
       conversationRef.current = released;
       setConversation(released);
-      setMessages([]); setStreamingText(""); setBusy(false); setError(null); setForkInfo(null); setAttachments([]);
+      setMessages([]); setStreamingText(""); setStreamingReasoning(""); setBusy(false); setError(null); setForkInfo(null); setAttachments([]);
       await onSideSessionChange?.(null);
     } catch (cause) { setError(errorMessage(cause)); }
   };
@@ -90,6 +93,16 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
   useEffect(() => client.onEvent((event) => {
     const sessionId = conversationRef.current.sessionId;
     if (!sessionId) return;
+    if ("sessionId" in event && event.sessionId === sessionId) {
+      if (event.type === "assistant_delta") setStreamingText((text) => text + event.delta);
+      if (event.type === "assistant_replaced") setStreamingText(event.text);
+      if (event.type === "assistant_reasoning_delta") setStreamingReasoning((text) => text + event.delta);
+      if (event.type === "assistant_reasoning_replaced") setStreamingReasoning(event.text);
+      if (event.type === "message_created") {
+        setMessages((messages) => messages.some((message) => message.id === event.message.id) ? messages : [...messages, event.message]);
+        if (event.message.role === "assistant") { setStreamingText(""); setStreamingReasoning(""); }
+      }
+    }
     if (event.type === "session_status_changed") {
       if (event.sessionId !== sessionId) return;
       setBusy(event.status === "running" || event.status === "cancelling");
@@ -244,13 +257,14 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
         : "请先选择项目"}
     </p>
     <div className="side-conversation-messages" aria-live="polite">
-      {messages.length === 0 && !streamingText && <p className="side-conversation-empty">
+      {messages.length === 0 && !streamingText && !streamingReasoning && <p className="side-conversation-empty">
         {forkInfo
           ? `已继承 ${forkInfo.inheritedMessageCount} 条上下文，可以开始追问。`
           : sourceSessionId ? "可在这里快速追问，不打断主会话。" : "先在主对话里打开一个会话。"}
       </p>}
       {messages.filter((message) => message.role === "user" || message.role === "assistant").map((message) => <article key={message.id} data-role={message.role}>
-        <span>{message.role === "user" ? "你" : "miniQ"}</span><Md workspacePath={workspace?.path}>{message.content}</Md>
+        <span>{message.role === "user" ? "你" : "miniQ"}</span>
+        {message.role === "assistant" && <DeepThinking text={message.reasoning} />}<Md workspacePath={workspace?.path}>{message.content}</Md>
         {!!message.attachments?.length && (
           <div className="message-attachments">
             {message.attachments.map((attachment) => (
@@ -259,7 +273,8 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
           </div>
         )}
       </article>)}
-      {streamingText && <article data-role="assistant"><span>miniQ</span><Md workspacePath={workspace?.path} streaming>{streamingText}</Md></article>}
+      {(streamingText || streamingReasoning) && <article data-role="assistant"><span>miniQ</span>
+        <DeepThinking text={streamingReasoning} streaming={busy && !streamingText} /><Md workspacePath={workspace?.path} streaming>{streamingText}</Md></article>}
       {busy && <p className="side-conversation-running" role="status"><Loader2 size={14} /> 正在处理</p>}
     </div>
     {error && <p className="side-conversation-error" role="alert">{error}</p>}

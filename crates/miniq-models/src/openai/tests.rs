@@ -4,7 +4,8 @@ use crate::{ApiProtocol, ToolSpec};
 #[test]
 fn reasoning_and_tool_signatures_survive_streaming_and_replay() {
     let mut decoder = ChatCompletionsDecoder::default();
-    decoder.decode(r#"data: {"choices":[{"delta":{"reasoning_content":"first "}}]}"#);
+    let first = decoder.decode(r#"data: {"choices":[{"delta":{"reasoning_content":"first "}}]}"#);
+    assert!(matches!(&first.items[..], [Ok(ChatDelta::Reasoning(text))] if text == "first "));
     decoder.decode(r#"data: {"choices":[{"delta":{"reasoning_content":"second","tool_calls":[{"index":0,"id":"call-1","function":{"name":"file_read","arguments":"{}"},"extra_content":{"google":{"thought_signature":"opaque-signature"}}}]}}]}"#);
     let decoded =
         decoder.decode(r#"data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#);

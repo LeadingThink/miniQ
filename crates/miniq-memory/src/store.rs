@@ -184,6 +184,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0031_agent_step_limits",
         include_str!("../../../migrations/0031_agent_step_limits.sql"),
     ),
+    (
+        "0032_message_reasoning",
+        include_str!("../../../migrations/0032_message_reasoning.sql"),
+    ),
 ];
 
 #[cfg(test)]

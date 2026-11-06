@@ -18,6 +18,10 @@ mod admission_tests;
 #[path = "session/pause_tests.rs"]
 mod pause_tests;
 
+#[cfg(test)]
+#[path = "session/streaming_tests.rs"]
+mod streaming_tests;
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateParams {
@@ -148,6 +152,13 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         .collect::<Vec<_>>();
     let questions = state.pending_questions_for_session(&input.session_id);
     let streaming_text = state.streaming_text(&input.session_id);
+    let streaming_reasoning = state
+        .streaming_reasoning
+        .lock()
+        .unwrap()
+        .get(&input.session_id)
+        .cloned()
+        .unwrap_or_default();
     let turn_progress = state.turn_progress(&input.session_id);
     let goal = state
         .store
@@ -189,6 +200,7 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         "approvals": approvals,
         "questions": questions,
         "streamingText": streaming_text,
+        "streamingReasoning": streaming_reasoning,
         "turnProgress": turn_progress,
         "goal": goal,
         "fork": fork,

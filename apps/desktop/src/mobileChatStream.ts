@@ -1,5 +1,5 @@
 interface ChatStreamEvent {
-  choices?: Array<{ delta?: { content?: string }; finish_reason?: string | null }>;
+  choices?: Array<{ delta?: { content?: string; reasoning_content?: string }; finish_reason?: string | null }>;
   error?: { message?: string } | string;
   message?: string;
 }
@@ -9,6 +9,7 @@ export async function readSse(
   stream: ReadableStream<Uint8Array>,
   onDelta: (delta: string) => void,
   signal?: AbortSignal,
+  onReasoning?: (delta: string) => void,
 ): Promise<void> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -35,6 +36,7 @@ export async function readSse(
       throw new Error(typeof parsed.error === "string" ? parsed.error : parsed.error?.message ?? parsed.message ?? "模型流式响应失败");
     }
     const choice = parsed.choices?.[0];
+    if (typeof choice?.delta?.reasoning_content === "string") onReasoning?.(choice.delta.reasoning_content);
     if (typeof choice?.delta?.content === "string") onDelta(choice.delta.content);
     if (choice?.finish_reason === "length") throw new Error("模型输出达到上限，已保留收到的内容；可以发送消息要求继续");
     if (choice?.finish_reason === "content_filter") throw new Error("模型未能完成回答：内容被服务方过滤");

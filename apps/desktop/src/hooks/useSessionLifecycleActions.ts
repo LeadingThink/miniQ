@@ -21,6 +21,7 @@ interface OpenSessionResult {
   approvals: SessionFeed["approvals"];
   questions: SessionFeed["questions"];
   streamingText: string;
+  streamingReasoning?: string;
   turnProgress: TurnProgress | null;
   goal?: import("../types").SessionGoal | null;
 }
@@ -218,6 +219,7 @@ export function useSessionLifecycleActions(
         approvals: result.approvals ?? [],
         questions: result.questions ?? [],
         streamingText: result.streamingText ?? "",
+        streamingReasoning: result.streamingReasoning ?? "",
         turnProgress: result.turnProgress ?? null,
         goal: result.goal ?? null,
         latestTurnTiming: result.latestTurnTiming ?? null,

@@ -120,7 +120,10 @@ impl SkillInference for ProviderInference {
             match delta.map_err(|e| e.to_string())? {
                 ChatDelta::Text(t) => text.push_str(&t),
                 ChatDelta::ToolCall(_) => {}
-                ChatDelta::FirstEvent(_) | ChatDelta::Context(_) | ChatDelta::ResponseInfo(_) => {}
+                ChatDelta::Reasoning(_)
+                | ChatDelta::FirstEvent(_)
+                | ChatDelta::Context(_)
+                | ChatDelta::ResponseInfo(_) => {}
                 ChatDelta::Finished => break,
             }
         }

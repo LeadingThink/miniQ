@@ -119,13 +119,14 @@ impl Store {
             0
         };
         let mut message_ids = HashMap::with_capacity(source_messages.len());
-        for (id, role, content, attachments, created_at, steered, assistant_kind) in source_messages
+        for (id, role, content, attachments, created_at, steered, assistant_kind, reasoning) in
+            source_messages
         {
             let copied_id = new_id("msg");
             transaction.execute(
-                "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at, steered, assistant_kind, inherited)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                params![copied_id, target_id, role, content, attachments, created_at, steered, assistant_kind, if side { 1 } else { 0 }],
+                "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at, steered, assistant_kind, inherited, reasoning)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![copied_id, target_id, role, content, attachments, created_at, steered, assistant_kind, if side { 1 } else { 0 }, reasoning],
             )?;
             message_ids.insert(id, copied_id);
         }
@@ -351,9 +352,20 @@ fn load_messages(
     session_id: &str,
     anchor_at: &str,
     anchor_id: &str,
-) -> Result<Vec<(String, String, String, String, String, bool, Option<String>)>> {
+) -> Result<
+    Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        bool,
+        Option<String>,
+        String,
+    )>,
+> {
     let mut statement = transaction.prepare(
-        "SELECT id, role, content, attachments_json, created_at, steered, assistant_kind FROM messages
+        "SELECT id, role, content, attachments_json, created_at, steered, assistant_kind, reasoning FROM messages
          WHERE session_id = ?1 AND (created_at < ?2 OR (created_at = ?2 AND id <= ?3))
          ORDER BY created_at ASC, id ASC",
     )?;
@@ -366,6 +378,7 @@ fn load_messages(
             row.get(4)?,
             row.get(5)?,
             row.get(6)?,
+            row.get(7)?,
         ))
     })?;
     Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -817,6 +830,7 @@ mod tests {
             attachments: Vec::new(),
             turn_timing: None,
             steered: false,
+            reasoning: String::new(),
         };
         store
             .save_context_with_message(
@@ -837,6 +851,7 @@ mod tests {
             attachments: Vec::new(),
             turn_timing: None,
             steered: false,
+            reasoning: String::new(),
         };
         store
             .save_context_with_message(

@@ -202,8 +202,9 @@ impl AnthropicDecoder {
             .get("content_block")
             .cloned()
             .unwrap_or_else(|| json!({}));
+        let thinking = value.get("type").and_then(Value::as_str) == Some("thinking");
         let initial_text = value
-            .get("text")
+            .get(if thinking { "thinking" } else { "text" })
             .and_then(Value::as_str)
             .filter(|text| !text.is_empty())
             .map(str::to_string);
@@ -215,7 +216,13 @@ impl AnthropicDecoder {
             },
         );
         initial_text
-            .map(|text| Ok(ChatDelta::Text(text)))
+            .map(|text| {
+                Ok(if thinking {
+                    ChatDelta::Reasoning(text)
+                } else {
+                    ChatDelta::Text(text)
+                })
+            })
             .into_iter()
             .collect()
     }
@@ -242,12 +249,12 @@ impl AnthropicDecoder {
                 Vec::new()
             }
             "thinking_delta" => {
-                append_string(
-                    &mut block.value,
-                    "thinking",
-                    delta.get("thinking").and_then(Value::as_str).unwrap_or(""),
-                );
-                Vec::new()
+                let text = delta.get("thinking").and_then(Value::as_str).unwrap_or("");
+                append_string(&mut block.value, "thinking", text);
+                (!text.is_empty())
+                    .then(|| Ok(ChatDelta::Reasoning(text.to_string())))
+                    .into_iter()
+                    .collect()
             }
             "signature_delta" => {
                 append_string(

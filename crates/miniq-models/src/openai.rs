@@ -295,6 +295,13 @@ fn decode_choice(
     deltas: &mut Vec<Result<ChatDelta, ProviderError>>,
 ) -> bool {
     context.accumulate(&choice.delta);
+    if let Some(text) = choice
+        .delta
+        .reasoning_content
+        .filter(|text| !text.is_empty())
+    {
+        deltas.push(Ok(ChatDelta::Reasoning(text)));
+    }
     if let Some(text) = choice.delta.content {
         if !text.is_empty() {
             deltas.push(Ok(ChatDelta::Text(text)));

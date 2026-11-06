@@ -594,6 +594,10 @@
           "id": {
             "type": "string"
           },
+          "reasoning": {
+            "description": "Display-only provider thinking/summary; never appended to answer text.",
+            "type": "string"
+          },
           "role": {
             "$ref": "#/definitions/Role"
           },
@@ -1566,6 +1570,25 @@
         "type": "object"
       },
       {
+        "description": "Undo was redone; clients must reload the authoritative session snapshot.",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "session_restored"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
         "description": "A user message was edited in place and its old continuation removed.",
         "properties": {
           "message": {
@@ -1632,6 +1655,58 @@
           "delta",
           "messageId",
           "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "properties": {
+          "delta": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "assistant_reasoning_delta"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "delta",
+          "messageId",
+          "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "properties": {
+          "messageId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "assistant_reasoning_replaced"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "messageId",
+          "sessionId",
+          "text",
           "type"
         ],
         "type": "object"
@@ -3297,6 +3372,10 @@
           "id": {
             "type": "string"
           },
+          "reasoning": {
+            "description": "Display-only provider thinking/summary; never appended to answer text.",
+            "type": "string"
+          },
           "role": {
             "$ref": "#/definitions/Role"
           },
@@ -3669,6 +3748,7 @@
           "compaction",
           "planReview",
           "skillLearning",
+          "memoryExtraction",
           "sessionTitle",
           "shareModeration"
         ],

@@ -7,6 +7,7 @@ use crate::{AgentError, RunLimits};
 pub struct TurnCheckpoint {
     pub history: Vec<ChatMessage>,
     pub display_text: String,
+    pub reasoning: String,
     pub stopped: bool,
 }
 
@@ -27,6 +28,7 @@ pub(crate) struct RunState {
     pub appended: Vec<ChatMessage>,
     pub streamed_text: String,
     pub partial_text: String,
+    pub reasoning: String,
 }
 
 impl RunState {
@@ -36,6 +38,7 @@ impl RunState {
             appended: Vec::new(),
             streamed_text: String::new(),
             partial_text: String::new(),
+            reasoning: String::new(),
         }
     }
 
@@ -49,13 +52,15 @@ impl RunState {
                 .commit_interim(TurnCheckpoint {
                     history: self.history.clone(),
                     display_text: self.streamed_text.clone(),
+                    reasoning: self.reasoning.clone(),
                     stopped: false,
                 })
                 .await?;
         }
-        let has_text = !self.streamed_text.is_empty();
+        let has_text = !self.streamed_text.is_empty() || !self.reasoning.is_empty();
         self.partial_text.clear();
         self.streamed_text.clear();
+        self.reasoning.clear();
         if has_text {
             let _ = events.send(crate::AgentEvent::TextCommitted).await;
         }
@@ -76,6 +81,7 @@ impl RunState {
             .save(TurnCheckpoint {
                 history,
                 display_text: self.streamed_text.clone(),
+                reasoning: self.reasoning.clone(),
                 stopped,
             })
             .await;

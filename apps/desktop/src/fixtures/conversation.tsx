@@ -47,6 +47,7 @@ function Fixture() {
   const [narrow, setNarrow] = useState(false);
   const [notice, setNotice] = useState("");
   const [stream, setStream] = useState("");
+  const [reasoning, setReasoning] = useState("");
   const pending = useRef(false);
   const loadOlder = async () => {
     if (pending.current || start === 0) return;
@@ -72,6 +73,7 @@ function Fixture() {
         <output data-testid="page-status">已加载 {120 - start}/120 条 · 请求 {requests} 次</output>
         <button onClick={() => setFailNext(true)}>下一页模拟失败</button>
         <button onClick={() => setStream((value) => `${value}\n\n最新任务仍在输出，历史阅读位置应保持稳定。`)}>追加流式输出</button>
+        <button onClick={() => setReasoning((value) => `${value}先核对任务要求，再比较两个方案的实现成本和验证结果。\n\n`)}>追加思考内容</button>
         <button onClick={() => setNarrow((value) => !value)}>切换窄聊天区域</button>
       </header>
       {notice && <div role="status">{notice}</div>}
@@ -90,8 +92,9 @@ function Fixture() {
           artifacts={[]}
           queue={[]}
           streamingText={stream}
+          streamingReasoning={reasoning}
           turnProgress={null}
-          busy={Boolean(stream)}
+          busy={Boolean(stream || reasoning)}
           onResolveApproval={noop}
           onResolveQuestion={noop}
           onRollback={noop}

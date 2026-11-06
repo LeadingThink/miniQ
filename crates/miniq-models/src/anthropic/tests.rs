@@ -237,14 +237,16 @@ fn decodes_text_tool_json_and_signed_thinking() {
         &mut decoder,
         json!({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}),
     );
-    decode(
+    let thinking = decode(
         &mut decoder,
         json!({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"reason"}}),
     );
-    decode(
+    assert!(matches!(&thinking.items[..], [Ok(ChatDelta::Reasoning(text))] if text == "reason"));
+    let signature = decode(
         &mut decoder,
         json!({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"signed"}}),
     );
+    assert!(signature.items.is_empty());
     decode(
         &mut decoder,
         json!({"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call-1","name":"file_read","input":{}}}),

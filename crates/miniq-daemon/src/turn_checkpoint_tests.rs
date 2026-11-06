@@ -111,6 +111,7 @@ async fn image_archive_survives_session_checkpoint_and_next_turn_restore() {
                 ChatMessage::user("inspect image"),
             ],
             display_text: String::new(),
+            reasoning: String::new(),
             stopped: true,
         })
         .await
@@ -181,6 +182,7 @@ async fn cancelled_turn_keeps_tools_partial_output_plan_and_latest_request() {
         cancel: cancel.clone(),
         turns: Mutex::new(VecDeque::from([
             Ok(vec![
+                ChatDelta::Reasoning("Check the file first".into()),
                 ChatDelta::Text("I checked the file".into()),
                 ChatDelta::ToolCall(ToolCallRequest {
                     id: "read-1".into(),
@@ -232,6 +234,7 @@ async fn cancelled_turn_keeps_tools_partial_output_plan_and_latest_request() {
         commentary.assistant_kind,
         Some(miniq_protocol::AssistantMessageKind::Commentary)
     );
+    assert_eq!(commentary.reasoning, "Check the file first");
     let tool = state.store.list_tool_calls(&session.id).unwrap().remove(0);
     assert!(commentary.created_at <= tool.created_at);
     assert!(state.store.get_model_context(&other.id).unwrap().is_none());

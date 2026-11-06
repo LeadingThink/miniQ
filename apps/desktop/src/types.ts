@@ -216,6 +216,7 @@ export interface Message {
   turnTiming?: TurnTiming;
   /** Explicit lifecycle for assistant output; absent on legacy/imported messages. */
   assistantKind?: "commentary" | "final" | "interrupted";
+  reasoning?: string;
   /** A user message steered into a running turn; rendered inline in it. */
   steered?: boolean;
 }
@@ -517,7 +518,19 @@ export type DaemonEvent = {
       delta: string;
     }
   | {
+      type: "assistant_reasoning_delta";
+      sessionId: string;
+      messageId: string;
+      delta: string;
+    }
+  | {
       type: "assistant_replaced";
+      sessionId: string;
+      messageId: string;
+      text: string;
+    }
+  | {
+      type: "assistant_reasoning_replaced";
       sessionId: string;
       messageId: string;
       text: string;

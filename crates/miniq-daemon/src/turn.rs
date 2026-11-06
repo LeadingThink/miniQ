@@ -412,6 +412,10 @@ enum TurnError {
 #[path = "turn_checkpoint_tests.rs"]
 mod checkpoint_tests;
 
+#[cfg(test)]
+#[path = "turn_reasoning_tests.rs"]
+mod reasoning_tests;
+
 #[tracing::instrument(name = "turn", skip_all, fields(session_id))]
 async fn execute_turn(
     state: &AppState,
@@ -566,6 +570,20 @@ async fn execute_turn(
                         session_id: forward_session.clone(),
                         message_id: forward_checkpoint.message_id.lock().unwrap().clone(),
                         delta,
+                    });
+                }
+                AgentEvent::ReasoningDelta(delta) => {
+                    forward_state.emit(Event::AssistantReasoningDelta {
+                        session_id: forward_session.clone(),
+                        message_id: forward_checkpoint.message_id.lock().unwrap().clone(),
+                        delta,
+                    });
+                }
+                AgentEvent::ReasoningReplaced(text) => {
+                    forward_state.emit(Event::AssistantReasoningReplaced {
+                        session_id: forward_session.clone(),
+                        message_id: forward_checkpoint.message_id.lock().unwrap().clone(),
+                        text,
                     });
                 }
                 AgentEvent::TextReplaced(text) => {
@@ -762,6 +780,7 @@ async fn execute_turn(
         role: Role::Assistant,
         assistant_kind: Some(miniq_protocol::AssistantMessageKind::Final),
         content: outcome.final_text.clone(),
+        reasoning: outcome.reasoning.clone(),
         attachments: Vec::new(),
         created_at: miniq_memory::now_iso(),
         turn_timing: None,
@@ -817,6 +836,7 @@ mod tests {
             role,
             assistant_kind: None,
             content: content.to_string(),
+            reasoning: String::new(),
             attachments: Vec::new(),
             created_at: "2026-08-30T00:00:00Z".to_string(),
             turn_timing: None,

@@ -177,3 +177,38 @@ it("yields Ctrl+F to the Monaco editor inside the file preview", () => {
   expect(onSessionSearch).not.toHaveBeenCalled();
   expect(event.defaultPrevented).toBe(false);
 });
+
+it("leaves terminal editing keys and control input to xterm on macOS", () => {
+  mockPlatform("MacIntel");
+  const handlers = {
+    onPalette: vi.fn(), onNewChat: vi.fn(), onSettings: vi.fn(),
+    onSessionSearch: vi.fn(), onShortcut: vi.fn(),
+  };
+  const { getByLabelText } = render(<>
+    <Harness handlers={handlers} />
+    <div className="xterm"><textarea aria-label="terminal" defaultValue="abcd" /></div>
+    <textarea aria-label="message" />
+  </>);
+  const terminal = getByLabelText("terminal") as HTMLTextAreaElement;
+  terminal.setSelectionRange(2, 2);
+  for (const key of [
+    { key: "Backspace" }, { key: "Delete" }, { key: "Home" }, { key: "End" },
+    { key: "PageUp" }, { key: "PageDown" }, { key: "ArrowLeft" },
+    { key: "k", ctrlKey: true }, { key: "n", ctrlKey: true },
+    { key: "ƒ", code: "KeyF", altKey: true },
+  ]) {
+    const event = new KeyboardEvent("keydown", { ...key, bubbles: true, cancelable: true });
+    terminal.dispatchEvent(event);
+    expect(event.defaultPrevented, key.key).toBe(false);
+    expect(terminal.selectionStart, key.key).toBe(2);
+  }
+  for (const handler of Object.values(handlers)) expect(handler).not.toHaveBeenCalled();
+  for (const data of ["\x7f", "\x1b[D", "\uf728"]) {
+    const event = new InputEvent("beforeinput", { data, bubbles: true, cancelable: true });
+    terminal.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    const messageEvent = new InputEvent("beforeinput", { data, bubbles: true, cancelable: true });
+    getByLabelText("message").dispatchEvent(messageEvent);
+    expect(messageEvent.defaultPrevented).toBe(true);
+  }
+});

@@ -208,6 +208,7 @@ pub(super) fn row_to_message(row: &Row<'_>) -> rusqlite::Result<Message> {
         session_id: row.get(1)?,
         role: parse_role(&role)?,
         content: row.get(3)?,
+        reasoning: row.get(8)?,
         attachments: serde_json::from_str(&attachments_json).map_err(|error| {
             rusqlite::Error::FromSqlConversionFailure(
                 4,

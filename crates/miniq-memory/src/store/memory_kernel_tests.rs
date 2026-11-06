@@ -341,6 +341,7 @@ fn memory_forgetting_rejects_a_late_checkpoint_but_preserves_actual_reply() {
         created_at: now_iso(),
         turn_timing: None,
         steered: false,
+        reasoning: String::new(),
     };
     store
         .save_guarded_context_with_message(

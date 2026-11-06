@@ -49,7 +49,9 @@ impl CheckpointStore for SessionCheckpoint {
         miniq_models::strip_memory_payloads(&mut history);
         let history =
             serde_json::to_value(history).map_err(|e| AgentError::Checkpoint(e.to_string()))?;
-        let message = (!checkpoint.display_text.trim().is_empty()).then(|| Message {
+        let message = (!checkpoint.display_text.trim().is_empty()
+            || !checkpoint.reasoning.is_empty())
+        .then(|| Message {
             id: self.message_id.lock().unwrap().clone(),
             session_id: self.session_id.clone(),
             role: Role::Assistant,
@@ -59,6 +61,7 @@ impl CheckpointStore for SessionCheckpoint {
             created_at: miniq_memory::now_iso(),
             turn_timing: None,
             steered: false,
+            reasoning: checkpoint.reasoning,
         });
         let anchor = message
             .as_ref()
@@ -92,18 +95,20 @@ impl CheckpointStore for SessionCheckpoint {
         history.push(ChatMessage::system(UNFINISHED_TURN));
         crate::security::redact_provider_history(&mut history);
         miniq_models::strip_memory_payloads(&mut history);
-        let message =
-            (checkpoint.stopped && !checkpoint.display_text.trim().is_empty()).then(|| Message {
-                id: self.message_id.lock().unwrap().clone(),
-                session_id: self.session_id.clone(),
-                role: Role::Assistant,
-                assistant_kind: Some(miniq_protocol::AssistantMessageKind::Interrupted),
-                content: format!("{}\n\n[本轮未完成]", checkpoint.display_text),
-                attachments: Vec::new(),
-                created_at: miniq_memory::now_iso(),
-                turn_timing: None,
-                steered: false,
-            });
+        let message = (checkpoint.stopped
+            && (!checkpoint.display_text.trim().is_empty() || !checkpoint.reasoning.is_empty()))
+        .then(|| Message {
+            id: self.message_id.lock().unwrap().clone(),
+            session_id: self.session_id.clone(),
+            role: Role::Assistant,
+            assistant_kind: Some(miniq_protocol::AssistantMessageKind::Interrupted),
+            content: format!("{}\n\n[本轮未完成]", checkpoint.display_text),
+            attachments: Vec::new(),
+            created_at: miniq_memory::now_iso(),
+            turn_timing: None,
+            steered: false,
+            reasoning: checkpoint.reasoning,
+        });
         let anchor = message
             .as_ref()
             .map(|message| message.id.clone())

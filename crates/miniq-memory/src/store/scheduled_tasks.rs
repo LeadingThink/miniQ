@@ -143,6 +143,7 @@ impl Store {
             turn_timing: None,
             assistant_kind: None,
             steered: false,
+            reasoning: String::new(),
         };
         super::conversation::insert_message(&transaction, &message)?;
         transaction.execute(

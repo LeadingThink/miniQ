@@ -12,6 +12,7 @@ export interface MobileChatMessage {
   id: string;
   role: "user" | "assistant";
   content: ChatContent;
+  reasoning?: string;
   replyTo?: string;
   status?: "failed" | "interrupted";
   createdAt?: string;
@@ -47,6 +48,7 @@ export function readMobileChat(): MobileChatMessage[] {
         ? typeof item.replyTo === "string" ? item.replyTo : previous?.role === "user" ? previous.id : undefined
         : undefined;
       messages.push({ id, role: item.role, content: item.content,
+        ...(item.role === "assistant" && typeof item.reasoning === "string" ? { reasoning: item.reasoning } : {}),
         ...(item.status ? { status: item.status } : {}), ...(replyTo ? { replyTo } : {}),
         ...(validTimestamp(item.createdAt) ? { createdAt: item.createdAt } : {}),
         ...(validTimestamp(item.completedAt) ? { completedAt: item.completedAt } : {}),

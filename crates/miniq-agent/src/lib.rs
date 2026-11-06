@@ -71,6 +71,8 @@ pub struct RetryAttempt {
 pub enum AgentEvent {
     /// Incremental assistant text.
     TextDelta(String),
+    ReasoningDelta(String),
+    ReasoningReplaced(String),
     /// Replace uncommitted output when retrying an interrupted model response.
     TextReplaced(String),
     /// Drain preceding deltas before the host commits a visible segment.
@@ -218,6 +220,7 @@ impl ToolExecutor for NoTools {
 pub struct TurnOutcome {
     /// Final assistant text (last model message without tool calls).
     pub final_text: String,
+    pub reasoning: String,
     /// Full provider-facing transcript appended during this turn (assistant
     /// tool-call messages and tool results), excluding the incoming history.
     pub appended: Vec<ChatMessage>,
@@ -423,6 +426,12 @@ async fn run_turn_inner(
         let mut retries = retry::ModelRetries::new(limits.max_model_retries);
         let mut placeholder_recovery_used = false;
         let (text, tool_calls, provider_context) = loop {
+            if !state.reasoning.is_empty() {
+                state.reasoning.clear();
+                let _ = events
+                    .send(AgentEvent::ReasoningReplaced(String::new()))
+                    .await;
+            }
             state.partial_text.clear();
             let committed_text = state.streamed_text.clone();
             let mut request_messages = response_language::request_messages(
@@ -540,6 +549,12 @@ async fn run_turn_inner(
                     }
                 };
                 match delta {
+                    ChatDelta::Reasoning(delta) => {
+                        if !delta.is_empty() {
+                            state.reasoning.push_str(&delta);
+                            let _ = events.send(AgentEvent::ReasoningDelta(delta)).await;
+                        }
+                    }
                     ChatDelta::FirstEvent(observed) => {
                         tracing::info!(
                             step = steps,
@@ -645,6 +660,7 @@ async fn run_turn_inner(
             if text.is_empty()
                 && tool_calls.is_empty()
                 && provider_context.is_none()
+                && state.reasoning.is_empty()
                 && retries
                     .wait(&ProviderError::EmptyResponse, steps, &events, &cancel)
                     .await?
@@ -716,6 +732,7 @@ async fn run_turn_inner(
             context::native::compact_native_history(&mut provider_history, &tools, &events).await;
             return Ok(TurnOutcome {
                 final_text: text,
+                reasoning: state.reasoning.clone(),
                 appended: state.appended.clone(),
                 provider_history,
             });

@@ -47,6 +47,7 @@ fn task(content: &str, status: &str) -> Value {
 fn outcome() -> TurnOutcome {
     TurnOutcome {
         final_text: "The verified 60-second video is ready.".into(),
+        reasoning: String::new(),
         appended: vec![],
         provider_history: vec![
             ChatMessage::system("Complete the requested work."),

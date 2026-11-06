@@ -31,6 +31,10 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable;
 }
 
+function isTerminalTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(".xterm") !== null;
+}
+
 function textControl(
   target: EventTarget | null,
 ): HTMLInputElement | HTMLTextAreaElement | null {
@@ -88,6 +92,8 @@ export function useGlobalShortcuts(handlers: ShortcutHandlers, enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      // xterm owns shell editing and control keys, including its hidden textarea.
+      if (isTerminalTarget(e.target)) return;
       if (handleTextNavigation(e)) return;
 
       if (handlers.onShortcut && !e.defaultPrevented) {
@@ -156,6 +162,7 @@ export function useGlobalShortcuts(handlers: ShortcutHandlers, enabled = true) {
       }
     };
     const onBeforeInput = (event: InputEvent) => {
+      if (isTerminalTarget(event.target)) return;
       if (
         event.data &&
         isEditableTarget(event.target) &&

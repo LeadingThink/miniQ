@@ -50,6 +50,7 @@ interface SessionFeedState {
   artifacts: Artifact[];
   queue: QueuedMessage[];
   streamingText: string;
+  streamingReasoning: string;
   turnProgress: TurnProgress | null;
   goal: SessionGoal | null;
 }
@@ -69,6 +70,7 @@ export interface LoadedSessionFeed {
   approvals: PendingApproval[];
   questions: Question[];
   streamingText: string;
+  streamingReasoning?: string;
   turnProgress: TurnProgress | null;
   goal?: SessionGoal | null;
 }
@@ -112,6 +114,7 @@ const EMPTY_FEED: SessionFeedState = {
   artifacts: [],
   queue: [],
   streamingText: "",
+  streamingReasoning: "",
   turnProgress: null,
   goal: null,
 };
@@ -159,6 +162,7 @@ function reduceDaemonEvent(
           : [...state.messages, event.message],
         streamingText:
           event.message.role === "assistant" ? "" : state.streamingText,
+        streamingReasoning: event.message.role === "assistant" ? "" : state.streamingReasoning,
         plan: event.message.role === "user" ? [] : state.plan,
         turnProgress: event.message.role === "user" ? null : state.turnProgress,
         latestTurnTiming: event.message.role === "user" ? null : state.latestTurnTiming,
@@ -191,6 +195,7 @@ function reduceDaemonEvent(
         processSummaries: withoutKeys(state.processSummaries, [...removedMessages, event.message.id]),
         processLoads: withoutKeys(state.processLoads, [...removedMessages, event.message.id]),
         streamingText: "",
+        streamingReasoning: "",
         turnProgress: null,
         latestTurnTiming: null,
         lastTurn: null,
@@ -206,6 +211,10 @@ function reduceDaemonEvent(
         messages: state.messages.map((message) => message.id === event.messageId
           ? { ...message, turnTiming: event.timing } : message),
       };
+    case "assistant_reasoning_delta":
+      return { ...state, streamingReasoning: state.streamingReasoning + event.delta };
+    case "assistant_reasoning_replaced":
+      return { ...state, streamingReasoning: event.text };
     case "assistant_delta":
       return { ...state, streamingText: state.streamingText + event.delta };
     case "assistant_replaced":
@@ -300,12 +309,13 @@ function reduceDaemonEvent(
         status: event.type === "turn_completed" ? "completed" : cancelled ? "cancelled" : "failed",
         ...(event.type === "turn_failed" ? { error: event.error } : {}),
       } : null;
-      if (!event.summary || !latest) return { ...state, lastTurn, streamingText: "", turnProgress: null };
+      if (!event.summary || !latest) return { ...state, lastTurn, streamingText: "", streamingReasoning: "", turnProgress: null };
       const timing = { ...latest.timing, summary: event.summary };
       return {
         ...state,
         lastTurn,
         streamingText: "",
+        streamingReasoning: "",
         turnProgress: null,
         latestTurnTiming: { messageId: latest.messageId, timing },
         messages: state.messages.map((message) => message.id === latest.messageId
@@ -378,6 +388,7 @@ function sessionFeedReducer(
       approvals: action.feed.approvals,
       questions: action.feed.questions,
       streamingText: action.feed.streamingText,
+      streamingReasoning: action.feed.streamingReasoning ?? "",
       turnProgress: action.feed.turnProgress,
       goal: action.feed.goal ?? null,
       latestTurnTiming: action.feed.latestTurnTiming ?? null,
@@ -570,7 +581,7 @@ export function useSessionFeed(options: SessionFeedOptions) {
         onSessionStatusChanged(event.sessionId, event.status);
       }
       const received = { event, receivedAt: new Date().toISOString() };
-      if (event.type === "assistant_delta") {
+      if (event.type === "assistant_delta" || event.type === "assistant_reasoning_delta") {
         pendingDeltas.current ??= { sessionId: currentSessionId, events: [] };
         pendingDeltas.current.events.push(received);
         deltaFrame.current ??= requestAnimationFrame(flushDeltas);

@@ -14,6 +14,8 @@ function streamResponse() {
     push: (content: string, done = false) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({
       choices: [{ delta: { content }, ...(done ? { finish_reason: "stop" } : {}) }],
     })}\n\n`)),
+    reason: (reasoning_content: string) => controller.enqueue(new TextEncoder().encode(
+      'data: ' + JSON.stringify({ choices: [{ delta: { reasoning_content } }] }) + '\n\n')),
     close: () => controller.close(),
   };
 }
@@ -115,4 +117,31 @@ it("saves timing when leaving and never invents dates for older stored history",
   unmount();
   expect(readMobileChat()[0]).not.toHaveProperty("createdAt");
   expect(readMobileChat()[2]).toMatchObject({ content: "新答案", elapsedMs: 8000, status: "interrupted" });
+});
+
+
+it("streams and checkpoints thinking without mixing it into the answer", async () => {
+  const stream = streamResponse();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(stream.response));
+  const { result } = renderHook(() => useMobileChat("test-key", "test-model"));
+  act(() => { result.current.send("问题"); });
+  await act(async () => { stream.reason("第一段思考"); });
+  await waitFor(() => expect(result.current.messages[1].reasoning).toBe("第一段思考"));
+  expect(result.current.messages[1].content).toBe("");
+  act(() => window.dispatchEvent(new Event("pagehide")));
+  expect(readMobileChat()[1].reasoning).toBe("第一段思考");
+  await act(async () => { stream.reason("第二段"); stream.push("答案", true); });
+  await waitFor(() => expect(result.current.busy).toBe(false));
+  expect(readMobileChat()[1]).toMatchObject({ content: "答案", reasoning: "第一段思考第二段" });
+});
+
+it("preserves thinking on stop before any answer arrives", async () => {
+  const stream = streamResponse();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(stream.response));
+  const { result } = renderHook(() => useMobileChat("test-key", "test-model"));
+  act(() => { result.current.send("问题"); });
+  await act(async () => { stream.reason("尚未完成的思考"); });
+  act(() => result.current.stop());
+  await waitFor(() => expect(result.current.busy).toBe(false));
+  expect(readMobileChat()[1]).toMatchObject({ content: "", reasoning: "尚未完成的思考", status: "interrupted" });
 });

@@ -136,7 +136,13 @@ impl ProcessManager {
             Launch {
                 command: launch.command,
                 cwd: launch.cwd,
-                env: BTreeMap::new(),
+                // This PTY is rendered by xterm.js. A GUI-launched daemon may
+                // have no TERM, or inherit TERM=dumb from an agent command.
+                // zsh needs real terminal capabilities for line editing/redraw.
+                env: BTreeMap::from([
+                    ("TERM".into(), "xterm-256color".into()),
+                    ("COLORTERM".into(), "truecolor".into()),
+                ]),
                 interactive: true,
                 tty: true,
                 rows: launch.rows,

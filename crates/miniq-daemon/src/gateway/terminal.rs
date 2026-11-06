@@ -166,7 +166,7 @@ pub(super) async fn close(state: &AppState, raw: Option<Value>) -> Result<Value,
 
 #[cfg(unix)]
 fn default_shell_command() -> String {
-    "exec \"${SHELL:-/bin/sh}\" -l".into()
+    "exec \"${SHELL:-/bin/sh}\" -il".into()
 }
 
 #[cfg(windows)]

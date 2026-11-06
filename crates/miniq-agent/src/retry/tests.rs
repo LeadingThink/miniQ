@@ -143,6 +143,7 @@ async fn interrupted_responses_retry_without_executing_uncommitted_tools_or_cont
     for output in [
         ChatDelta::FirstEvent(std::time::Instant::now()),
         ChatDelta::Text("partial text".into()),
+        ChatDelta::Reasoning("partial reasoning".into()),
         ChatDelta::ToolCall(ToolCallRequest {
             id: "w".into(),
             name: "file_write".into(),
@@ -163,14 +164,19 @@ async fn interrupted_responses_retry_without_executing_uncommitted_tools_or_cont
         assert_eq!(provider.requests.lock().unwrap().len(), 2);
         assert_eq!(writes.0.load(Ordering::SeqCst), 0);
         let mut displayed = String::new();
+        let mut reasoning = String::new();
         while let Ok(event) = rx.try_recv() {
             match event {
+                AgentEvent::ReasoningDelta(text) => reasoning.push_str(&text),
+                AgentEvent::ReasoningReplaced(text) => reasoning = text,
                 AgentEvent::TextDelta(text) => displayed.push_str(&text),
                 AgentEvent::TextReplaced(text) => displayed = text,
                 _ => {}
             }
         }
         assert_eq!(displayed, "done");
+        assert!(reasoning.is_empty());
+        assert!(outcome.reasoning.is_empty());
         assert!(outcome
             .provider_history
             .last()

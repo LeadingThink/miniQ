@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PendingApproval } from "../hooks/useSessionFeed";
 import type { Message } from "../types";
@@ -39,7 +39,7 @@ const approval: PendingApproval = {
   input: { command: "ls" },
 };
 
-function view(streamingText: string, options: { onOpenFile?: () => void; history?: Message[]; approvals?: PendingApproval[] } = {}) {
+function view(streamingText: string, options: { onOpenFile?: () => void; history?: Message[]; approvals?: PendingApproval[]; reasoning?: string } = {}) {
   return (
     <Timeline
       messages={options.history ?? messages}
@@ -50,6 +50,7 @@ function view(streamingText: string, options: { onOpenFile?: () => void; history
       artifacts={none}
       queue={none}
       streamingText={streamingText}
+      streamingReasoning={options.reasoning}
       turnProgress={null}
       busy
       onResolveApproval={noop}
@@ -103,4 +104,20 @@ it("shows a stream before the first recorded turn", () => {
   const { container } = render(view("第一句", { history: [] }));
   expect(container.querySelector(".timeline-turn")).toBeNull();
   expect(screen.getByText("第一句").closest(".timeline-inner")).toBeTruthy();
+});
+
+
+it("shows thinking before answer tokens and keeps it in completed history", () => {
+  const history = [message("question", "user", "比较方案")];
+  const { rerender } = render(view("", { history, reasoning: "正在比较" }));
+  expect(screen.getByRole("region", { name: "思考内容" }).textContent).toBe("正在比较");
+  rerender(view("结论", { history, reasoning: "比较两个方案" }));
+  expect(screen.getByText("结论")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "思考内容" }).textContent).toBe("比较两个方案");
+  const answer = { ...message("answer", "assistant", "结论"), reasoning: "比较两个方案" };
+  rerender(view("", { history: [...history, answer] }));
+  const toggle = screen.getByRole("button", { name: "深度思考" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(screen.getByRole("region", { name: "思考内容" }).textContent).toBe("比较两个方案");
 });

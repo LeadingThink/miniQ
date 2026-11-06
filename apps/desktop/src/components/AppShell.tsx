@@ -228,6 +228,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
             workspacePath={app.catalog.currentSession?.workingDirectory}
             workspacePaths={app.catalog.currentWorkspacePaths}
             streamingText={app.feed.streamingText}
+            streamingReasoning={app.feed.streamingReasoning}
             turnProgress={app.feed.turnProgress}
             agents={agentSummary.agents}
             onOpenAgentPanel={openAgentPanel}

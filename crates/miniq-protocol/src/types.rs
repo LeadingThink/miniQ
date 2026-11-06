@@ -341,6 +341,9 @@ pub struct Message {
     pub session_id: String,
     pub role: Role,
     pub content: String,
+    /// Display-only provider thinking/summary; never appended to answer text.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reasoning: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<MessageAttachment>,
     pub created_at: String,

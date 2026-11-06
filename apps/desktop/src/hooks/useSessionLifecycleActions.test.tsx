@@ -88,7 +88,7 @@ function setup(mode: "local" | "remote" = "local", initialActive = true, statefu
     turnPlans: [],
     artifacts: [],
     queue: [],
-    streamingText: "",
+    streamingText: "", streamingReasoning: "",
     turnProgress: null,
     goal: null,
     reset: vi.fn(),

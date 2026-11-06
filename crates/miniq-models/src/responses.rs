@@ -46,6 +46,9 @@ impl ResponsesProvider {
             }]);
         }
         crate::reasoning::apply_reasoning(&mut body, &self.config, ApiProtocol::Responses);
+        if crate::reasoning::supports_summary(&self.config.model) {
+            body["reasoning"]["summary"] = json!("auto");
+        }
         if let Some(temperature) = request.temperature {
             body["temperature"] = json!(temperature);
         }
@@ -89,6 +92,7 @@ struct ResponsesDecoder {
     output_items: BTreeMap<usize, Value>,
     emitted_calls: HashSet<String>,
     computer_observation: Option<String>,
+    reasoning_part: Option<(usize, usize)>,
 }
 
 impl ResponsesDecoder {
@@ -304,6 +308,28 @@ impl EventDecoder for ResponsesDecoder {
             }
         };
         match event.get("type").and_then(Value::as_str).unwrap_or("") {
+            "response.reasoning_summary_text.delta" => {
+                let text = event.get("delta").and_then(Value::as_str).unwrap_or("");
+                let part = (
+                    event
+                        .get("output_index")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0) as usize,
+                    event
+                        .get("summary_index")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0) as usize,
+                );
+                let mut items = Vec::new();
+                if !text.is_empty() {
+                    if self.reasoning_part.is_some_and(|previous| previous != part) {
+                        items.push(Ok(ChatDelta::Reasoning("\n\n".into())));
+                    }
+                    self.reasoning_part = Some(part);
+                    items.push(Ok(ChatDelta::Reasoning(text.to_string())));
+                }
+                DecodedEvent::continue_with(items)
+            }
             "response.created" | "response.in_progress" => DecodedEvent::continue_with(
                 crate::response_info::response_info(event.get("response").unwrap_or(&event), None)
                     .map(Ok)

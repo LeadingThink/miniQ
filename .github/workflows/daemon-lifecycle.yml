@@ -5,6 +5,9 @@ on:
     paths:
       - 'crates/miniq-local/**'
       - 'crates/miniq-cli/**'
+      - 'crates/miniq-tools/src/process.rs'
+      - 'crates/miniq-tools/src/process/**'
+      - 'crates/miniq-daemon/src/gateway/terminal.rs'
       - 'crates/miniq-daemon/src/main.rs'
       - 'apps/desktop/src-tauri/src/daemon/**'
       - 'apps/desktop/src-tauri/src/daemon.rs'
@@ -29,3 +32,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Test native process identities, startup, shutdown and CLI integration
         run: cargo test --locked -p miniq-local -p miniq-cli
+      - name: Test embedded terminal capabilities and native line editing
+        run: cargo test --locked --no-default-features -p miniq-tools --lib process::tests::terminal_tests

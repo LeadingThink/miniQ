@@ -128,7 +128,7 @@ pub(super) fn load_messages(
         return Ok(HashMap::new());
     }
     let query = format!(
-        "SELECT id, session_id, role, content, attachments_json, created_at, steered, assistant_kind FROM messages WHERE session_id = ? AND id IN ({})",
+        "SELECT id, session_id, role, content, attachments_json, created_at, steered, assistant_kind, reasoning FROM messages WHERE session_id = ? AND id IN ({})",
         placeholders(ids.len())
     );
     let mut values = Vec::<&dyn rusqlite::ToSql>::with_capacity(ids.len() + 1);

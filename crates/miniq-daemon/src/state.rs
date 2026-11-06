@@ -252,6 +252,7 @@ pub struct AppState {
     pub pending_question_details: Arc<Mutex<HashMap<String, miniq_protocol::Question>>>,
     /// In-progress assistant text retained across UI reconnects.
     pub streaming_texts: Arc<Mutex<HashMap<String, String>>>,
+    pub streaming_reasoning: Arc<Mutex<HashMap<String, String>>>,
     /// Latest observable turn phase retained across UI reconnects.
     pub turn_progresses: Arc<Mutex<HashMap<String, TurnProgress>>>,
     /// Directory holding checkpoint file backups.
@@ -363,6 +364,7 @@ impl AppState {
             pending_browser_requests: Arc::new(Mutex::new(HashMap::new())),
             pending_question_details: Arc::new(Mutex::new(HashMap::new())),
             streaming_texts: Arc::new(Mutex::new(HashMap::new())),
+            streaming_reasoning: Arc::new(Mutex::new(HashMap::new())),
             turn_progresses: Arc::new(Mutex::new(HashMap::new())),
             checkpoints_dir: data_dir.join("checkpoints"),
             observations_dir: data_dir.join("observations"),
@@ -494,6 +496,7 @@ impl AppState {
 
     pub fn clear_streaming_text(&self, session_id: &str) {
         self.streaming_texts.lock().unwrap().remove(session_id);
+        self.streaming_reasoning.lock().unwrap().remove(session_id);
     }
 
     pub fn replace_streaming_text(&self, session_id: &str, text: &str) {
@@ -750,6 +753,24 @@ impl AppState {
     pub fn emit(&self, event: Event) {
         let mut journal = self.event_journal.lock().unwrap();
         match &event {
+            Event::AssistantReasoningDelta {
+                session_id, delta, ..
+            } => {
+                self.streaming_reasoning
+                    .lock()
+                    .unwrap()
+                    .entry(session_id.clone())
+                    .or_default()
+                    .push_str(delta);
+            }
+            Event::AssistantReasoningReplaced {
+                session_id, text, ..
+            } => {
+                self.streaming_reasoning
+                    .lock()
+                    .unwrap()
+                    .insert(session_id.clone(), text.clone());
+            }
             Event::AssistantDelta {
                 session_id, delta, ..
             } => self.append_streaming_text(session_id, delta),

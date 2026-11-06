@@ -318,6 +318,8 @@ pub enum ChatDelta {
     FirstEvent(std::time::Instant),
     /// Incremental assistant text.
     Text(String),
+    /// Provider-exposed thinking text or reasoning summary, separate from the answer.
+    Reasoning(String),
     /// A complete tool call request (providers accumulate fragments before
     /// emitting this).
     ToolCall(ToolCallRequest),

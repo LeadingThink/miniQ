@@ -7,6 +7,7 @@ import type { TimelineProps } from "./Timeline";
 import { ArtifactCard } from "./TimelineInteractions";
 import { QuestionCard } from "./QuestionCard";
 import { Md } from "./Md";
+import { DeepThinking } from "./DeepThinking";
 import { TurnPlanSummary } from "./ExecutionActivity";
 import { TurnActivityTail } from "./TurnActivityTail";
 import { CompletedProcess } from "./CompletedProcess";
@@ -78,6 +79,7 @@ export function TimelineEntries(props: {
   questions: Question[];
   turnPlans?: TurnPlan[];
   streamingText: string;
+  streamingReasoning?: string;
   latestTurnTiming?: AnchoredTurnTiming | null;
   status?: ReactNode;
   showActivity?: boolean;
@@ -426,6 +428,7 @@ export function TimelineEntries(props: {
               data-history-anchor={`message:${item.message.id}`}
             >
               <div className="bubble assistant">
+                <DeepThinking text={item.message.reasoning} />
                 <Md
                   workspacePath={props.workspacePath}
                   onOpenFile={bridge.openFile}
@@ -590,9 +593,10 @@ export function TimelineEntries(props: {
 
   // The live reply streams at the end of the current turn, where its message
   // lands when it is created, rather than below approval and question cards.
-  const streaming = props.streamingText ? (
+  const streaming = props.streamingText || props.streamingReasoning ? (
     <div className="message-entry assistant is-streaming">
       <div className="bubble assistant">
+        <DeepThinking text={props.streamingReasoning} streaming={props.busy && !props.streamingText} />
         <Md
           streaming
           workspacePath={props.workspacePath}

@@ -1,0 +1,39 @@
+.deep-thinking {
+  min-width: 0;
+  margin: 0 0 14px;
+  color: var(--text-mid);
+  font-size: 13px;
+}
+
+.deep-thinking-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.deep-thinking-toggle:hover { color: var(--text); }
+.deep-thinking-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.deep-thinking-toggle .is-expanded { transform: rotate(180deg); }
+.deep-thinking-status { font-size: 12px; }
+.deep-thinking.is-thinking .deep-thinking-toggle > svg:first-child { color: var(--accent); }
+
+.deep-thinking-content {
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  margin-top: 5px;
+  padding: 2px 12px;
+  border-left: 2px solid var(--border);
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

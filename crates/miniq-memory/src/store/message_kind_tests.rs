@@ -3,7 +3,7 @@ use miniq_protocol::{AssistantMessageKind, HistoryParams, Message, Role};
 use serde_json::json;
 
 #[test]
-fn phases_survive_reopen_pagination_search_and_fork() {
+fn phases_and_reasoning_survive_reopen_pagination_search_and_fork() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("history.db");
     let store = Store::open(&path).unwrap();
@@ -27,6 +27,7 @@ fn phases_survive_reopen_pagination_search_and_fork() {
             attachments: vec![],
             turn_timing: None,
             steered: false,
+            reasoning: format!("thinking-{id}"),
         };
         store
             .save_context_with_message(&session.id, id, &json!([]), None, Some(&message))
@@ -50,6 +51,7 @@ fn phases_survive_reopen_pagination_search_and_fork() {
     let input: HistoryParams =
         serde_json::from_value(json!({"sessionId":session.id,"limit":2})).unwrap();
     let page = store.history_page(&input).unwrap();
+    assert_eq!(page.messages[1].reasoning, "thinking-final");
     assert_eq!(
         page.messages[1].assistant_kind,
         Some(AssistantMessageKind::Final)
@@ -60,6 +62,7 @@ fn phases_survive_reopen_pagination_search_and_fork() {
             ..input
         })
         .unwrap();
+    assert_eq!(older.messages[1].reasoning, "thinking-note");
     assert_eq!(
         older.messages[1].assistant_kind,
         Some(AssistantMessageKind::Commentary)
@@ -77,6 +80,19 @@ fn phases_survive_reopen_pagination_search_and_fork() {
             None,
         )
         .unwrap();
+    assert_eq!(
+        store.search_messages("phase-note", 10).unwrap()[0].reasoning,
+        "thinking-note"
+    );
+    assert_eq!(
+        store
+            .list_messages(&fork.id)
+            .unwrap()
+            .iter()
+            .map(|m| &m.reasoning)
+            .collect::<Vec<_>>(),
+        messages.iter().map(|m| &m.reasoning).collect::<Vec<_>>()
+    );
     assert_eq!(
         store
             .list_messages(&fork.id)

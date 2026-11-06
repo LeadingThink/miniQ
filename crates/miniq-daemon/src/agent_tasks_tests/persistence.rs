@@ -40,6 +40,7 @@ async fn image_archive_survives_child_checkpoint_restart_and_session_scoped_resu
             ChatMessage::assistant("already inspected"),
         ],
         display_text: String::new(),
+        reasoning: String::new(),
         stopped: true,
     })
     .await
@@ -320,6 +321,7 @@ async fn checkpoint_failure_is_reported_and_failed_enqueue_does_not_change_live_
         .save(TurnCheckpoint {
             history: vec![ChatMessage::user("next")],
             display_text: String::new(),
+            reasoning: String::new(),
             stopped: false,
         })
         .await

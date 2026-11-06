@@ -51,6 +51,7 @@ export function useMobileChat(apiKey: string, model: string) {
     let completed: ReturnType<typeof elapsed> | undefined;
     controller.signal.addEventListener("abort", () => { completed ??= elapsed(); }, { once: true });
     let output = "";
+    let reasoning = "";
     let timer: ReturnType<typeof setTimeout> | null = null;
     const update = (status?: MobileChatMessage["status"], persist = false) => {
       if (timer) clearTimeout(timer);
@@ -62,7 +63,7 @@ export function useMobileChat(apiKey: string, model: string) {
       // delete messages while this response is streaming.
       if (persist) completed ??= elapsed();
       publish(messagesRef.current.map((message) => message.id === messageId
-        ? { id: messageId, role: "assistant", content: output, replyTo, createdAt,
+        ? { id: messageId, role: "assistant", content: output, reasoning, replyTo, createdAt,
           ...(completed ?? {}), ...(status ? { status } : {}) }
         : message), persist);
     };
@@ -70,7 +71,7 @@ export function useMobileChat(apiKey: string, model: string) {
       // A backgrounded page can resume streaming. Save a recoverable checkpoint
       // without presenting the live request as already stopped.
       persistMobileChat(messagesRef.current.map((message) => message.id === messageId
-        ? { ...message, content: output, status: "interrupted", ...(completed ?? elapsed()) } : message));
+        ? { ...message, content: output, reasoning, status: "interrupted", ...(completed ?? elapsed()) } : message));
     } };
     publish([...history, { id: messageId, role: "assistant", content: "", replyTo, createdAt }], false);
     setBusy(true);
@@ -85,13 +86,17 @@ export function useMobileChat(apiKey: string, model: string) {
           // can resume them. Only empty assistant placeholders are omitted.
           body: JSON.stringify({ model, messages: history.filter((message) => message.role === "user"
             || (typeof message.content === "string" ? Boolean(message.content.trim()) : message.content.length > 0))
-            .map(({ role, content }) => ({ role, content })), stream: true }),
+            .map(({ role, content, reasoning }) => ({ role, content,
+              ...(role === "assistant" && reasoning ? { reasoning_content: reasoning } : {}) })), stream: true }),
         });
         if (!response.ok || !response.body) throw new Error(await mobileResponseError(response));
         await readSse(response.body, (delta) => {
           output += delta;
           if (!timer) timer = setTimeout(() => update(), 60);
-        }, controller.signal);
+        }, controller.signal, (delta) => {
+          reasoning += delta;
+          if (!timer) timer = setTimeout(() => update(), 60);
+        });
         if (!output.trim()) throw new Error("模型返回了空内容，请重试或切换模型");
         update(undefined, true);
       } catch (cause) {

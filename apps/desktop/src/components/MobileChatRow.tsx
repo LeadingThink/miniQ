@@ -4,6 +4,7 @@ import { mobileMessageText, type MobileChatMessage } from "../mobileChatData";
 import { formatDuration } from "../time";
 import { CopyButton } from "./CopyButton";
 import { Md } from "./Md";
+import { DeepThinking } from "./DeepThinking";
 import { MessageTime } from "./MessageTime";
 
 export const MobileChatRow = memo(function MobileChatRow(props: {
@@ -19,7 +20,10 @@ export const MobileChatRow = memo(function MobileChatRow(props: {
 
   return <article data-history-anchor={message.id} className={`mobile-chat-message ${message.role}`}>
     <div className="mobile-chat-message-content">
-      {message.role === "assistant" ? <Md>{text || (active ? "正在思考…" : "")}</Md>
+      {message.role === "assistant" ? <>
+        <DeepThinking text={message.reasoning} streaming={active && !text} />
+        <Md streaming={active}>{text || (active && !message.reasoning ? "正在思考…" : "")}</Md>
+      </>
         : typeof message.content === "string" ? message.content
           : message.content.map((part, index) => part.type === "text" ? <span key={index}>{part.text}</span>
             : <img key={index} src={part.image_url.url} alt="已附加图片" loading="lazy" />)}

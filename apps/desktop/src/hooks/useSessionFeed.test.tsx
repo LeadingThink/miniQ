@@ -318,3 +318,26 @@ it("drops deltas still pending for a session the view has left", () => {
   hook.rerender({ id: "a" });
   expect(hook.result.current.streamingText).toBe("");
 });
+
+
+it("restores, batches and replaces thinking separately from answer text", () => {
+  const hook = setup();
+  act(() => hook.result.current.load("a", { ...snapshot, streamingText: "", streamingReasoning: "已收到" }));
+  hook.emit({ type: "assistant_reasoning_delta", sessionId: "a", messageId: "m", delta: "的思考" });
+  flushFrames();
+  expect(hook.result.current.streamingReasoning).toBe("已收到的思考");
+  expect(hook.result.current.streamingText).toBe("");
+  hook.emit({ type: "assistant_reasoning_replaced", sessionId: "a", messageId: "m", text: "" });
+  hook.emit({ type: "assistant_reasoning_delta", sessionId: "a", messageId: "m", delta: "新思考" });
+  hook.emit({ type: "assistant_delta", sessionId: "a", messageId: "m", delta: "答案" });
+  flushFrames();
+  expect(hook.result.current.streamingReasoning).toBe("新思考");
+  expect(hook.result.current.streamingText).toBe("答案");
+  hook.emit({ type: "message_created", sessionId: "a", message: {
+    id: "m", sessionId: "a", role: "assistant", content: "答案", reasoning: "新思考", createdAt: "2026-11-06",
+  } });
+  expect(hook.result.current.streamingReasoning).toBe("");
+  expect(hook.result.current.messages.at(-1)?.reasoning).toBe("新思考");
+  hook.rerender({ id: "b" });
+  expect(hook.result.current.streamingReasoning).toBe("");
+});

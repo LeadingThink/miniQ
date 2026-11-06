@@ -8,6 +8,9 @@ mod lifecycle_tests;
 #[path = "regression_tests.rs"]
 mod regression_tests;
 
+#[path = "terminal_tests.rs"]
+mod terminal_tests;
+
 async fn launch(ctx: &ToolContext, command: &str) -> Value {
     ShellRunTool
         .execute(

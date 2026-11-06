@@ -171,6 +171,7 @@ mod tests {
             created_at: now_iso(),
             turn_timing: None,
             steered: false,
+            reasoning: String::new(),
         };
         assert!(store
             .save_context_with_message(

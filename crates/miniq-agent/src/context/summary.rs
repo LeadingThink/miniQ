@@ -142,7 +142,10 @@ async fn summarize_transcript(
             match delta {
                 Some(Ok(ChatDelta::Text(text))) => summary.push_str(&text),
                 Some(Ok(
-                    ChatDelta::FirstEvent(_) | ChatDelta::Context(_) | ChatDelta::ResponseInfo(_),
+                    ChatDelta::Reasoning(_)
+                    | ChatDelta::FirstEvent(_)
+                    | ChatDelta::Context(_)
+                    | ChatDelta::ResponseInfo(_),
                 )) => {}
                 Some(Ok(ChatDelta::ToolCall(_))) => {
                     // Never execute or replay a tool requested by a summarizer.

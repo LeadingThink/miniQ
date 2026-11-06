@@ -171,7 +171,9 @@ jobs:
           cargo test --release --locked -p miniq-memory --lib store:: --target ${{ matrix.target }}
           cargo test --release --locked -p miniq-memory --test store_test --target ${{ matrix.target }}
           cargo test --release --locked -p miniq-models --lib --target ${{ matrix.target }}
+          cargo test --release --locked -p miniq-agent --lib --target ${{ matrix.target }}
           cargo test --release --locked -p miniq-protocol --lib memory_write:: --target ${{ matrix.target }}
+          cargo test --release --locked -p miniq-protocol --test serde_roundtrip --target ${{ matrix.target }}
           cargo test --release --locked -p miniq-tools --lib native::tests --target ${{ matrix.target }}
           cargo test --release --locked -p miniq-tools --lib shell::tests::pipe_shells_have_no_console_window_and_preserve_output --target ${{ matrix.target }}
           cargo check --release --locked --workspace --target ${{ matrix.target }}

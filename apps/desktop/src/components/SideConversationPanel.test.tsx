@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DaemonEvent, Message, Session, SessionForkInfo, Workspace } from "../types";
 import { SideConversationPanel } from "./SideConversationPanel";
@@ -211,4 +211,27 @@ describe("SideConversationPanel", () => {
     expect((screen.getByRole("textbox", { name: "侧边聊天内容" }) as HTMLTextAreaElement).disabled).toBe(true);
     expect(screen.getByText("先在主对话里打开一个会话。")).toBeTruthy();
   });
+});
+
+
+it("streams side-chat thinking and replaces it with a durable message", async () => {
+  const { client, call, emit } = fixture();
+  render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session" onClose={() => {}} />);
+  fireEvent.change(screen.getByRole("textbox", { name: "侧边聊天内容" }), { target: { value: "比较方案" } });
+  fireEvent.click(screen.getByRole("button", { name: "发送侧边聊天" }));
+  await screen.findByText("这是侧边聊天回复");
+  await waitFor(() => expect(call).toHaveBeenCalledWith("session.sendMessage", expect.anything()));
+  act(() => {
+    emit({ type: "session_status_changed", sessionId: "side-session", status: "running" });
+    emit({ type: "assistant_reasoning_delta", sessionId: "side-session", messageId: "next", delta: "比较两个方案" });
+  });
+  expect(screen.getByRole("region", { name: "思考内容" }).textContent).toBe("比较两个方案");
+  act(() => emit({ type: "message_created", sessionId: "side-session", message: {
+    id: "next", sessionId: "side-session", role: "assistant", content: "已完成比较", reasoning: "比较两个方案", createdAt: "2026-11-06",
+  } }));
+  expect(screen.getByText("已完成比较")).toBeTruthy();
+  const toggle = screen.getByRole("button", { name: "深度思考" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(screen.getByRole("region", { name: "思考内容" }).textContent).toBe("比较两个方案");
 });

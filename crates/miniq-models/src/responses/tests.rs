@@ -18,6 +18,50 @@ fn provider_for(model: &str) -> ResponsesProvider {
 }
 
 #[test]
+fn reasoning_summary_is_requested_without_overwriting_effort() {
+    let mut provider = provider_for("openai/gpt-5.4");
+    let request = request(vec![ChatMessage::user("compare")]);
+    assert_eq!(
+        provider.build_body(&request)["reasoning"],
+        json!({"summary":"auto"})
+    );
+    provider.config.reasoning_effort = Some(miniq_protocol::ReasoningEffort::High);
+    assert_eq!(
+        provider.build_body(&request)["reasoning"],
+        json!({"summary":"auto","effort":"high"})
+    );
+    assert!(provider_for("gpt-4.1")
+        .build_body(&request)
+        .get("reasoning")
+        .is_none());
+    assert!(provider_for("grok-4.7")
+        .build_body(&request)
+        .get("reasoning")
+        .is_none());
+}
+
+#[test]
+fn reasoning_summary_streams_parts_once_and_never_exposes_encrypted_content() {
+    let mut decoder = ResponsesDecoder::default();
+    let mut text = String::new();
+    for event in [
+        json!({"type":"response.reasoning_summary_text.delta","output_index":0,"summary_index":0,"delta":"First "}),
+        json!({"type":"response.reasoning_summary_text.delta","output_index":0,"summary_index":0,"delta":"part"}),
+        json!({"type":"response.reasoning_summary_text.done","output_index":0,"summary_index":0,"text":"First part"}),
+        json!({"type":"response.reasoning_summary_text.delta","output_index":0,"summary_index":1,"delta":"Second part"}),
+        json!({"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","encrypted_content":"opaque","summary":[{"type":"summary_text","text":"First part"},{"type":"summary_text","text":"Second part"}]}}),
+    ] {
+        for item in decode(&mut decoder, event).items {
+            match item.unwrap() {
+                ChatDelta::Reasoning(delta) => text.push_str(&delta),
+                other => panic!("unexpected visible delta: {other:?}"),
+            }
+        }
+    }
+    assert_eq!(text, "First part\n\nSecond part");
+}
+
+#[test]
 fn grok_requests_omit_encrypted_reasoning_and_replayed_reasoning_items() {
     let mut assistant = ChatMessage::assistant("");
     assistant.provider_context = Some(ProviderContext {

@@ -90,6 +90,14 @@ pub fn reasoning_efforts(model: &str, protocol: ApiProtocol) -> Vec<ReasoningEff
     }
 }
 
+pub(crate) fn supports_summary(model: &str) -> bool {
+    let name = family_name(model);
+    !name.contains("-chat")
+        && ["gpt-5", "gpt-6", "o3", "o4-mini"]
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+}
+
 pub(crate) fn apply_reasoning(body: &mut Value, config: &ProviderConfig, protocol: ApiProtocol) {
     let Some(effort) = config.reasoning_effort else {
         return;

@@ -77,6 +77,7 @@ export interface TimelineProps {
   queue: QueuedMessage[];
   workspacePath?: string | null;
   streamingText: string;
+  streamingReasoning?: string;
   turnProgress: TurnProgress | null;
   latestTurnTiming?: AnchoredTurnTiming | null;
   lastTurn?: SessionTurnOutcome | null;
@@ -219,9 +220,9 @@ export function Timeline(props: TimelineProps) {
     ? historySearch.loading
     : props.loadingOlder;
   const contentVersion = useMemo(() => [
-    items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText,
+    items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText, props.streamingReasoning,
     props.turnProgress, props.busy, props.queue, props.lastTurn,
-  ], [items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText,
+  ], [items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText, props.streamingReasoning,
     props.turnProgress, props.busy, props.queue, props.lastTurn]);
   const { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump, reveal, historyError, retryingOlder } = useConversationScroll({
     viewKey: JSON.stringify([props.sessionId, filter, query.trim()]),
@@ -456,6 +457,7 @@ export function Timeline(props: TimelineProps) {
           questions={props.questions}
           turnPlans={props.turnPlans}
           streamingText={props.streamingText}
+          streamingReasoning={props.streamingReasoning}
           latestTurnTiming={props.latestTurnTiming}
           status={!props.loading && props.approvals.length === 0 && <ExecutionStatusBar
             key={props.sessionId} messages={props.messages} calls={props.toolCalls}
