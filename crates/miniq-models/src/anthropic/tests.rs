@@ -206,6 +206,21 @@ fn encodes_images_as_anthropic_source_blocks() {
 }
 
 #[test]
+fn default_oneapi_channel_never_swaps_images_for_remote_references() {
+    // The gateway resolves `source.type: url` itself and reports a storage fetch
+    // that overruns its deadline as a failed request, so this protocol must not
+    // offer an uploader even on the channel that supports one.
+    let provider = AnthropicProvider::new(ProviderConfig {
+        base_url: "https://oneapi.zaiwenai.com/v1".into(),
+        api_key: "fixture-key".into(),
+        model: "claude-test".into(),
+        api_protocol: ApiProtocol::AnthropicMessages,
+        reasoning_effort: None,
+    });
+    assert!(provider.media_uploader().is_none());
+}
+
+#[test]
 fn tool_results_preserve_images_inside_the_tool_use_pair() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("image.png");

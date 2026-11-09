@@ -10,11 +10,16 @@ use tokio_util::sync::CancellationToken;
 
 use crate::state::AppState;
 
+/// Cap on advertised skills per turn. Enough to cover a broad request without
+/// reproducing the catalog.
+const SKILL_SHORTLIST_LIMIT: usize = 24;
+
 const SYSTEM_PROMPT: &str = "You are miniQ, a local AI coworker that collaborates with the \
 user inside their workspace: you plan multi-step tasks, read and edit files, run commands \
 and deliver ready-to-use results. For a multi-step task, define a short acceptance checklist \
 before broad exploration, collect evidence for each item, and stop as soon as every item is \
-verified. Reuse confirmed file and command evidence after compaction; do not reread unchanged \
+verified. A question that can be answered from general knowledge needs no tools, no checklist and \
+no plan: answer it directly in the first step. Reuse confirmed file and command evidence after compaction; do not reread unchanged \
 content or repeat an unchanged failed command. When a tool call fails, keep the successful results already obtained, use the failure as feedback, and continue the current task from that state instead of restarting completed work. Be concise and accurate. \
 Write in a plain, controlled style. Put the answer or result first. Do not open with what you \
 did or with a phrase such as \"here is a summary\". Use short sentences with one idea each, also \
@@ -441,13 +446,28 @@ async fn execute_turn(
         .map(std::path::PathBuf::from)
         .collect::<Vec<_>>();
 
-    let skills = state.skills.discover(Some(&workspace_path));
-    let skills_block = miniq_skills::available_skills_block(&skills);
-
     let messages = state
         .store
         .list_messages(session_id)
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
+
+    // Rank skills by the words of the latest user message. Advertising a full
+    // catalog of a few hundred skills costs more prompt than it saves in
+    // discovery, so the block lists a shortlist and states the total.
+    let skills = state.skills.discover(Some(&workspace_path));
+    let latest_user_text = messages
+        .iter()
+        .rev()
+        .find(|message| message.role == miniq_protocol::Role::User)
+        .map_or("", |message| message.content.as_str());
+    let terms = miniq_skills::query_terms(latest_user_text);
+    let enabled_total = skills.iter().filter(|skill| skill.enabled).count();
+    let shortlist = miniq_skills::shortlist_skills(&skills, &terms, SKILL_SHORTLIST_LIMIT);
+    let skills_block = if shortlist.is_empty() {
+        miniq_skills::available_skills_block(&skills)
+    } else {
+        miniq_skills::shortlist_block(&shortlist, enabled_total)
+    };
     let memory_generation = state
         .store
         .memory_generation()
@@ -461,6 +481,9 @@ async fn execute_turn(
         elapsed_ms = turn_started.elapsed().as_millis() as u64,
         messages = messages.len(),
         has_context_snapshot = snapshot.is_some(),
+        skills_enabled = enabled_total,
+        skills_shortlisted = shortlist.len(),
+        skills_block_bytes = skills_block.len(),
         "turn input loaded"
     );
     let config = state

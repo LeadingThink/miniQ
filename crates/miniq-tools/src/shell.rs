@@ -14,11 +14,20 @@ const MAX_TIMEOUT_SECS: u64 = 600;
 
 fn command_error_code(stderr: &str) -> Option<&'static str> {
     let lower = stderr.to_ascii_lowercase();
-    if lower.contains("is not recognized as the name of a cmdlet")
+    // `FullyQualifiedErrorId` is emitted in English regardless of the PowerShell
+    // UI culture, so it survives a localized message. The quoted forms below
+    // only cover installations that render English text.
+    if lower.contains("commandnotfoundexception")
+        || lower.contains("is not recognized as the name of a cmdlet")
         || lower.contains("is not recognized as a name of a cmdlet")
         || lower.contains("is not recognized as an internal or external command")
         || lower.contains("command not found")
         || lower.contains(": not found")
+        // PowerShell localizes the message; these are the zh-CN and zh-TW
+        // wordings for "is not recognized as the name of a cmdlet".
+        || stderr.contains("无法将")
+        || stderr.contains("項識別為 Cmdlet")
+        || stderr.contains("項識別為 cmdlet")
     {
         Some("COMMAND_NOT_FOUND")
     } else {
@@ -469,6 +478,30 @@ mod tests {
         assert_eq!(out["ok"], false);
         assert_eq!(out["output"][0]["errorCode"], "COMMAND_NOT_FOUND");
         assert_eq!(out["output"][0]["ok"], false);
+    }
+
+    #[test]
+    fn command_error_code_survives_a_localized_powershell_message() {
+        // Chinese Windows renders the cmdlet message in Chinese; only the
+        // FullyQualifiedErrorId stays English. Detection must not depend on
+        // the UI culture of the user's machine.
+        assert_eq!(
+            command_error_code(
+                "miniq_missing : 无法将“miniq_missing”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。\r\n\
+                 + CategoryInfo          : ObjectNotFound: (miniq_missing:String) [], CommandNotFoundException\r\n\
+                 + FullyQualifiedErrorId : CommandNotFoundException"
+            ),
+            Some("COMMAND_NOT_FOUND")
+        );
+        assert_eq!(
+            command_error_code("'x' is not recognized as an internal or external command"),
+            Some("COMMAND_NOT_FOUND")
+        );
+        assert_eq!(
+            command_error_code("sh: 1: notfound: not found"),
+            Some("COMMAND_NOT_FOUND")
+        );
+        assert_eq!(command_error_code("plain build failure"), None);
     }
 
     #[cfg(unix)]

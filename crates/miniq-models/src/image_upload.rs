@@ -10,7 +10,10 @@ use sha2::{Digest, Sha256};
 
 use crate::{ProviderError, ProviderMediaUploader};
 
-const CACHE_REFRESH_MARGIN_MS: u64 = 60_000;
+// Re-upload well before a cached reference expires: a reference reused with
+// only seconds left can lapse while the gateway is still fetching it. Tickets
+// live 15 minutes, so a five-minute margin keeps every reused link fresh.
+const CACHE_REFRESH_MARGIN_MS: u64 = 300_000;
 /// Uploads are independent network round trips, so several run at once instead
 /// of making every image wait for the previous one.
 const MAX_PARALLEL_UPLOADS: usize = 4;

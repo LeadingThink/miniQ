@@ -24,7 +24,9 @@ pub use learn::{
 pub use parse::{
     parse_skill_md, render_skill_md, ParseError, SkillAgentRole, SkillMeta, SkillOrigin,
 };
-pub use prompt::available_skills_block;
+pub use prompt::{
+    available_skills_block, query_terms, shortlist_block, shortlist_skills, SHORTLIST_BUDGET_CHARS,
+};
 pub use store::{
     BundledSkill, Skill, SkillDependencyStatus, SkillDetail, SkillSource, SkillStore, StoreError,
 };

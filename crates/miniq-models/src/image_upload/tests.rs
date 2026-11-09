@@ -136,6 +136,39 @@ async fn expired_shared_links_are_uploaded_again() {
     assert_eq!(uploader.0.load(Ordering::SeqCst), 2);
 }
 
+/// A reference that is still valid but inside the refresh margin must be
+/// replaced: a slow gateway download can outlive the seconds it has left.
+struct MarginUploader(AtomicUsize);
+
+#[async_trait]
+impl ProviderMediaUploader for MarginUploader {
+    fn cache_namespace(&self) -> Option<String> {
+        Some("margin-image-upload-test".into())
+    }
+
+    async fn upload(&self, bytes: Vec<u8>, mime: &str) -> Result<ProviderMediaReference, String> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(ProviderMediaReference {
+            url: URL.into(),
+            content_type: mime.into(),
+            bytes: bytes.len(),
+            expires_at: super::now_millis().saturating_add(super::CACHE_REFRESH_MARGIN_MS / 2),
+        })
+    }
+}
+
+#[tokio::test]
+async fn references_inside_the_refresh_margin_are_uploaded_again() {
+    let uploader = MarginUploader(AtomicUsize::new(0));
+    let body =
+        json!({"input":[{"content":[{"type":"input_image","image_url":data(b"margin pixels")}]}]});
+    let mut first = ImageUploads::default();
+    first.replace(&mut body.clone(), &uploader).await.unwrap();
+    let mut second = ImageUploads::default();
+    second.replace(&mut body.clone(), &uploader).await.unwrap();
+    assert_eq!(uploader.0.load(Ordering::SeqCst), 2);
+}
+
 fn request(messages: Vec<ChatMessage>) -> CompletionRequest {
     CompletionRequest {
         context_compact_threshold: None,

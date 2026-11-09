@@ -1,6 +1,7 @@
 //! Native Anthropic Messages API adapter.
 
 use std::collections::{BTreeMap, HashSet};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::{json, Map, Value};
@@ -74,6 +75,17 @@ impl AnthropicProvider {
     #[cfg(test)]
     fn build_body(&self, request: &CompletionRequest) -> Value {
         self.try_build_body(request).unwrap()
+    }
+
+    /// Always `None`: this protocol sends its own image bytes.
+    ///
+    /// `provider_media_uploader` hands out a signed object URL on the default
+    /// OneAPI channel. That channel resolves `source.type: url` itself with a
+    /// download deadline that cross-border object storage can miss, and the
+    /// whole request then fails before the model sees it. Chat Completions and
+    /// Responses keep using the uploaded reference.
+    pub(crate) fn media_uploader(&self) -> Option<Arc<dyn crate::ProviderMediaUploader>> {
+        None
     }
 }
 
@@ -449,11 +461,9 @@ impl ModelProvider for AnthropicProvider {
         request: CompletionRequest,
     ) -> Result<DeltaStream, ProviderError> {
         let url = format!("{}/messages", self.config.base_url.trim_end_matches('/'));
-        let uploader = crate::provider_media_uploader(
-            &self.config.base_url,
-            &self.config.api_key,
-            tokio_util::sync::CancellationToken::new(),
-        );
+        // Inline images only; see `media_uploader` for why this protocol never
+        // takes the uploaded-reference path.
+        let uploader = self.media_uploader();
         let body = crate::request_attachments::build_with_attachment_recovery(
             &request,
             uploader.as_deref(),

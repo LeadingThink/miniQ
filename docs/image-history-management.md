@@ -84,7 +84,7 @@ flowchart LR
 
 ## 2026-10-20：先上传七牛云，再向模型发送图片链接
 
-默认 OneAPI 通道中的粘贴图片、图片附件和工具视觉结果，在发送模型请求前复用视频参考文件的私有七牛云上传接口。Chat Completions 和 Responses 使用图片 URL；Anthropic 使用 `source.type: url`。短期签名 URL 只存在于本次请求中，不写入会话历史。本地原图、预览和图片档案仍保留。
+默认 OneAPI 通道中的粘贴图片、图片附件和工具视觉结果，在发送模型请求前复用视频参考文件的私有七牛云上传接口。Chat Completions 和 Responses 使用图片 URL；Anthropic 使用 `source.type: url`（已于 2026-11-09 改为内联 Base64，见下文）。短期签名 URL 只存在于本次请求中，不写入会话历史。本地原图、预览和图片档案仍保留。
 
 继续使用现有预览及单图压缩规则：大于 7 MiB 的模型副本会压缩，原文件不变。静态 GIF 无损转换为上传接口支持的 PNG，动画不会静默丢帧。上传失败中止本次模型请求并提示重试，不回退为内嵌 Base64。自定义服务仍使用内嵌图片，其凭据不会发送到默认 OneAPI 上传接口。
 
@@ -100,13 +100,19 @@ flowchart LR
 
 验证覆盖三种协议实际发出的 HTTP 内容、多图同名附件与原始字节对应、历史消息恢复及图片来源查询。未使用真实模型评估九宫格任务完成率。
 
+## 2026-11-09：Anthropic 改为内联图片，链接缓存余量改为 5 分钟
+
+Anthropic Messages 请求不再把图片替换为签名链接。网关会代模型拉取 `source.type: url`，跨境域名下载超过网关时限时整条请求失败，报错为 `The request timed out while trying to download the file`，模型没有看到任何内容。改为内联 Base64 后请求自包含，体积由 `request_attachments` 的图片预算约束。Chat Completions 和 Responses 不受影响。
+
+图片链接的内存缓存刷新余量从 60 秒提高到 300 秒：签名 GET 有效 15 分钟，余量过小会让仍“有效”但只剩几秒的链接被复用，网关下载途中过期。链接有效期本身保持 15 分钟不变，会话历史不保存任何链接。
+
 ## 代码位置
 
 - `crates/miniq-agent/src/visual_history.rs`：图片档案、批次选择、原始记录到请求的投影。
 - `crates/miniq-agent/src/image_history_tool.rs`：分页/回读工具、视觉提示、host 审计接口。
 - `crates/miniq-agent/src/context.rs`：压缩前归档与压缩后恢复。
 - `crates/miniq-models/src/image.rs`：预览编码、安全文件访问和静态图片解码。
-- `crates/miniq-models/src/image_upload.rs`：模型图片链接替换和单次请求上传复用。
+- `crates/miniq-models/src/image_upload.rs`：Chat Completions 与 Responses 的图片链接替换和单次请求上传复用；Anthropic 不经过此路径。
 - `crates/miniq-models/src/media_upload.rs`：图片和视频共用的七牛私有对象上传通道。
 - `crates/miniq-tools/src/visual.rs`：`view_image` 的默认预览与显式原图语义。
 - `crates/miniq-daemon/src/executor/image_history.rs`：回读审计和界面事件。
