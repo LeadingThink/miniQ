@@ -56,6 +56,11 @@ impl OpenAiCompatProvider {
             "stream": true,
             "stream_options": {"include_usage": true},
         });
+        if crate::reasoning::thinking_family(&crate::reasoning::family_name(&self.config.model))
+            && !request.tools.is_empty()
+        {
+            echo_missing_reasoning(&mut body["messages"]);
+        }
         crate::reasoning::apply_reasoning(
             &mut body,
             &self.config,
@@ -107,6 +112,33 @@ fn image_to_json(image: &ChatImage) -> Result<Value, ProviderError> {
             "detail": detail
         }
     }))
+}
+
+/// DeepSeek thinking mode requires `reasoning_content` on every replayed
+/// assistant turn once the request carries tools. Turns produced by another
+/// model or by a run without thinking have none, and the provider rejects the
+/// whole request. An empty echo satisfies the check without inventing text.
+fn echo_missing_reasoning(messages: &mut Value) {
+    let Some(messages) = messages.as_array_mut() else {
+        return;
+    };
+    for message in messages {
+        let assistant = message.get("role").and_then(Value::as_str) == Some("assistant");
+        if !assistant {
+            continue;
+        }
+        let has_call = message
+            .get("tool_calls")
+            .and_then(Value::as_array)
+            .is_some_and(|calls| !calls.is_empty());
+        let has_reasoning = message
+            .get("reasoning_content")
+            .and_then(Value::as_str)
+            .is_some();
+        if has_call && !has_reasoning {
+            message["reasoning_content"] = json!("");
+        }
+    }
 }
 
 fn messages_to_json(messages: &[ChatMessage]) -> Result<Vec<Value>, ProviderError> {

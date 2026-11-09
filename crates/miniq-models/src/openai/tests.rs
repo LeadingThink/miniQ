@@ -160,6 +160,51 @@ fn replays_tool_calls_with_the_same_wire_name_as_the_declaration() {
 }
 
 #[test]
+fn deepseek_tool_rounds_without_reasoning_echo_an_empty_reasoning_content() {
+    let mut assistant = ChatMessage::assistant("");
+    assistant.tool_calls.push(ToolCallRequest {
+        id: "call-1".into(),
+        name: "file_read".into(),
+        arguments: json!({"path":"a.txt"}),
+    });
+    let mut completion = request(None);
+    completion.messages = vec![
+        ChatMessage::user("read"),
+        assistant,
+        ChatMessage::tool_result("call-1", "contents"),
+    ];
+    completion.tools = vec![ToolSpec {
+        name: "file_read".into(),
+        description: "Read".into(),
+        parameters: json!({"type":"object"}),
+    }];
+
+    let deepseek = OpenAiCompatProvider::new(ProviderConfig {
+        base_url: "https://example.com/v1".into(),
+        api_key: String::new(),
+        model: "deepseek-flash".into(),
+        api_protocol: ApiProtocol::ChatCompletions,
+        reasoning_effort: None,
+    });
+    assert_eq!(
+        deepseek.build_body(&completion)["messages"][1]["reasoning_content"],
+        ""
+    );
+
+    // Without tools DeepSeek ignores reasoning, so nothing is invented.
+    let mut without_tools = completion.clone();
+    without_tools.tools.clear();
+    assert!(deepseek.build_body(&without_tools)["messages"][1]
+        .get("reasoning_content")
+        .is_none());
+
+    // Other families keep their own reasoning contract.
+    assert!(provider().build_body(&completion)["messages"][1]
+        .get("reasoning_content")
+        .is_none());
+}
+
+#[test]
 fn encodes_attached_images_as_openai_vision_content_parts() {
     let path = std::env::temp_dir().join("miniq-openai-image-test.png");
     std::fs::write(&path, [0x89_u8, b'P', b'N', b'G']).unwrap();

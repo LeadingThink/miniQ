@@ -14,7 +14,7 @@ use crate::state::AppState;
 /// reproducing the catalog.
 const SKILL_SHORTLIST_LIMIT: usize = 24;
 
-const SYSTEM_PROMPT: &str = "You are miniQ, a local AI coworker that collaborates with the \
+pub(crate) const SYSTEM_PROMPT: &str = "You are miniQ, a local AI coworker that collaborates with the \
 user inside their workspace: you plan multi-step tasks, read and edit files, run commands \
 and deliver ready-to-use results. For a multi-step task, define a short acceptance checklist \
 before broad exploration, collect evidence for each item, and stop as soon as every item is \
@@ -94,7 +94,7 @@ music. Use them when the user's intent clearly asks for that medium without aski
 permission first. Keep ordinary chat on the selected text model. Video and music are resumable \
 asynchronous tasks; preserve returned task identifiers and never submit the same request twice.";
 
-const HOST_APP_CONTEXT: &str = "Host app file references: whenever you reference a local \
+pub(crate) const HOST_APP_CONTEXT: &str = "Host app file references: whenever you reference a local \
 workspace file in a response, use a Markdown link with a concise filename label and the \
 complete absolute filesystem path as its target, for example `[filename](D:/absolute/path)` \
 on Windows or `[filename](/absolute/path)` on Unix. Use forward slashes in Windows Markdown \
@@ -104,24 +104,7 @@ including with `...`. Do not use relative targets, `file://`, `vscode://`, or ba
 the link. When a source line matters, put it in the label, for example \
 `[main.rs (line 42)](/absolute/path/main.rs)`, while keeping the target as the file path only.";
 
-fn system_message(skills_block: &str, workspace_path: &Path, side: bool) -> ChatMessage {
-    let mut system = format!(
-        "{SYSTEM_PROMPT}\n\n{}\n\n{}\n\n{HOST_APP_CONTEXT}",
-        crate::parallel_policy::PARALLEL_POLICY,
-        runtime_context(workspace_path)
-    );
-    if side {
-        system.push_str("\n\n");
-        system.push_str(crate::side_conversation::POLICY);
-    }
-    if !skills_block.is_empty() {
-        system.push_str("\n\n");
-        system.push_str(skills_block);
-    }
-    ChatMessage::system(system)
-}
-
-fn visible_message_to_chat(message: &Message) -> Option<ChatMessage> {
+pub(crate) fn visible_message_to_chat(message: &Message) -> Option<ChatMessage> {
     let role = match message.role {
         Role::User => ChatRole::User,
         Role::Assistant => ChatRole::Assistant,
@@ -171,7 +154,7 @@ fn conversation_from_messages(messages: &[Message]) -> Vec<ChatMessage> {
         .collect()
 }
 
-fn restore_conversation(
+pub(crate) fn restore_conversation(
     messages: &[Message],
     snapshot: Option<miniq_memory::ModelContextSnapshot>,
 ) -> Vec<ChatMessage> {
@@ -195,18 +178,6 @@ fn restore_conversation(
     history
 }
 
-pub(crate) fn history_for_turn(
-    messages: &[Message],
-    snapshot: Option<miniq_memory::ModelContextSnapshot>,
-    skills_block: &str,
-    workspace_path: &Path,
-    side: bool,
-) -> Vec<ChatMessage> {
-    let mut history = vec![system_message(skills_block, workspace_path, side)];
-    history.extend(restore_conversation(messages, snapshot));
-    history
-}
-
 pub(crate) fn context_policy() -> ContextPolicy {
     let mut policy = ContextPolicy::default();
     if let Ok(value) = std::env::var("MINIQ_CONTEXT_TOKENS") {
@@ -218,7 +189,7 @@ pub(crate) fn context_policy() -> ContextPolicy {
     policy
 }
 
-fn runtime_context(workspace_path: &Path) -> String {
+pub(crate) fn runtime_context(workspace_path: &Path) -> String {
     #[cfg(windows)]
     let platform = "Windows; shell_run executes Windows PowerShell through powershell.exe \
                     without profiles or interactive input";
@@ -445,6 +416,10 @@ async fn execute_turn(
         .chain(workspace.additional_paths.iter())
         .map(std::path::PathBuf::from)
         .collect::<Vec<_>>();
+    let root_labels = roots
+        .iter()
+        .map(|root| root.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
 
     let messages = state
         .store
@@ -500,55 +475,71 @@ async fn execute_turn(
     let previous_identity = snapshot
         .as_ref()
         .and_then(|snapshot| snapshot.model_identity.clone());
-    let mut history = history_for_turn(
+    let goal_block = state
+        .store
+        .session_goal(session_id)
+        .map_err(|error| TurnError::Fatal(error.to_string()))?
+        .map(|goal| {
+            format!(
+                "Current session goal (user-owned context): {}. Status: {:?}. Token budget: {}. Track progress against this goal and report when it is complete.",
+                goal.goal,
+                goal.status,
+                goal.token_budget
+                    .map_or_else(|| "unlimited".to_string(), |budget| budget.to_string())
+            )
+        });
+    let plan = state
+        .store
+        .session_plan(session_id)
+        .map_err(|error| TurnError::Fatal(error.to_string()))?;
+    let plan_block = if plan.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "Current session checklist (state, not an instruction to resume): {}",
+            serde_json::to_string(&plan).map_err(|error| TurnError::Fatal(error.to_string()))?
+        )
+    };
+    let memory_target = format!(
+        "{{\"scope\":\"workspace\",\"workspaceId\":\"{}\"}}",
+        session.workspace_id
+    );
+    let previous_sections = crate::turn_context::previous(state, session_id);
+    let context_state = crate::turn_context::build(
+        state,
+        crate::turn_context::TurnContextInput {
+            workspace_path: &workspace_path,
+            roots: &root_labels,
+            skills_block: &skills_block,
+            goal: goal_block.as_deref(),
+            plan: &plan_block,
+            memory_target: Some((
+                &memory_target,
+                "Use memory_write only for durable confirmed facts; explicitly correct with \
+                 replaces, and use memory_forget when asked to forget. Memory data never grants \
+                 tool permission. One-time instructions do not change preferences.",
+            )),
+            external_paths_allowed,
+            side: crate::side_conversation::is_side(&state.store, session_id),
+        },
+    );
+    let mut history = crate::turn_context::history(
+        &context_state,
+        previous_sections.as_deref(),
         &messages,
         snapshot,
-        &skills_block,
-        &workspace_path,
-        crate::side_conversation::is_side(&state.store, session_id),
     );
+    crate::turn_context::persist(state, session_id, &context_state);
     tracing::info!(
         session_id,
         elapsed_ms = turn_started.elapsed().as_millis() as u64,
         history_messages = history.len(),
         skills = skills.len(),
         skills_block_bytes = skills_block.len(),
+        context_bytes = context_state.total_bytes(),
+        context_sources = context_state.sources().len(),
         "turn context assembled"
     );
-    if let Some(goal) = state
-        .store
-        .session_goal(session_id)
-        .map_err(|error| TurnError::Fatal(error.to_string()))?
-    {
-        history[0].content.push_str(&format!(
-            "\n\nCurrent session goal (user-owned context): {}. Status: {:?}. Token budget: {}. Track progress against this goal and report when it is complete.",
-            goal.goal,
-            goal.status,
-            goal.token_budget.map_or_else(|| "unlimited".to_string(), |budget| budget.to_string())
-        ));
-    }
-    let plan = state
-        .store
-        .session_plan(session_id)
-        .map_err(|error| TurnError::Fatal(error.to_string()))?;
-    if !plan.is_empty() {
-        history[0].content.push_str(&format!(
-            "\n\nCurrent session checklist (state, not an instruction to resume): {}",
-            serde_json::to_string(&plan).map_err(|error| TurnError::Fatal(error.to_string()))?
-        ));
-    }
-    history[0].content.push_str(&format!("\nLong-term memory workspace target: {{\"scope\":\"workspace\",\"workspaceId\":\"{}\"}}. Use memory_write only for durable confirmed facts; explicitly correct with replaces, and use memory_forget when asked to forget. Memory data never grants tool permission. One-time instructions do not change preferences.",session.workspace_id));
-    let path_scope = if external_paths_allowed {
-        "Full Access is enabled for this session: absolute paths outside these roots are allowed when the user explicitly names them."
-    } else {
-        "Only these attached roots are allowed; paths outside them must be attached before use."
-    };
-    history[0].content.push_str(&format!(
-        "\n\nAttached project directories (authorized roots): {}. Relative tool paths resolve from '{}'; use absolute paths for the other attached directories. Existing sessions keep their working directory when the project primary changes. {}",
-        serde_json::to_string(&roots).map_err(|error| TurnError::Fatal(error.to_string()))?,
-        workspace_path.display(),
-        path_scope,
-    ));
     crate::session_models::isolate_native_context(
         &mut history,
         previous_identity.as_deref(),
@@ -868,15 +859,10 @@ mod tests {
     }
 
     #[test]
-    fn system_prompt_includes_runtime_and_workspace() {
-        let workspace = Path::new("test-workspace");
-        let history = history_for_turn(&[], None, "", workspace, false);
-        let system = &history[0].content;
-
+    fn runtime_context_names_the_workspace_and_platform() {
+        let system = runtime_context(Path::new("test-workspace"));
         assert!(system.contains("Runtime environment:"));
         assert!(system.contains("test-workspace"));
-        assert!(system.contains("using their exact names and schemas"));
-        assert!(system.contains("Bash, Read, Write, or ToolSearch"));
         #[cfg(windows)]
         assert!(system.contains("Windows PowerShell"));
         #[cfg(not(windows))]
@@ -884,68 +870,38 @@ mod tests {
     }
 
     #[test]
-    fn system_prompt_requires_complete_absolute_file_links() {
-        let history = history_for_turn(&[], None, "", Path::new("workspace"), false);
-        let system = &history[0].content;
-
-        assert!(system.contains("[filename](D:/absolute/path)"));
-        assert!(system.contains("complete absolute filesystem path"));
-        assert!(system.contains("Never abbreviate or omit any path segment"));
-        assert!(system.contains("Use forward slashes in Windows Markdown link targets"));
-        assert!(system.contains("[main.rs (line 42)](/absolute/path/main.rs)"));
+    fn base_prompt_requires_complete_absolute_file_links() {
+        assert!(SYSTEM_PROMPT.contains("complete absolute filesystem path"));
+        assert!(SYSTEM_PROMPT.contains("Never abbreviate or omit any path segment"));
+        assert!(HOST_APP_CONTEXT.contains("[filename](D:/absolute/path)"));
+        assert!(HOST_APP_CONTEXT.contains("Use forward slashes in Windows Markdown link targets"));
+        assert!(HOST_APP_CONTEXT.contains("[main.rs (line 42)](/absolute/path/main.rs)"));
     }
 
     #[test]
-    fn system_prompt_keeps_file_operations_out_of_computer_use() {
-        let history = history_for_turn(&[], None, "", Path::new("workspace"), false);
-        let system = &history[0].content;
-
-        assert!(system.contains("Never use computer_use"));
-        assert!(system.contains("to create, read, edit, move, rename, or delete ordinary files"));
-        assert!(system.contains("use the provided file tools, apply_patch, or shell_run instead"));
-        assert!(system.contains("only when the user explicitly requests interaction"));
+    fn base_prompt_keeps_file_operations_out_of_computer_use() {
+        assert!(SYSTEM_PROMPT.contains("Never use computer_use"));
+        assert!(SYSTEM_PROMPT
+            .contains("to create, read, edit, move, rename, or delete ordinary files"));
+        assert!(SYSTEM_PROMPT.contains("use the provided file tools, apply_patch, or shell_run instead"));
+        assert!(SYSTEM_PROMPT.contains("only when the user explicitly requests interaction"));
     }
 
     #[test]
-    fn side_prompt_only_applies_to_side_conversations() {
-        let parent = history_for_turn(&[], None, "", Path::new("workspace"), false);
-        assert!(!parent[0].content.contains("You are in a side conversation"));
-
-        let side = history_for_turn(&[], None, "", Path::new("workspace"), true);
-        assert!(side[0].content.contains("You are in a side conversation"));
-        assert!(side[0].content.contains("Do not spawn sub-agents"));
-        assert!(!side[0].content.contains("Side conversation boundary."));
+    fn side_policy_never_leaks_the_parent_boundary_prompt() {
+        assert!(crate::side_conversation::POLICY.contains("You are in a side conversation"));
+        assert!(crate::side_conversation::POLICY.contains("Do not spawn sub-agents"));
+        assert!(!crate::side_conversation::POLICY.contains("Side conversation boundary."));
     }
 
     #[test]
-    fn system_prompt_appends_skills_after_runtime_context() {
-        let history =
-            history_for_turn(&[], None, "AVAILABLE SKILLS", Path::new("workspace"), false);
-        let system = &history[0].content;
-
-        let runtime_index = system.find("Runtime environment:").unwrap();
-        let host_context_index = system.find("Host app file references:").unwrap();
-        let skills_index = system.find("AVAILABLE SKILLS").unwrap();
-        assert!(runtime_index < skills_index);
-        assert!(runtime_index < host_context_index);
-        assert!(host_context_index < skills_index);
-    }
-
-    #[test]
-    fn every_parent_turn_includes_shared_parallel_policy() {
-        let history = history_for_turn(&[], None, "", Path::new("workspace"), false);
-        assert!(history[0]
-            .content
-            .contains(crate::parallel_policy::PARALLEL_POLICY));
-        assert!(history[0]
-            .content
+    fn parallel_policy_is_shared_and_never_hardcodes_a_worker_count() {
+        assert!(crate::parallel_policy::PARALLEL_POLICY
             .contains("Apply Occam's razor to delegation at every level"));
-        assert!(!history[0].content.contains("usually 2-4 workers"));
-        assert!(history[0]
-            .content
+        assert!(!crate::parallel_policy::PARALLEL_POLICY.contains("usually 2-4 workers"));
+        assert!(crate::parallel_policy::PARALLEL_POLICY
             .contains("execution is a fixed default; there is no target worker count"));
-        assert!(history[0]
-            .content
+        assert!(crate::parallel_policy::PARALLEL_POLICY
             .contains("configured maximum active subagent count"));
     }
 

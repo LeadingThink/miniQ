@@ -92,7 +92,7 @@ struct ResponsesDecoder {
     output_items: BTreeMap<usize, Value>,
     emitted_calls: HashSet<String>,
     computer_observation: Option<String>,
-    reasoning_part: Option<(usize, usize)>,
+    reasoning_part: Option<(u8, usize, usize)>,
 }
 
 impl ResponsesDecoder {
@@ -308,15 +308,25 @@ impl EventDecoder for ResponsesDecoder {
             }
         };
         match event.get("type").and_then(Value::as_str).unwrap_or("") {
-            "response.reasoning_summary_text.delta" => {
+            // OpenAI streams a summary; DeepSeek streams the raw chain of
+            // thought. Both are shown as reasoning, keyed by their own index so
+            // parts of each kind stay in separate paragraphs.
+            "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
                 let text = event.get("delta").and_then(Value::as_str).unwrap_or("");
+                let summary = event.get("type").and_then(Value::as_str)
+                    == Some("response.reasoning_summary_text.delta");
                 let part = (
+                    u8::from(!summary),
                     event
                         .get("output_index")
                         .and_then(Value::as_u64)
                         .unwrap_or(0) as usize,
                     event
-                        .get("summary_index")
+                        .get(if summary {
+                            "summary_index"
+                        } else {
+                            "content_index"
+                        })
                         .and_then(Value::as_u64)
                         .unwrap_or(0) as usize,
                 );

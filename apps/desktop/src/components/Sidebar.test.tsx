@@ -253,9 +253,9 @@ describe("Sidebar navigation", () => {
     mockVirtualListLayout();
     const sessions = Array.from({ length: 1500 }, (_, index) => ({ ...session, id: `s${index}`, title: `任务 ${index}` }));
     const onSelectSession = vi.fn();
-    render(<Sidebar {...sidebarProps({ sessions, onSelectSession })} />);
-    expect(document.querySelectorAll(".session-select")).toHaveLength(3);
-    fireEvent.click(screen.getByRole("button", { name: "展开 1497 条会话" }));
+    // A deep current session opens the list at that page, so thousands of rows
+    // are reachable without a hundred manual clicks.
+    render(<Sidebar {...sidebarProps({ sessions, onSelectSession, currentSessionId: "s1400" })} />);
     expect(document.querySelectorAll(".session-select").length).toBeLessThan(40);
     expect(document.querySelector('[data-virtualized="true"]')).not.toBeNull();
     const scroll = screen.getByRole("navigation", { name: "项目与会话" });
@@ -271,6 +271,38 @@ describe("Sidebar navigation", () => {
     expect(document.querySelectorAll(".session-select").length).toBeLessThan(40);
     fireEvent.keyDown(last, { key: "Home" });
     expect(document.activeElement).toBe(project);
+  });
+
+  it("expands ten more sessions per click and keeps the scroll position", () => {
+    mockVirtualListLayout();
+    const sessions = Array.from({ length: 200 }, (_, index) => ({ ...session, id: `s${index}`, title: `任务 ${index}` }));
+    render(<Sidebar {...sidebarProps({ sessions })} />);
+    const scroll = screen.getByRole("navigation", { name: "项目与会话" });
+    scroll.scrollTop = 640;
+    fireEvent.scroll(scroll);
+    expect(document.querySelectorAll(".session-select")).toHaveLength(3);
+    fireEvent.click(screen.getByRole("button", { name: "展开更多 10 条会话" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(13);
+    expect(scroll.scrollTop).toBe(640);
+    // The tenth page crosses the virtualization threshold; the list must not
+    // snap the shared scroller back to the top when it turns virtual.
+    for (let page = 0; page < 9; page += 1) {
+      fireEvent.click(screen.getByRole("button", { name: /展开更多 10 条会话|展开剩余 \d+ 条会话/ }));
+    }
+    expect(document.querySelector('[data-virtualized="true"]')).not.toBeNull();
+    expect(scroll.scrollTop).toBe(640);
+    expect(screen.getByRole("button", { name: /展开更多 10 条会话/ })).not.toBeNull();
+  });
+
+  it("collapses back to three sessions only after every page is shown", () => {
+    const sessions = Array.from({ length: 15 }, (_, index) => ({ ...session, id: `s${index}`, title: `任务 ${index}` }));
+    render(<Sidebar {...sidebarProps({ sessions })} />);
+    expect(screen.getByRole("button", { name: "展开更多 10 条会话" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "收起" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "展开更多 10 条会话" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(13);
+    fireEvent.click(screen.getByRole("button", { name: "展开剩余 2 条会话" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(15);
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
     expect(document.querySelectorAll(".session-select")).toHaveLength(3);
   });

@@ -21,6 +21,7 @@ import { MemoryPanel } from "./MemoryPanel";
 import { SettingsTabs, settingsGroup, settingsGroupsFromSchema, SETTINGS_GROUPS, type SettingsGroup, type SettingsSchema, type SettingsTab } from "./SettingsTabs";
 import { DEFAULT_SETTINGS_TAB } from "../settingsNavigation";
 import { SkillsPanel } from "./Skills";
+import { ProjectInstructions } from "./ProjectInstructions";
 import { McpPanel } from "./Mcp";
 import { PluginsPanel } from "./Plugins";
 import { isTauriRuntime } from "../runtime";
@@ -335,6 +336,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
         </div>
         <div id="settings-skills" className="settings-embedded-page" role="tabpanel" aria-labelledby="settings-tab-skills" hidden={tab !== "skills"}>
           {tab === "skills" && <SkillsPanel client={props.client} workspaceId={props.workspaceId ?? null} />}
+        </div>
+        <div id="settings-instructions" className="settings-embedded-page" role="tabpanel" aria-labelledby="settings-tab-instructions" hidden={tab !== "instructions"}>
+          {tab === "instructions" && <ProjectInstructions client={props.client} workspaceId={props.workspaceId ?? null} />}
         </div>
         <div id="settings-mcp" className="settings-embedded-page" role="tabpanel" aria-labelledby="settings-tab-mcp" hidden={tab !== "mcp"}>
           {tab === "mcp" && <McpPanel client={props.client} onManagePlugins={() => setTab("plugins")} />}

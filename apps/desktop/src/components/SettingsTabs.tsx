@@ -1,5 +1,6 @@
 import {
   Brain,
+  FileText,
   Monitor,
   Palette,
   Plug,
@@ -28,6 +29,12 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   { id: "services", label: "服务与远程", icon: Server, description: "模型服务、API Key、远程访问与 SSH 主机。" },
   { id: "computer", label: "电脑控制", icon: Monitor, description: "屏幕录制与辅助功能授权。" },
   { id: "skills", label: "技能", icon: Sparkles, description: "可复用的工作流程与说明。" },
+  {
+    id: "instructions",
+    label: "项目指令",
+    icon: FileText,
+    description: "项目里的 AGENTS.md 与读取范围。",
+  },
   { id: "mcp", label: "MCP 连接", icon: PlugZap, description: "连接外部工具与数据源。" },
   { id: "plugins", label: "插件", icon: Plug, description: "安装和管理扩展能力。" },
   { id: "memory", label: "记忆", icon: Brain, description: "miniQ 记住的偏好与项目事实。" },

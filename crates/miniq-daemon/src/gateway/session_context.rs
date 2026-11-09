@@ -171,12 +171,37 @@ async fn compact_locked(
         .as_ref()
         .and_then(|snapshot| snapshot.model_identity.clone());
     let workspace_path = std::path::PathBuf::from(&session.working_directory);
-    let mut history = crate::turn::history_for_turn(
+    let workspace = state
+        .store
+        .get_workspace(&session.workspace_id)
+        .map_err(|error| internal(error.to_string()))?;
+    let roots = std::iter::once(workspace.path)
+        .chain(workspace.additional_paths)
+        .collect::<Vec<_>>();
+    let approval_mode = state
+        .approval_mode_for_session(session_id)
+        .map_err(|error| internal(error.to_string()))?;
+    let skills = state.skills.discover(Some(&workspace_path));
+    let skills_block = miniq_skills::available_skills_block(&skills);
+    let previous_sections = crate::turn_context::previous(state, session_id);
+    let context_state = crate::turn_context::build(
+        state,
+        crate::turn_context::TurnContextInput {
+            workspace_path: &workspace_path,
+            roots: &roots,
+            skills_block: &skills_block,
+            goal: None,
+            plan: "",
+            memory_target: None,
+            external_paths_allowed: approval_mode == crate::state::ApprovalMode::FullAccess,
+            side: crate::side_conversation::is_side(&state.store, session_id),
+        },
+    );
+    let mut history = crate::turn_context::history(
+        &context_state,
+        previous_sections.as_deref(),
         &messages,
         snapshot,
-        "",
-        &workspace_path,
-        crate::side_conversation::is_side(&state.store, session_id),
     );
     crate::session_models::isolate_native_context(
         &mut history,
@@ -256,14 +281,47 @@ pub(super) async fn context_usage(state: &AppState, raw: Option<Value>) -> Resul
         .get_model_context(&input.session_id)
         .map_err(store_err)?;
     let workspace_path = std::path::PathBuf::from(&session.working_directory);
-    let history = crate::turn::history_for_turn(
+    let workspace = state
+        .store
+        .get_workspace(&session.workspace_id)
+        .map_err(store_err)?;
+    let roots = std::iter::once(workspace.path)
+        .chain(workspace.additional_paths)
+        .collect::<Vec<_>>();
+    let approval_mode = state
+        .approval_mode_for_session(&input.session_id)
+        .map_err(store_err)?;
+    let skills = state.skills.discover(Some(&workspace_path));
+    let skills_block = miniq_skills::available_skills_block(&skills);
+    let previous_sections = crate::turn_context::previous(state, &input.session_id);
+    let context_state = crate::turn_context::build(
+        state,
+        crate::turn_context::TurnContextInput {
+            workspace_path: &workspace_path,
+            roots: &roots,
+            skills_block: &skills_block,
+            goal: None,
+            plan: "",
+            memory_target: None,
+            external_paths_allowed: approval_mode == crate::state::ApprovalMode::FullAccess,
+            side: crate::side_conversation::is_side(&state.store, &input.session_id),
+        },
+    );
+    let history = crate::turn_context::history(
+        &context_state,
+        previous_sections.as_deref(),
         &messages,
         snapshot,
-        "",
-        &workspace_path,
-        crate::side_conversation::is_side(&state.store, &input.session_id),
     );
-    let estimated = miniq_agent::estimate_request_tokens(&history, &[]);
+    let config = state
+        .provider_config_for_session(&input.session_id, None)
+        .ok()
+        .flatten();
+    // Count the tools a real request would send, not an empty tool list: the
+    // tool schemas are a large part of every request.
+    let tools = crate::executor::session_tool_specs(state, config.as_ref());
+    let estimated = miniq_agent::estimate_request_tokens(&history, &tools);
+    let categories = category_usage(&context_state, &history, &tools, estimated);
     let last_call = state
         .store
         .model_calls_page(&miniq_protocol::ModelCallsParams {
@@ -274,10 +332,6 @@ pub(super) async fn context_usage(state: &AppState, raw: Option<Value>) -> Resul
         })
         .ok()
         .and_then(|page| page.calls.into_iter().find(|call| call.agent_id.is_none()));
-    let config = state
-        .provider_config_for_session(&input.session_id, None)
-        .ok()
-        .flatten();
     let mut capabilities = match config {
         Some(config) => {
             let provider = state.provider_from_config(Some(config));
@@ -309,6 +363,66 @@ pub(super) async fn context_usage(state: &AppState, raw: Option<Value>) -> Resul
         "contextWindowTokens": window,
         "autoCompactTokens": soft_limit,
         "percentUsed": percent,
-        "lastRequestTokens": last_call.map(|call| call.estimated_input_tokens),
+        "lastRequestTokens": last_call.as_ref().map(|call| call.estimated_input_tokens),
+        "lastRequestActualTokens": last_call
+            .as_ref()
+            .and_then(|call| reported_input_tokens(&call.response.usage)),
+        "categories": categories,
     }))
+}
+
+/// Split the request estimate across the categories the panel shows.
+///
+/// `conversation` is the remainder on purpose: it absorbs the per-message
+/// overhead and the image-history projection, so the parts always add up to the
+/// same total `estimatedTokens` reports.
+fn category_usage(
+    context: &miniq_agent::ContextState,
+    history: &[miniq_models::ChatMessage],
+    tools: &[miniq_models::ToolSpec],
+    estimated: usize,
+) -> Value {
+    let system_total = history
+        .first()
+        .map(|message| miniq_agent::estimate_text_tokens(&message.content))
+        .unwrap_or_default();
+    let skills = context
+        .get(miniq_agent::SectionId::Skills)
+        .map(|section| miniq_agent::estimate_text_tokens(section.body()))
+        .unwrap_or_default();
+    let system = system_total.saturating_sub(skills);
+    // `mcp_call` is the connector surface: its schema plus the servers it can
+    // reach. Everything else is a native or plugin tool.
+    let (mcp_specs, tool_specs) = tools
+        .iter()
+        .cloned()
+        .partition::<Vec<_>, _>(|spec| spec.name == "mcp_call");
+    let connectors = estimate_specs(&mcp_specs);
+    let tool_tokens = estimate_specs(&tool_specs);
+    let conversation = estimated.saturating_sub(system + skills + tool_tokens + connectors);
+    json!([
+        { "id": "system", "tokens": system },
+        { "id": "tools", "tokens": tool_tokens },
+        { "id": "conversation", "tokens": conversation },
+        { "id": "connectors", "tokens": connectors },
+        { "id": "skills", "tokens": skills },
+    ])
+}
+
+fn estimate_specs(specs: &[miniq_models::ToolSpec]) -> usize {
+    if specs.is_empty() {
+        return 0;
+    }
+    serde_json::to_string(specs)
+        .map(|json| miniq_agent::estimate_text_tokens(&json))
+        .unwrap_or_default()
+}
+
+/// Provider-reported input tokens, whichever wire name the endpoint used.
+fn reported_input_tokens(usage: &Option<Value>) -> Option<u64> {
+    let usage = usage.as_ref()?;
+    usage
+        .get("input_tokens")
+        .or_else(|| usage.get("prompt_tokens"))
+        .and_then(Value::as_u64)
 }

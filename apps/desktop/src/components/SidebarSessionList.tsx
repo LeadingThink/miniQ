@@ -16,6 +16,9 @@ import { VirtualList, type VirtualListHandle } from "./ui/VirtualList";
 
 interface Props {
   sessions: Session[];
+  /** Rows rendered so far; navigation can still reach the rest. */
+  visibleCount?: number;
+  onRevealIndex?: (index: number) => void;
   currentSessionId: string | null;
   unreadSessionIds: ReadonlySet<string>;
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -35,6 +38,7 @@ interface Props {
 export function SidebarSessionList(props: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const handle = useRef<VirtualListHandle>(null);
+  const rowCount = Math.min(props.sessions.length, props.visibleCount ?? props.sessions.length);
   const mobile = useMobileLayout();
   const [interacting, setInteracting] = useState<ReadonlySet<string>>(
     new Set(),
@@ -88,18 +92,21 @@ export function SidebarSessionList(props: Props) {
         focus(index) {
           const session = props.sessions[index];
           if (!session) return;
+          if (index >= rowCount) props.onRevealIndex?.(index);
           setFocused(session.id);
           setPendingFocus(session.id);
-          handle.current?.scrollToIndex(index);
+          handle.current?.scrollToIndex(Math.min(index, rowCount - 1));
         },
       }),
-    [props.sessions],
+    [props.onRevealIndex, props.sessions, rowCount],
   );
   useLayoutEffect(() => {
     if (!pendingFocus) return;
     const index = props.sessions.findIndex(
       (session) => session.id === pendingFocus,
     );
+    if (index < 0 || index >= rowCount) return;
+    handle.current?.scrollToIndex(index);
     const button = listRef.current?.querySelector<HTMLButtonElement>(
       `[data-index="${index}"] .session-select`,
     );
@@ -107,7 +114,7 @@ export function SidebarSessionList(props: Props) {
       button.focus({ preventScroll: true });
       setPendingFocus(null);
     }
-  }, [pendingFocus, props.sessions]);
+  }, [pendingFocus, props.sessions, rowCount]);
   return (
     <div
       ref={listRef}
@@ -128,7 +135,7 @@ export function SidebarSessionList(props: Props) {
       }}
     >
       <VirtualList
-        count={props.sessions.length}
+        count={rowCount}
         getKey={(index) => props.sessions[index].id}
         estimateSize={() => (mobile ? 44 : 36)}
         scrollRef={props.scrollRef}

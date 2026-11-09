@@ -10,4 +10,5 @@ pub use store::{
     cap_stored_output, new_id, now_iso, AgentTaskRow, CheckpointRow, ExternalImportOutcome,
     MemoryError, MemoryEvidence, MemoryJob, MemoryPage, MemoryRow, ModelContextSnapshot,
     ReviewSnapshot, SessionRecovery, StartupRecovery, Store, TurnActivity, TurnCheckpoints,
+    TurnContextSnapshot,
 };

@@ -450,13 +450,40 @@ impl DaemonAgentBridge {
         let history = if resuming {
             resumed_history
         } else {
-            let system = format!(
-                "You are a miniQ child agent of type '{}'. Default working directory: '{}'. Authorized project directories: {:?}. Use absolute paths for the other attached directories. Complete the delegated task and return a concise result to the parent. All tool calls remain subject to miniQ approvals and attached-directory sandboxing.",
+            let roots = self
+                .child_roots(&workspace, worktree.is_some())
+                .into_iter()
+                .map(|root| root.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            let role = format!(
+                "You are a miniQ child agent of type '{}'. Default working directory: '{}'. \
+                 Authorized project directories: {:?}. Use absolute paths for the other attached \
+                 directories. Complete the delegated task and return a concise result to the parent. \
+                 All tool calls remain subject to miniQ approvals and attached-directory sandboxing.",
                 request.subagent_type.as_deref().unwrap_or("general-purpose"),
                 workspace.display(),
-                self.child_roots(&workspace, worktree.is_some())
+                roots
             );
-            vec![ChatMessage::system(system)]
+            // A child agent works in the same project, so it must obey the same
+            // project instructions. Reuse the parent's section set instead of
+            // re-reading the same files for every delegation.
+            let mut context = crate::turn_context::build(
+                &self.state,
+                crate::turn_context::TurnContextInput {
+                    workspace_path: &workspace,
+                    roots: &roots,
+                    skills_block: "",
+                    goal: None,
+                    plan: "",
+                    memory_target: None,
+                    external_paths_allowed: self.state.approval_mode_for_session(&self.session_id)
+                        .map(|mode| mode == crate::state::ApprovalMode::FullAccess)
+                        .unwrap_or(false),
+                    side: false,
+                },
+            );
+            context.set(miniq_agent::SectionId::Core, role);
+            vec![ChatMessage::system(context.render())]
         };
         let running = self.state.agent_tasks.snapshot(&id, &record).await;
         let bridge = self.clone();

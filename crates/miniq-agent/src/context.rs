@@ -62,7 +62,11 @@ pub fn estimate_tokens(messages: &[ChatMessage]) -> usize {
         .sum()
 }
 
-fn estimate_text_tokens(value: &str) -> usize {
+/// Estimate tokens for one already-rendered prompt fragment.
+///
+/// Exposed so callers can attribute a request estimate to individual
+/// sections instead of only reporting the whole total.
+pub fn estimate_text_tokens(value: &str) -> usize {
     let mut ascii: usize = 0;
     let mut non_ascii: usize = 0;
     for character in value.chars() {

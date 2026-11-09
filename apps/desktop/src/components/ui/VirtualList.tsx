@@ -63,6 +63,9 @@ export function VirtualList({
     scrollMargin,
     rangeExtractor,
     getScrollElement: () => scrollRef.current,
+    /** Adopting the current offset keeps a list that turns virtual (or is
+     *  recreated) from snapping the shared scroller back to the top. */
+    initialOffset: () => scrollRef.current?.scrollTop ?? 0,
     overscan: 8,
     initialRect: { width: 0, height: 480 },
   });

@@ -125,6 +125,8 @@
 ## 已发现并修复的兼容性缺陷
 
 - Chat Completions 原来丢失 DeepSeek reasoning_content；现在跨工具轮和最终回答完整续接。
+- DeepSeek Responses 路线原来只存回 `summary`（`content: null`），与 `reasoning_text` 回传要求不符；现在按纯文本 `content` 回传，并为缺思考的工具轮补空回显。
+- DeepSeek 的 Responses 流原来只识别 `response.reasoning_summary_text`；现在也识别 `response.reasoning_text`。
 - Gemini 工具调用 extra_content/google/thought_signature 现在与对应调用 ID 一起保留。
 - Claude 明确 effort 使用 output_config；适用家族启用 adaptive thinking，不给旧家族乱加预算。
 - DeepSeek v4 使用本身的 thinking enabled/disabled 和 effort；不套用 Claude adaptive 格式。

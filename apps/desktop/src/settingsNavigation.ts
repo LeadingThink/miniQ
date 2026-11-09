@@ -5,6 +5,7 @@ export const SETTINGS_TAB_IDS = [
   "services",
   "computer",
   "skills",
+  "instructions",
   "mcp",
   "plugins",
   "memory",

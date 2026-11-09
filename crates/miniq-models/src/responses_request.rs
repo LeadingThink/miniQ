@@ -105,7 +105,8 @@ pub(crate) fn build_input_for_model(
     model: &str,
 ) -> Result<Vec<Value>, ProviderError> {
     let mut input = build_input(messages)?;
-    if model.to_ascii_lowercase().starts_with("grok-") {
+    let name = crate::reasoning::family_name(model);
+    if name.starts_with("grok-") {
         input.retain(|item| {
             !matches!(
                 item.get("type").and_then(Value::as_str),
@@ -113,7 +114,112 @@ pub(crate) fn build_input_for_model(
             )
         });
     }
+    if name.starts_with("deepseek") {
+        deepseek::normalize_reasoning(&mut input);
+    }
     Ok(input)
+}
+
+/// DeepSeek answers thinking mode with plain-text chain of thought and requires
+/// it back on every later request that carries tools. OpenAI-compatible relays
+/// reshape that text into a `summary`, so a stored reasoning item can arrive as
+/// `content: null` plus `summary`, which DeepSeek drops. Sending it back as
+/// plain-text `content` (and supplying the empty echo DeepSeek accepts for turns
+/// that produced no thinking) keeps the tool loop valid.
+mod deepseek {
+    use serde_json::{json, Value};
+
+    const CALL_ITEMS: [&str; 6] = [
+        "function_call",
+        "custom_tool_call",
+        "computer_call",
+        "apply_patch_call",
+        "shell_call",
+        "local_shell_call",
+    ];
+
+    fn is_call(item: &Value) -> bool {
+        item.get("type")
+            .and_then(Value::as_str)
+            .is_some_and(|kind| CALL_ITEMS.contains(&kind))
+    }
+
+    fn text(item: &Value) -> String {
+        match item.get("content") {
+            Some(Value::String(value)) if !value.is_empty() => return value.clone(),
+            Some(Value::Array(parts)) => {
+                let joined = parts
+                    .iter()
+                    .filter_map(|part| part.get("text").and_then(Value::as_str))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if !joined.is_empty() {
+                    return joined;
+                }
+            }
+            _ => {}
+        }
+        item.get("summary")
+            .and_then(Value::as_array)
+            .map(|parts| {
+                parts
+                    .iter()
+                    .filter_map(|part| part.get("text").and_then(Value::as_str))
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            })
+            .unwrap_or_default()
+    }
+
+    fn flatten(item: &mut Value) {
+        let text = text(item);
+        let Some(object) = item.as_object_mut() else {
+            return;
+        };
+        // `content` parts of type `reasoning_text` are rejected by Responses
+        // relays that forward to Chat Completions, so send one plain string.
+        object.insert("content".into(), Value::String(text));
+        // DeepSeek does not read summaries, and relay-only decorations are not
+        // part of the item schema. Keeping them would resend the same tokens.
+        for key in ["summary", "encrypted_content", "quality", "size", "role"] {
+            object.remove(key);
+        }
+    }
+
+    pub(super) fn normalize_reasoning(input: &mut Vec<Value>) {
+        for item in input.iter_mut() {
+            if item.get("type").and_then(Value::as_str) == Some("reasoning") {
+                flatten(item);
+            }
+        }
+        // Every assistant turn that calls a tool must replay reasoning, even
+        // when the route returned none. DeepSeek accepts an empty echo for
+        // such turns but rejects the request when the item is missing.
+        let mut index = 0;
+        while index < input.len() {
+            let reasoning = input[index].get("type").and_then(Value::as_str) == Some("reasoning");
+            if !reasoning && !is_call(&input[index]) {
+                index += 1;
+                continue;
+            }
+            let start = index;
+            let mut has_reasoning = false;
+            let mut has_call = false;
+            while index < input.len() {
+                let item = &input[index];
+                match item.get("type").and_then(Value::as_str) {
+                    Some("reasoning") => has_reasoning = true,
+                    _ if is_call(item) => has_call = true,
+                    _ => break,
+                }
+                index += 1;
+            }
+            if has_call && !has_reasoning {
+                input.insert(start, json!({"type": "reasoning", "content": ""}));
+                index += 1;
+            }
+        }
+    }
 }
 
 struct ReplayedCall {

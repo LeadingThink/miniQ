@@ -36,6 +36,7 @@ mod session_settings;
 mod session_titles;
 mod turn_activity;
 mod turn_timing;
+mod turn_context;
 mod workspace_roots;
 mod workspaces;
 
@@ -48,6 +49,7 @@ pub use memory_write::MemoryEvidence;
 pub use miniq_protocol::MemoryRecord as MemoryRow;
 pub use model_context::ModelContextSnapshot;
 pub use turn_activity::TurnActivity;
+pub use turn_context::TurnContextSnapshot;
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -187,6 +189,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0032_message_reasoning",
         include_str!("../../../migrations/0032_message_reasoning.sql"),
+    ),
+    (
+        "0033_turn_context",
+        include_str!("../../../migrations/0033_turn_context.sql"),
     ),
 ];
 

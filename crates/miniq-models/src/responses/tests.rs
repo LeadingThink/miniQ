@@ -38,6 +38,30 @@ fn reasoning_summary_is_requested_without_overwriting_effort() {
         .build_body(&request)
         .get("reasoning")
         .is_none());
+    // DeepSeek returns plain-text reasoning and ignores a requested summary.
+    assert!(provider_for("deepseek-flash")
+        .build_body(&request)
+        .get("reasoning")
+        .is_none());
+}
+
+#[test]
+fn deepseek_reasoning_text_streams_as_reasoning_without_a_summary() {
+    let mut decoder = ResponsesDecoder::default();
+    let mut text = String::new();
+    for event in [
+        json!({"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"I need "}),
+        json!({"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"the date"}),
+        json!({"type":"response.reasoning_text.done","output_index":0,"content_index":0,"text":"I need the date"}),
+        json!({"type":"response.output_text.delta","output_index":0,"delta":"checking"}),
+    ] {
+        for item in decode(&mut decoder, event).items {
+            if let ChatDelta::Reasoning(delta) = item.unwrap() {
+                text.push_str(&delta);
+            }
+        }
+    }
+    assert_eq!(text, "I need the date");
 }
 
 #[test]

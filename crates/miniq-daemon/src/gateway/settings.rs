@@ -38,6 +38,7 @@ pub(super) fn get(state: &AppState) -> Result<Value, RpcError> {
         "turnEndedCommand": settings.turn_ended_command,
         "hooks": settings.hooks,
         "agentPreferences": settings.agent_preferences,
+        "instructions": settings.instructions,
     }))
 }
 
@@ -56,6 +57,17 @@ struct UpdateParams {
     hooks: Option<Vec<crate::hooks::HookConfig>>,
     #[serde(default)]
     agent_preferences: Option<AgentPreferencesUpdate>,
+    #[serde(default)]
+    instructions: Option<InstructionSettingsUpdate>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionSettingsUpdate {
+    enabled: bool,
+    max_bytes: usize,
+    filenames: Vec<String>,
+    project_root_markers: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -167,6 +179,25 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
         }
         settings.agent_preferences.max_subagents = preferences.max_subagents;
     }
+    if let Some(instructions) = input.instructions {
+        validate_instructions(&instructions)?;
+        settings.instructions = crate::instructions::InstructionSettings {
+            enabled: instructions.enabled,
+            filenames: instructions
+                .filenames
+                .into_iter()
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty())
+                .collect(),
+            max_bytes: instructions.max_bytes,
+            project_root_markers: instructions
+                .project_root_markers
+                .into_iter()
+                .map(|marker| marker.trim().to_string())
+                .filter(|marker| !marker.is_empty())
+                .collect(),
+        };
+    }
 
     let global_model = provider_changed
         .then(|| settings.provider.as_ref())
@@ -211,6 +242,40 @@ pub(super) async fn models(state: &AppState, raw: Option<Value>) -> Result<Value
         reasoning_effort: None,
     };
     super::session_model::catalog_for(&config).await
+}
+
+const MAX_INSTRUCTION_BYTES: usize = 1_048_576;
+
+fn validate_instructions(update: &InstructionSettingsUpdate) -> Result<(), RpcError> {
+    if update.max_bytes > MAX_INSTRUCTION_BYTES {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            format!("instructions.maxBytes must not exceed {MAX_INSTRUCTION_BYTES}"),
+        ));
+    }
+    if update.enabled && update.max_bytes == 0 {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "instructions.maxBytes must be greater than 0 while instructions are enabled",
+        ));
+    }
+    if update.filenames.len() > 16 {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "instructions.filenames accepts at most 16 entries",
+        ));
+    }
+    for name in &update.filenames {
+        let name = name.trim();
+        // A filename must stay a filename: discovery never resolves a path.
+        if name.contains(['/', '\\', ':']) || name == "." || name == ".." {
+            return Err(RpcError::new(
+                ErrorCode::InvalidParams,
+                format!("instructions.filenames entry is not a plain filename: {name}"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_remote(remote: &RemoteAccessUpdate) -> Result<(), RpcError> {

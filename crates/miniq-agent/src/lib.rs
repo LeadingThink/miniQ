@@ -12,6 +12,7 @@
 use async_trait::async_trait;
 mod checkpoint;
 mod context;
+mod context_sections;
 mod image_history_tool;
 mod loop_guard;
 mod missing_images;
@@ -24,7 +25,12 @@ mod visual_history;
 pub use checkpoint::{CheckpointStore, TurnCheckpoint};
 
 pub use context::{
-    compact_history, estimate_request_tokens, estimate_tokens, ContextOutcome, ContextPolicy,
+    compact_history, estimate_request_tokens, estimate_text_tokens, estimate_tokens, ContextOutcome,
+    ContextPolicy,
+};
+
+pub use context_sections::{
+    truncate_to_budget, ContextSource, ContextState, Section, SectionFingerprint, SectionId,
 };
 
 use futures_util::StreamExt;

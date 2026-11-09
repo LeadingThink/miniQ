@@ -1,5 +1,11 @@
 //! Unified-diff application used by the provider-native patch tool.
+//!
+//! Hunks are matched line-by-line, so a diff written with LF applies to a
+//! CRLF file. [`crate::line_ending::Document`] carries each line's terminator
+//! through the splice and renders the file back with its original endings, so
+//! applying a patch no longer converts a whole CRLF file to LF.
 
+use crate::line_ending;
 use crate::router::ToolError;
 
 pub(crate) fn create_content(diff: &str) -> String {
@@ -70,20 +76,17 @@ pub(crate) fn apply_diff(original: &[u8], diff: &str) -> Result<String, ToolErro
         ));
     }
 
-    let final_newline = original.ends_with('\n') || diff.ends_with('\n');
-    let mut lines = original.lines().map(str::to_string).collect::<Vec<_>>();
+    let mut document = line_ending::parse(original);
+    let final_newline = document.endings.last().copied().flatten().is_some()
+        || diff.ends_with('\n');
     let mut cursor = 0;
     for hunk in hunks {
-        let position = find_hunk(&lines, &hunk, cursor)?;
+        let position = find_hunk(&document.lines, &hunk, cursor)?;
         let old_len = hunk.old.len();
-        lines.splice(position..position + old_len, hunk.new);
+        document.splice(position, old_len, hunk.new);
         cursor = position;
     }
-    let mut output = lines.join("\n");
-    if final_newline {
-        output.push('\n');
-    }
-    Ok(output)
+    Ok(document.render(final_newline))
 }
 
 fn parse_line_hint(header: &str) -> Option<usize> {
@@ -120,5 +123,48 @@ fn find_hunk(lines: &[String], hunk: &Hunk, cursor: usize) -> Result<usize, Tool
         _ => Err(ToolError::ExecutionFailed(
             "patch context is ambiguous; include more unchanged lines".into(),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn applies_lf_diff_to_crlf_target_and_keeps_crlf() {
+        let original = b"one\r\ntwo\r\nthree\r\n";
+        let diff = "@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n";
+        let output = apply_diff(original, diff).unwrap();
+        assert_eq!(output, "one\r\nTWO\r\nthree\r\n");
+        // The rewrite must not touch the untouched lines' terminators.
+        assert_eq!(output.matches("\r\n").count(), 3);
+    }
+
+    #[test]
+    fn inserted_lines_take_the_target_preferred_ending() {
+        let original = b"one\r\ntwo\r\n";
+        let diff = "@@ -1,2 +1,3 @@\n one\n two\n+three\n";
+        assert_eq!(apply_diff(original, diff).unwrap(), "one\r\ntwo\r\nthree\r\n");
+    }
+
+    #[test]
+    fn mixed_endings_survive_an_unrelated_hunk() {
+        let original = b"one\r\ntwo\rthree\nfour\r\n";
+        let diff = "@@ -1,4 +1,4 @@\n one\n two\n-three\n+THREE\n four\n";
+        assert_eq!(apply_diff(original, diff).unwrap(), "one\r\ntwo\rTHREE\r\nfour\r\n");
+    }
+
+    #[test]
+    fn lf_target_is_unchanged_by_the_crlf_handling() {
+        let original = b"one\ntwo\n";
+        let diff = "@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n";
+        assert_eq!(apply_diff(original, diff).unwrap(), "one\nTWO\n");
+    }
+
+    #[test]
+    fn missing_trailing_newline_is_preserved() {
+        let original = b"one\r\ntwo";
+        let diff = "@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n";
+        assert_eq!(apply_diff(original, diff).unwrap(), "one\r\nTWO");
     }
 }

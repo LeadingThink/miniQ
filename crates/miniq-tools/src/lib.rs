@@ -25,6 +25,7 @@ mod file;
 mod git;
 mod http;
 mod interact;
+mod line_ending;
 mod mcp;
 mod media;
 mod media_capabilities;

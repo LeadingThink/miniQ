@@ -16,6 +16,7 @@ mod external_scan_jobs;
 pub mod features;
 pub mod gateway;
 pub mod hooks;
+mod instructions;
 pub mod learn;
 pub mod mcp;
 pub mod media_capabilities;
@@ -40,6 +41,7 @@ pub mod state;
 pub mod turn;
 mod turn_checkpoint;
 mod turn_clock;
+mod turn_context;
 mod turn_summary;
 
 use miniq_models::{ModelProvider, ProviderConfig};

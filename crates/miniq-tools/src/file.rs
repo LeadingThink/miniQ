@@ -7,6 +7,7 @@ use miniq_sandbox::Risk;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::line_ending;
 use crate::router::{parse_input, Tool, ToolContext, ToolError};
 
 pub(crate) fn path_risk(ctx: &ToolContext, input: &Value, base: RiskLevel, reason: &str) -> Risk {
@@ -122,25 +123,31 @@ impl Tool for FileReadTool {
             .map_err(|e| ToolError::ExecutionFailed(format!("read {}: {e}", path.display())))?;
         let total_lines = content.lines().count();
         let offset = p.offset.unwrap_or(1);
+        // Always hand the model LF, whether or not a page window was requested.
+        // Returning raw bytes for the whole-file case used to make the same
+        // tool disagree with itself about a CRLF target.
+        let eol = line_ending::summary(&content);
+        let normalized = line_ending::to_lf(&content);
         let selected: String = match p.limit {
-            Some(limit) => content
+            Some(limit) => normalized
                 .lines()
                 .skip(offset - 1)
                 .take(limit)
                 .collect::<Vec<_>>()
                 .join("\n"),
-            None if offset > 1 => content
+            None if offset > 1 => normalized
                 .lines()
                 .skip(offset - 1)
                 .collect::<Vec<_>>()
                 .join("\n"),
-            None => content,
+            None => normalized,
         };
         Ok(json!({
             "path": p.path,
             "content": selected,
             "totalLines": total_lines,
             "offset": offset,
+            "eol": eol,
         }))
     }
 }
@@ -273,12 +280,24 @@ impl Tool for FileWriteTool {
                 .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         }
         let existed = path.exists();
-        tokio::fs::write(&path, &p.content)
+        // Overwriting an existing CRLF file keeps CRLF. `restore` keeps the
+        // terminators of lines the rewrite did not change and uses the file's
+        // preferred terminator for new ones; a full rewrite simply lands on the
+        // preferred terminator throughout. Silently downgrading to LF would
+        // rewrite every line in the user's diff.
+        let content = match existed {
+            true => match tokio::fs::read_to_string(&path).await {
+                Ok(previous) => line_ending::restore(&previous, &p.content),
+                Err(_) => p.content.clone(),
+            },
+            false => p.content.clone(),
+        };
+        tokio::fs::write(&path, &content)
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("write {}: {e}", path.display())))?;
         Ok(json!({
             "path": p.path,
-            "bytesWritten": p.content.len(),
+            "bytesWritten": content.len(),
             "created": !existed,
         }))
     }
@@ -304,6 +323,7 @@ mod tests {
             .unwrap();
         assert_eq!(out["content"], "line1\nline2\nline3");
         assert_eq!(out["totalLines"], 3);
+        assert_eq!(out["eol"], "lf");
 
         let out = FileReadTool
             .execute(
@@ -353,6 +373,65 @@ mod tests {
         );
         let risk = FileWriteTool.evaluate_risk(&ctx(dir.path()), &json!({"path": "x.txt"}));
         assert_eq!(risk.level, RiskLevel::Medium);
+    }
+
+    /// The whole-file read used to return raw bytes while the paged read
+    /// returned LF, so the same tool disagreed with itself about one file.
+    /// Both paths must now hand the model LF and report the real ending.
+    #[tokio::test]
+    async fn read_normalises_crlf_and_reports_eol() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "one\r\ntwo\r\nthree\r\n").unwrap();
+        let tool = FileReadTool;
+
+        let whole = tool
+            .execute(&ctx(dir.path()), json!({"path": "a.txt"}))
+            .await
+            .unwrap();
+        assert_eq!(whole["content"], "one\ntwo\nthree\n");
+        assert_eq!(whole["eol"], "crlf");
+
+        let paged = tool
+            .execute(&ctx(dir.path()), json!({"path": "a.txt", "offset": 2, "limit": 1}))
+            .await
+            .unwrap();
+        assert_eq!(paged["content"], "two");
+        assert_eq!(paged["eol"], "crlf");
+    }
+
+    /// Overwriting an existing CRLF file must not downgrade it to LF.
+    #[tokio::test]
+    async fn write_preserves_existing_crlf() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "one\r\ntwo\r\n").unwrap();
+        FileWriteTool
+            .execute(
+                &ctx(dir.path()),
+                json!({"path": "a.txt", "content": "one\nTWO\n"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "one\r\nTWO\r\n"
+        );
+    }
+
+    /// A brand-new file follows the caller's content, i.e. stays LF.
+    #[tokio::test]
+    async fn write_of_a_new_file_keeps_lf() {
+        let dir = tempfile::tempdir().unwrap();
+        FileWriteTool
+            .execute(
+                &ctx(dir.path()),
+                json!({"path": "new.txt", "content": "one\ntwo\n"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("new.txt")).unwrap(),
+            "one\ntwo\n"
+        );
     }
 
     #[tokio::test]

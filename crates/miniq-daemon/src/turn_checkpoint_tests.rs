@@ -125,12 +125,13 @@ async fn image_archive_survives_session_checkpoint_and_next_turn_restore() {
     store
         .append_message(&session.id, Role::User, "compare with the previous image")
         .unwrap();
-    let restored = history_for_turn(
+    let mut context = miniq_agent::ContextState::new();
+    context.set(miniq_agent::SectionId::Core, "runtime");
+    let restored = crate::turn_context::history(
+        &context,
+        None,
         &store.list_messages(&session.id).unwrap(),
         Some(snapshot),
-        "",
-        directory.path(),
-        false,
     );
     assert_eq!(restored[0].role, ChatRole::System);
     assert_eq!(restored[1].image_archive, carrier.image_archive);

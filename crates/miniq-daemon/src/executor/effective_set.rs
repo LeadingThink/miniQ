@@ -10,8 +10,10 @@
 use std::collections::BTreeSet;
 
 use miniq_models::{ToolCallRequest, ToolSpec};
-use miniq_tools::ToolOrigin;
+use miniq_tools::{MediaConfig, ToolOrigin, ToolRouter};
 use serde_json::{json, Value};
+
+use crate::state::AppState;
 
 use super::SessionToolExecutor;
 
@@ -57,51 +59,63 @@ fn origin_label(origin: &ToolOrigin) -> String {
 impl SessionToolExecutor {
     /// Compute the effective set from live router, plugin and MCP state.
     pub(super) fn effective_set(&self) -> EffectiveSet {
-        // Settings servers plus enabled plugins' servers: a plugin server is
-        // available by default while its plugin is enabled (enabling the
-        // plugin is the opt-in); settings win on name collisions.
-        let mcp_servers = self
-            .state
-            .effective_mcp_servers()
-            .into_iter()
-            .filter(|server| server.enabled)
-            .map(|server| server.name)
-            .collect::<BTreeSet<_>>();
-        let mut set = EffectiveSet {
-            mcp_servers,
-            ..Default::default()
-        };
-        for spec in self.router.specs() {
-            let Some(origin) = self.router.origin(&spec.name) else {
-                continue;
-            };
-            if let ToolOrigin::Plugin { id, .. } = &origin {
-                // Unknown to the manager means registered directly on the
-                // router (embedders/tests); the registration is authoritative.
-                if self
-                    .state
-                    .plugins
-                    .diagnostics(id)
-                    .is_some_and(|info| !info.enabled)
-                {
-                    continue;
-                }
-            }
-            if spec.name == "mcp_call" && set.mcp_servers.is_empty() {
-                continue;
-            }
-            set.allowed.insert(EffectiveKey {
-                origin: origin_label(&origin),
-                tool: spec.name.clone(),
-            });
-            set.specs.push(spec);
-        }
-        if let Some(media) = &self.ctx.media {
-            miniq_tools::decorate_media_specs(media, &mut set.specs);
-        }
-        set
+        effective_set(&self.state, &self.router, self.ctx.media.as_ref())
     }
+}
 
+/// Effective tool specs for one session.
+///
+/// Shared with context accounting so a usage estimate counts exactly the tools
+/// a real request would send, rather than every registered tool.
+pub(crate) fn effective_set(
+    state: &AppState,
+    router: &ToolRouter,
+    media: Option<&MediaConfig>,
+) -> EffectiveSet {
+    // Settings servers plus enabled plugins' servers: a plugin server is
+    // available by default while its plugin is enabled (enabling the plugin is
+    // the opt-in); settings win on name collisions.
+    let mcp_servers = state
+        .effective_mcp_servers()
+        .into_iter()
+        .filter(|server| server.enabled)
+        .map(|server| server.name)
+        .collect::<BTreeSet<_>>();
+    let mut set = EffectiveSet {
+        mcp_servers,
+        ..Default::default()
+    };
+    for spec in router.specs() {
+        let Some(origin) = router.origin(&spec.name) else {
+            continue;
+        };
+        if let ToolOrigin::Plugin { id, .. } = &origin {
+            // Unknown to the manager means registered directly on the router
+            // (embedders/tests); the registration is authoritative.
+            if state
+                .plugins
+                .diagnostics(id)
+                .is_some_and(|info| !info.enabled)
+            {
+                continue;
+            }
+        }
+        if spec.name == "mcp_call" && set.mcp_servers.is_empty() {
+            continue;
+        }
+        set.allowed.insert(EffectiveKey {
+            origin: origin_label(&origin),
+            tool: spec.name.clone(),
+        });
+        set.specs.push(spec);
+    }
+    if let Some(media) = media {
+        miniq_tools::decorate_media_specs(media, &mut set.specs);
+    }
+    set
+}
+
+impl SessionToolExecutor {
     /// `Some(output)` when the (already resolved) call is outside the
     /// effective set. Such calls never reach approval or execution.
     pub(super) fn effective_set_rejection(&self, call: &ToolCallRequest) -> Option<Value> {

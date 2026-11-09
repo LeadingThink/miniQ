@@ -69,6 +69,26 @@ async fn context_usage_compact_and_undo_round_trip() {
     );
     assert!(usage["result"].get("contextWindowTokens").is_some());
     assert!(usage["result"].get("percentUsed").is_some());
+    // The split must add up to the reported total, and the tool category must
+    // count the schemas a real request sends rather than an empty list.
+    let categories = usage["result"]["categories"]
+        .as_array()
+        .expect("categories split");
+    assert_eq!(categories.len(), 5);
+    let split_total: u64 = categories
+        .iter()
+        .map(|entry| entry["tokens"].as_u64().unwrap())
+        .sum();
+    assert_eq!(split_total, usage["result"]["estimatedTokens"].as_u64().unwrap());
+    assert!(
+        usage["result"]["categories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["id"] == "tools" && entry["tokens"].as_u64().unwrap() > 0),
+        "tools must be counted: {usage}"
+    );
+    assert!(usage["result"].get("lastRequestActualTokens").is_some());
 
     let compact = call(
         &mut ws,

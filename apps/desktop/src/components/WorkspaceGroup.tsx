@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { ChevronDown, ChevronRight, ChevronUp, Folder, FolderOpen, MoreHorizontal, PencilLine, Plus, Trash2 } from "lucide-react";
 import type { Session, Workspace } from "../types";
 import { revealInFinder } from "../fileActions";
@@ -8,6 +8,7 @@ import { useProjectDisclosure } from "./SidebarNavigation";
 import { SidebarSessionList } from "./SidebarSessionList";
 
 const COLLAPSED_SESSION_COUNT = 3;
+const SESSION_PAGE_SIZE = 10;
 
 interface WorkspaceGroupProps {
   workspace: Workspace;
@@ -40,7 +41,7 @@ interface WorkspaceGroupProps {
 export function WorkspaceGroup(props: WorkspaceGroupProps) {
   const [preferredOpen, setOpen] = useProjectDisclosure(props.workspace.id);
   const open = props.filtering || preferredOpen;
-  const [expanded, setExpanded] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(COLLAPSED_SESSION_COUNT);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(props.workspace.name);
@@ -48,7 +49,6 @@ export function WorkspaceGroup(props: WorkspaceGroupProps) {
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const renameCommittedRef = useRef(false);
-  const hiddenCount = Math.max(0, props.sessions.length - COLLAPSED_SESSION_COUNT);
   const previousSession = useRef({ id: props.currentSessionId, revealed: false });
 
   useEffect(() => {
@@ -60,14 +60,29 @@ export function WorkspaceGroup(props: WorkspaceGroupProps) {
     if (currentIndex < 0) return;
     previousSession.current.revealed = true;
     setOpen(true);
-    if (currentIndex >= COLLAPSED_SESSION_COUNT) setExpanded(true);
+    if (currentIndex >= COLLAPSED_SESSION_COUNT) {
+      setVisibleCount((current) => Math.max(current, Math.ceil((currentIndex + 1) / SESSION_PAGE_SIZE) * SESSION_PAGE_SIZE));
+    }
   }, [props.currentSessionId, props.sessions, setOpen]);
   useEffect(() => {
     if (props.collapseAllVersion > 0) setOpen(false);
   }, [props.collapseAllVersion, setOpen]);
-  const visibleSessions = !open ? [] : (expanded || props.filtering)
-    ? props.sessions
-    : props.sessions.slice(0, COLLAPSED_SESSION_COUNT);
+  /** Each click reveals one page, so a project with hundreds of sessions never
+   *  dumps them all at once. */
+  const shownCount = Math.min(props.sessions.length, Math.max(COLLAPSED_SESSION_COUNT, visibleCount));
+  const remaining = Math.max(0, props.sessions.length - shownCount);
+  const allShown = props.sessions.length > COLLAPSED_SESSION_COUNT && remaining === 0;
+  /** The list owns the full data order so keyboard navigation can still reach
+   *  every session, while rendering only the pages revealed so far. */
+  const listing = open || props.filtering;
+  const renderedCount = props.filtering ? props.sessions.length : shownCount;
+  const revealIndex = useCallback(
+    (index: number) =>
+      setVisibleCount((current) =>
+        Math.max(current, Math.ceil((index + 1) / SESSION_PAGE_SIZE) * SESSION_PAGE_SIZE),
+      ),
+    [],
+  );
 
   useEffect(() => {
     if (renaming && inputRef.current) {
@@ -214,8 +229,10 @@ export function WorkspaceGroup(props: WorkspaceGroupProps) {
           </DropdownMenu>
         </div>
       </div>
-      {visibleSessions.length > 0 && <SidebarSessionList
-        sessions={visibleSessions}
+      {listing && props.sessions.length > 0 && <SidebarSessionList
+        sessions={props.sessions}
+        visibleCount={renderedCount}
+        onRevealIndex={revealIndex}
         currentSessionId={props.currentSessionId}
         unreadSessionIds={props.unreadSessionIds}
         scrollRef={props.scrollRef}
@@ -230,15 +247,25 @@ export function WorkspaceGroup(props: WorkspaceGroupProps) {
         onSetSessionPinned={props.onSetSessionPinned}
         onSetSessionArchived={props.onSetSessionArchived}
       />}
-      {open && !props.filtering && hiddenCount > 0 && (
+      {open && !props.filtering && props.sessions.length > COLLAPSED_SESSION_COUNT && (
         <button
           type="button"
           className="session-toggle"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((current) => !current)}
+          aria-expanded={allShown}
+          onClick={() =>
+            setVisibleCount((current) =>
+              allShown ? COLLAPSED_SESSION_COUNT : Math.max(current, COLLAPSED_SESSION_COUNT) + SESSION_PAGE_SIZE,
+            )
+          }
         >
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          <span>{expanded ? "收起" : `展开 ${hiddenCount} 条会话`}</span>
+          {allShown ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          <span>
+            {allShown
+              ? "收起"
+              : remaining > SESSION_PAGE_SIZE
+                ? `展开更多 ${SESSION_PAGE_SIZE} 条会话`
+                : `展开剩余 ${remaining} 条会话`}
+          </span>
         </button>
       )}
       <ConfirmDialog

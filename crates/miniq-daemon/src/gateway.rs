@@ -14,6 +14,7 @@ mod external_workspace;
 pub(crate) mod files;
 mod git;
 mod interaction;
+mod instructions;
 mod mcp;
 mod memory;
 mod observation;
@@ -318,6 +319,8 @@ async fn dispatch_from(
             skill::job_cancel(state, req.params)
         }
         "skill.save" => skill::save(state, req.params),
+        "instructions.get" => instructions::get(state, req.params),
+        "instructions.update" => instructions::update(state, req.params),
         "skill.create" => skill::create(state, req.params).await,
         "skill.validate" => skill::validate(state, req.params).await,
         "mcp.list" => mcp::list(state, req.params).await,

@@ -174,6 +174,74 @@ async fn unreadable_screenshots_become_visible_errors_instead_of_poisoning_histo
 }
 
 #[test]
+fn deepseek_replays_reasoning_as_plain_text_instead_of_a_summary() {
+    let message = assistant(vec![
+        json!({
+            "type":"reasoning", "id":"rs_1", "status":"completed", "content": null,
+            "summary":[{"type":"summary_text","text":"Call the tool first."}],
+            "quality":"", "size":"", "role":""
+        }),
+        json!({"type":"function_call","call_id":"call-1","name":"file_read","arguments":"{}"}),
+    ]);
+    let input = build_input_for_model(
+        &[
+            message,
+            ChatMessage::tool_result("call-1", r#"{"ok":true}"#),
+        ],
+        "deepseek-flash",
+    )
+    .unwrap();
+    assert_eq!(input[0]["type"], "reasoning");
+    assert_eq!(input[0]["content"], "Call the tool first.");
+    for removed in ["summary", "quality", "size", "role"] {
+        assert!(
+            input[0].get(removed).is_none(),
+            "{removed} must not be replayed"
+        );
+    }
+    assert_eq!(input[1]["type"], "function_call");
+    assert_eq!(input[2]["type"], "function_call_output");
+}
+
+#[test]
+fn deepseek_tool_rounds_without_reasoning_get_an_empty_echo() {
+    let mut assistant = ChatMessage::assistant("");
+    assistant.tool_calls.push(ToolCallRequest {
+        id: "call-1".into(),
+        name: "file_read".into(),
+        arguments: json!({}),
+    });
+    let input = build_input_for_model(
+        &[
+            ChatMessage::user("read"),
+            assistant,
+            ChatMessage::tool_result("call-1", "contents"),
+            ChatMessage::user("continue"),
+        ],
+        "oneapi.hy/deepseek-flash",
+    )
+    .unwrap();
+    assert_eq!(input[1]["type"], "reasoning");
+    assert_eq!(input[1]["content"], "");
+    assert_eq!(input[2]["type"], "function_call");
+    assert_eq!(input[3]["type"], "function_call_output");
+    assert_eq!(input.len(), 5);
+}
+
+#[test]
+fn other_families_keep_native_reasoning_items_untouched() {
+    let message = assistant(vec![json!({
+        "type":"reasoning", "id":"rs_1", "content": null,
+        "summary":[{"type":"summary_text","text":"summary"}],
+        "encrypted_content":"opaque"
+    })]);
+    let input = build_input_for_model(&[message], "gpt-5.4").unwrap();
+    assert_eq!(input[0]["content"], Value::Null);
+    assert_eq!(input[0]["encrypted_content"], "opaque");
+    assert_eq!(input[0]["summary"][0]["text"], "summary");
+}
+
+#[test]
 fn normalizing_one_native_call_preserves_mixed_calls_and_reasoning_context() {
     let reasoning = json!({ "type": "reasoning", "id": "rs_1", "summary": [] });
     let function = json!({

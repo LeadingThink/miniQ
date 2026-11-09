@@ -1,6 +1,9 @@
 //! file_patch: apply multiple exact-match edits to one file atomically.
 //! All edits are validated against the current content before anything is
 //! written, so a failed edit leaves the file untouched.
+//!
+//! Matching runs against the LF view of the file and the result is restored
+//! to the file's own terminators, so CRLF targets match like LF ones.
 
 use async_trait::async_trait;
 use miniq_protocol::RiskLevel;
@@ -9,6 +12,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::file::path_risk;
+use crate::line_ending;
 use crate::router::{parse_input, Tool, ToolContext, ToolError};
 
 pub struct FilePatchTool;
@@ -81,17 +85,25 @@ impl Tool for FilePatchTool {
             .map_err(|e| ToolError::ExecutionFailed(format!("read {}: {e}", path.display())))?;
 
         // Validate and apply sequentially in memory; only write at the end.
+        // Edits match the LF view `file_read` returns, then the file's own
+        // terminators are restored on write.
+        let original = content.clone();
+        let endings = line_ending::summary(&original);
+        let mut view = line_ending::to_lf(&original);
         let mut total = 0usize;
         for (i, edit) in p.edits.iter().enumerate() {
-            if edit.old_string.is_empty() {
+            let old_string = line_ending::to_lf(&edit.old_string);
+            let new_string = line_ending::to_lf(&edit.new_string);
+            if old_string.is_empty() {
                 return Err(ToolError::InvalidInput(format!(
                     "edit {i}: empty oldString"
                 )));
             }
-            let count = content.matches(&edit.old_string).count();
+            let count = view.matches(old_string.as_str()).count();
             if count == 0 {
                 return Err(ToolError::ExecutionFailed(format!(
-                    "edit {i}: oldString not found (no changes applied)"
+                    "edit {i}: oldString not found (no changes applied; file uses {endings} \
+                     line endings)"
                 )));
             }
             if count > 1 && !edit.replace_all {
@@ -100,14 +112,15 @@ impl Tool for FilePatchTool {
                      replaceAll (no changes applied)"
                 )));
             }
-            if edit.replace_all {
-                content = content.replace(&edit.old_string, &edit.new_string);
+            view = if edit.replace_all {
                 total += count;
+                view.replace(old_string.as_str(), &new_string)
             } else {
-                content = content.replacen(&edit.old_string, &edit.new_string, 1);
                 total += 1;
-            }
+                view.replacen(old_string.as_str(), &new_string, 1)
+            };
         }
+        content = line_ending::restore(&original, &view);
         tokio::fs::write(&path, &content)
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("write {}: {e}", path.display())))?;
@@ -163,5 +176,57 @@ mod tests {
             std::fs::read_to_string(dir.path().join("f.txt")).unwrap(),
             "original"
         );
+    }
+
+    /// Multi-line edits against a CRLF file used to fail with
+    /// "oldString not found" because the read path stripped `\r` while this
+    /// tool compared raw bytes. The edit must now apply and keep CRLF.
+    #[tokio::test]
+    async fn crlf_file_accepts_multi_line_edit() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("f.py"),
+            "class A:\r\n    pass\r\n\r\nclass B:\r\n    pass\r\n",
+        )
+        .unwrap();
+        let ctx = ToolContext::new(dir.path().to_path_buf());
+
+        let out = FilePatchTool
+            .execute(
+                &ctx,
+                json!({"path": "f.py", "edits": [
+                    {
+                        "oldString": "class A:\n    pass",
+                        "newString": "class A:\n    x = 1"
+                    }
+                ]}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(out["replacements"], 1);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("f.py")).unwrap(),
+            "class A:\r\n    x = 1\r\n\r\nclass B:\r\n    pass\r\n"
+        );
+    }
+
+    /// The failure message must name the file's line endings so a mismatch is
+    /// diagnosable without re-reading the file.
+    #[tokio::test]
+    async fn not_found_message_reports_line_endings() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "a\r\nb\r\n").unwrap();
+        let ctx = ToolContext::new(dir.path().to_path_buf());
+
+        let err = FilePatchTool
+            .execute(
+                &ctx,
+                json!({"path": "f.txt", "edits": [
+                    {"oldString": "MISSING", "newString": "x"}
+                ]}),
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("crlf"), "got: {err}");
     }
 }

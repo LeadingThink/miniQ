@@ -63,6 +63,9 @@ pub struct DaemonSettings {
     /// Maximum number of simultaneously active child agents per session.
     #[serde(default)]
     pub agent_preferences: AgentPreferences,
+    /// Project instruction discovery (`AGENTS.md`) and its byte budget.
+    #[serde(default)]
+    pub instructions: crate::instructions::InstructionSettings,
     /// Staged feature flags (plan §4.7). Missing section keeps defaults.
     #[serde(default)]
     pub features: crate::features::FeatureFlags,

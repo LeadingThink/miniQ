@@ -76,6 +76,47 @@ async fn applies_move_sections_before_their_diff_body() {
     );
 }
 
+#[tokio::test]
+async fn update_keeps_crlf_of_the_target_file() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("crlf.txt"), b"one\r\ntwo\r\nthree\r\n").unwrap();
+    let context = ToolContext::new(dir.path().to_path_buf());
+
+    ApplyPatchTool
+        .execute(
+            &context,
+            json!({"patch":"*** Begin Patch\n*** Update File: crlf.txt\n@@\n-one\n+uno\n*** End Patch"}),
+        )
+        .await
+        .unwrap();
+
+    // Previously every terminator was rewritten to LF.
+    assert_eq!(
+        std::fs::read(dir.path().join("crlf.txt")).unwrap(),
+        b"uno\r\ntwo\r\nthree\r\n"
+    );
+}
+
+#[tokio::test]
+async fn text_patch_parses_a_crlf_patch_body() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.txt"), "old\n").unwrap();
+    let context = ToolContext::new(dir.path().to_path_buf());
+
+    ApplyPatchTool
+        .execute(
+            &context,
+            json!({"patch":"*** Begin Patch\r\n*** Update File: a.txt\r\n@@\r\n-old\r\n+new\r\n*** End Patch\r\n"}),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "new\n"
+    );
+}
+
 #[test]
 fn structured_move_schema_matches_runtime_operation() {
     let schema = ApplyPatchTool.parameters_schema();

@@ -6,7 +6,7 @@ use crate::{ApiProtocol, ProviderConfig};
 
 /// Vendors namespace route IDs (`hy/deepseek-v4.1-flash`). Family contracts are
 /// stated on the bare ID, so match the last path segment only.
-fn family_name(model: &str) -> String {
+pub(crate) fn family_name(model: &str) -> String {
     model
         .rsplit('/')
         .next()
@@ -23,7 +23,7 @@ pub fn reasoning_efforts(model: &str, protocol: ApiProtocol) -> Vec<ReasoningEff
     if name.starts_with("gpt-") && (name.contains("-pro") || name.contains("-codex")) {
         return Vec::new();
     }
-    if name.starts_with("deepseek-v4-") {
+    if thinking_family(&name) {
         return vec![None, Low, High, Max];
     }
     if protocol == ApiProtocol::ChatCompletions && name.starts_with("gemini-") {
@@ -92,10 +92,19 @@ pub fn reasoning_efforts(model: &str, protocol: ApiProtocol) -> Vec<ReasoningEff
 
 pub(crate) fn supports_summary(model: &str) -> bool {
     let name = family_name(model);
+    // DeepSeek reports the chain of thought as plain text, and accepts
+    // `summary` in the request without generating one.
     !name.contains("-chat")
+        && !name.starts_with("deepseek")
         && ["gpt-5", "gpt-6", "o3", "o4-mini"]
             .iter()
             .any(|prefix| name.starts_with(prefix))
+}
+
+/// DeepSeek thinking families share one contract: a `thinking` toggle plus
+/// `none`/`low`/`high`/`max` effort. Older chat-only IDs keep provider defaults.
+pub(crate) fn thinking_family(name: &str) -> bool {
+    name.starts_with("deepseek") && !name.contains("v3") && !name.contains("chat")
 }
 
 pub(crate) fn apply_reasoning(body: &mut Value, config: &ProviderConfig, protocol: ApiProtocol) {
@@ -103,7 +112,7 @@ pub(crate) fn apply_reasoning(body: &mut Value, config: &ProviderConfig, protoco
         return;
     };
     let name = family_name(&config.model);
-    if name.starts_with("deepseek-v4-") && protocol != ApiProtocol::Responses {
+    if thinking_family(&name) && protocol != ApiProtocol::Responses {
         body["thinking"] =
             json!({ "type": if effort == ReasoningEffort::None { "disabled" } else { "enabled" } });
         if effort == ReasoningEffort::None {

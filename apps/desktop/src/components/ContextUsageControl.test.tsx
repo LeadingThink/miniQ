@@ -30,6 +30,14 @@ const mock = vi.hoisted(() => ({
       autoCompactTokens: 6_400,
       percentUsed: 15,
       lastRequestTokens: 1_100,
+      lastRequestActualTokens: 1_050,
+      categories: [
+        { id: "system", tokens: 600 },
+        { id: "tools", tokens: 300 },
+        { id: "conversation", tokens: 200 },
+        { id: "connectors", tokens: 50 },
+        { id: "skills", tokens: 50 },
+      ],
     } as ContextUsage,
     loading: false,
     error: null as string | null,
@@ -50,6 +58,14 @@ afterEach(() => {
       autoCompactTokens: 6_400,
       percentUsed: 15,
       lastRequestTokens: 1_100,
+      lastRequestActualTokens: 1_050,
+      categories: [
+        { id: "system", tokens: 600 },
+        { id: "tools", tokens: 300 },
+        { id: "conversation", tokens: 200 },
+        { id: "connectors", tokens: 50 },
+        { id: "skills", tokens: 50 },
+      ],
     },
     loading: false,
     error: null,
@@ -159,4 +175,34 @@ it("uses the actual compaction threshold for warnings rather than the capacity p
   expect(trigger.classList.contains("is-warning")).toBe(true);
   fireEvent.click(trigger);
   expect(screen.getByRole("dialog").textContent).toContain("基础估算已达到自动压缩阈值");
+});
+
+it("shows the estimated split per category and the provider-reported input", () => {
+  renderControl();
+  fireEvent.click(screen.getByRole("button", { name: "上下文用量" }));
+  const dialog = screen.getByRole("dialog", { name: "上下文用量" });
+  expect(dialog.textContent).toContain("600 tokens");
+  expect(dialog.textContent).toContain("300 tokens");
+  expect(dialog.textContent).toContain("模型接口实际输入");
+  expect(dialog.textContent).toContain("1,050 tokens");
+});
+
+it("reports categories and actual input as unknown instead of guessing", () => {
+  mock.state = {
+    ...mock.state,
+    usage: {
+      estimatedTokens: 1_200,
+      contextWindowTokens: 8_000,
+      autoCompactTokens: 6_400,
+      percentUsed: 15,
+      lastRequestTokens: null,
+      lastRequestActualTokens: null,
+      categories: null,
+    },
+  };
+  renderControl();
+  fireEvent.click(screen.getByRole("button", { name: "上下文用量" }));
+  const dialog = screen.getByRole("dialog", { name: "上下文用量" });
+  expect(within(dialog).getAllByText("未单独统计")).toHaveLength(5);
+  expect(dialog.textContent).toContain("暂无请求记录");
 });
