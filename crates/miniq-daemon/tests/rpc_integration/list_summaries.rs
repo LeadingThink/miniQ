@@ -83,6 +83,7 @@ async fn settings_schema_returns_ordered_groups_and_defaults() {
             "services",
             "computer",
             "skills",
+            "instructions",
             "mcp",
             "plugins",
             "memory",
