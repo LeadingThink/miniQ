@@ -33,7 +33,7 @@ apps/desktop/scripts/*
 dist-android/
 
 # Local macOS metadata and generated promotional media.
-promo/.DS_Store
+.DS_Store
 promo/out/
 promo/*/out/
 promo/*/build/
