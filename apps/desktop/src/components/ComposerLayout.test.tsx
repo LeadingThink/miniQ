@@ -113,6 +113,15 @@ it("avoids trailing thinking whitespace while keeping answers and folded activit
   expect(processCss).toMatch(/\.completed-process-body\s*\{[^}]*gap: 8px;/s);
 });
 
+it("keeps a single scroll owner on phones so the composer shows one scrollbar", () => {
+  const composerCss = readFileSync(resolve(process.cwd(), "src/components/Composer.css"), "utf8");
+  // Clamping the textarea and its wrapper together stacks two scrollbars.
+  expect(composerCss).not.toMatch(/\.composer-card textarea,\s*\.composer-card \.composer-field\s*\{/);
+  expect(composerCss).toMatch(/\.composer-card textarea\s*\{[^}]*max-height: min\(200px, 28dvh[^}]*overflow-y: auto;/s);
+  expect(composerCss).toMatch(/\.composer-card \.composer-field\s*\{[^}]*max-height: none;[^}]*overflow-y: hidden;/s);
+  expect(composerCss).toMatch(/\.composer-card \.composer-field\.has-paste\s*\{[^}]*overflow-y: auto;/s);
+});
+
 it("keeps the keyboard hint beside the right-aligned send controls", () => {
   const { container } = render(
     <ComposerCard
