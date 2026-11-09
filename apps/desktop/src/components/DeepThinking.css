@@ -1,8 +1,13 @@
 .deep-thinking {
   min-width: 0;
-  margin: 0 0 14px;
+  margin: 0;
   color: var(--text-mid);
   font-size: 13px;
+}
+
+/* Thinking-only steps have no trailing spacer; answers retain separation. */
+.deep-thinking + .md:not(:empty) {
+  margin-top: 8px;
 }
 
 .deep-thinking-toggle {

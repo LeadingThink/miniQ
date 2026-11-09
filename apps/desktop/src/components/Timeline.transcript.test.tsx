@@ -141,6 +141,30 @@ it("collapses each contiguous tool run into one closed segment, keeping commenta
   expect(view.container.querySelector('[data-history-anchor="tool:t-extra"]')).toBeTruthy();
 });
 
+it("keeps repeated command and thinking-only steps adjacent inside expanded work", async () => {
+  const thinking: Message = { id: "thinking", sessionId: "s", role: "assistant", assistantKind: "commentary",
+    content: "", reasoning: "核对执行结果", createdAt: at(3) };
+  const steps: ToolCall[] = [1, 2, 4, 5].map(n => ({ id: `shell-${n}`, sessionId: "s", toolName: "shell_run",
+    input: { command: `echo ${n}` }, status: "succeeded", createdAt: at(n) }));
+  const final: Message = { id: "done", sessionId: "s", role: "assistant", assistantKind: "final",
+    content: "检查完成", createdAt: at(7) };
+  const view = render(<Timeline {...props} busy={false} messages={[messages[0], thinking, final]} toolCalls={steps} />);
+  const process = view.container.querySelector<HTMLDetailsElement>(".completed-process")!;
+  fireEvent.click(process.querySelector("summary")!);
+  const toggle = await screen.findByRole("button", { name: "深度思考" });
+  const entry = toggle.closest(".message-entry")!;
+  expect(entry.parentElement?.className).toBe("completed-process-body");
+  expect(entry.previousElementSibling?.querySelector("summary")?.textContent).toBe("运行了 2 条命令");
+  expect(entry.nextElementSibling?.querySelector("summary")?.textContent).toBe("运行了 2 条命令");
+  expect(entry.querySelector(".message-footer")).toBeNull();
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(screen.getByRole("region", { name: "思考内容" }).textContent).toBe("核对执行结果");
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getByText("检查完成").closest(".completed-process")).toBeNull();
+});
+
 it("has one approval decision surface outside history, with no duplicate Working notice", async () => {
   const onResolveApproval = vi.fn();
   const approval = { toolName: "shell_run", input: { command: "npm test" }, approval: {

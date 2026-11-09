@@ -104,6 +104,15 @@ it("keeps timeline activity compact while preserving separation between entries"
   expect(conversationV2Css).toMatch(/\.timeline-turn\s*\{[^}]*gap: 8px;/s);
 });
 
+it("avoids trailing thinking whitespace while keeping answers and folded activity separated", () => {
+  const thinkingCss = readFileSync(resolve(process.cwd(), "src/components/DeepThinking.css"), "utf8");
+  const processCss = readFileSync(resolve(process.cwd(), "src/components/CompletedProcess.css"), "utf8");
+  expect(thinkingCss).toMatch(/\.deep-thinking\s*\{[^}]*margin: 0;/s);
+  expect(thinkingCss).toMatch(/\.deep-thinking \+ \.md:not\(:empty\)\s*\{[^}]*margin-top: 8px;/s);
+  expect(thinkingCss).toMatch(/\.deep-thinking-toggle\s*\{[^}]*min-height: 36px;/s);
+  expect(processCss).toMatch(/\.completed-process-body\s*\{[^}]*gap: 8px;/s);
+});
+
 it("keeps the keyboard hint beside the right-aligned send controls", () => {
   const { container } = render(
     <ComposerCard

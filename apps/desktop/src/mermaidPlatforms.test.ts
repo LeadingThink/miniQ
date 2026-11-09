@@ -1,6 +1,19 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
+it("shares compact activity styles without platform-specific WebView selectors", () => {
+  for (const [path, selector] of [
+    ["./components/DeepThinking.css", /\.deep-thinking\s*\{[^}]*margin: 0;/s],
+    ["./components/CompletedProcess.css", /\.completed-process-body\s*\{[^}]*gap: 8px;/s],
+  ] as const) {
+    const css = readFileSync(new URL(path, import.meta.url), "utf8");
+    expect(css).toMatch(selector);
+    expect(css).not.toMatch(/\.native-mobile|\.platform-(?:windows|macos|linux|android|ios)/);
+    const component = readFileSync(new URL(path.replace(".css", ".tsx"), import.meta.url), "utf8");
+    expect(component).toContain(`import "${path.replace("./components/", "./")}"`);
+  }
+});
+
 it("ships the shared frontend through the Tauri and Capacitor WebView entry points", () => {
   const tauri = JSON.parse(
     readFileSync(
