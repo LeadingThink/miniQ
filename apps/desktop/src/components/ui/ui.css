@@ -91,14 +91,46 @@
   cursor: default;
 }
 
-/* ---- Switch (extends legacy .switch in pages.css) ---- */
+/* ---- Switch ---- */
 .ui-switch {
+  display: inline-flex;
+  align-items: center;
+  width: 36px;
+  height: 21px;
+  border-radius: var(--radius-pill);
   border: none;
+  background: var(--border-strong);
+  padding: 2px;
+  flex: none;
+  cursor: pointer;
   transition: background var(--duration-fast) var(--ease-standard);
 }
 
+.ui-switch:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--border-strong) 80%, var(--text));
+}
+
 .ui-switch .switch-knob {
+  display: block;
+  flex: none;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--control-knob);
+  box-shadow: var(--shadow-knob);
   transition: transform var(--duration-fast) var(--ease-spring);
+}
+
+.ui-switch.on {
+  background: var(--ok);
+}
+
+.ui-switch.on:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ok) 85%, var(--text));
+}
+
+.ui-switch.on .switch-knob {
+  transform: translateX(15px);
 }
 
 .ui-switch:disabled {

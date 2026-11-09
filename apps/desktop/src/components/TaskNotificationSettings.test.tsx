@@ -42,7 +42,7 @@ it("persists modes without requesting permission on mount or mode changes", asyn
 it("keeps mobile-only push settings off the desktop while exposing desktop sound quiet hours", () => {
   render(<TaskNotificationSettings />);
   expect(screen.queryByText("离线推送")).toBeNull();
-  expect(screen.getByRole("checkbox", { name: /免打扰时段/ })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: /免打扰时段/ })).toBeTruthy();
 });
 
 it("requests permission and sends one test after the explicit enable click", async () => {
@@ -98,7 +98,7 @@ it("splits desktop sound settings into their own section with per-kind previews"
   expect(within(sounds).getByRole("switch", { name: "仅在 miniQ 不在前台时播放" })).toBeTruthy();
   expect(within(sounds).getByRole("slider", { name: "音量" })).toBeTruthy();
   expect(within(sounds).getByText("55%")).toBeTruthy();
-  expect(within(sounds).getByRole("checkbox", { name: /免打扰时段/ })).toBeTruthy();
+  expect(within(sounds).getByRole("switch", { name: /免打扰时段/ })).toBeTruthy();
   expect(preview).not.toHaveBeenCalled();
   fireEvent.click(within(sounds).getByRole("button", { name: "试听失败提示音" }));
   expect(preview).toHaveBeenCalledExactlyOnceWith("failed", { userInitiated: true, ignoreSettings: true });
@@ -111,7 +111,7 @@ it("hides sound details when the master switch is off", () => {
   expect(screen.getByRole("switch", { name: "提醒音效" }).getAttribute("aria-checked")).toBe("false");
   expect(screen.queryByRole("slider", { name: "音量" })).toBeNull();
   expect(screen.queryByRole("switch", { name: "完成提示音" })).toBeNull();
-  expect(screen.queryByRole("checkbox", { name: /免打扰时段/ })).toBeNull();
+  expect(screen.queryByRole("switch", { name: /免打扰时段/ })).toBeNull();
 });
 
 it("reports a failed preview", async () => {

@@ -1,16 +1,18 @@
 import type { KeyboardEvent } from "react";
 
 export interface SwitchProps {
+  id?: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
   /** Accessible name; also used as the tooltip unless `title` is given. */
   label: string;
   title?: string;
+  describedBy?: string;
   disabled?: boolean;
   className?: string;
 }
 
-/** Accessible toggle. Keeps the legacy `.switch` classes so existing styling applies. */
+/** Accessible toggle shared by settings and feature controls. */
 export function Switch(props: SwitchProps) {
   const toggle = () => {
     if (!props.disabled) props.onChange(!props.checked);
@@ -26,10 +28,12 @@ export function Switch(props: SwitchProps) {
   };
   return (
     <button
+      id={props.id}
       type="button"
       role="switch"
       aria-checked={props.checked}
       aria-label={props.label}
+      aria-describedby={props.describedBy}
       title={props.title ?? props.label}
       disabled={props.disabled}
       className={`switch ui-switch ${props.checked ? "on" : ""} ${props.className ?? ""}`.trim()}

@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
+import { Switch } from "./ui/Switch";
 
 export interface MemorySettings { recallEnabled: boolean; autoSave: boolean }
 
 export function MemorySettingsControls({ client }: { client: RpcClient }) {
+  const id = useId();
   const [settings, setSettings] = useState<MemorySettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -42,13 +44,31 @@ export function MemorySettingsControls({ client }: { client: RpcClient }) {
       if (!request.signal.aborted) { pending.current = null; setSaving(false); }
     }
   };
-  return <div aria-label="记忆使用设置">
-    <p className="memory-description"><label><input type="checkbox" checked={settings?.recallEnabled ?? false} disabled={!settings || saving}
-      onChange={(event) => { if (settings) void update({ ...settings, recallEnabled: event.target.checked }); }} /> 在聊天中使用已保存的记忆</label></p>
-    <p className="memory-description"><label><input type="checkbox" checked={settings?.autoSave ?? false} disabled={!settings || saving}
-      onChange={(event) => { if (settings) void update({ ...settings, autoSave: event.target.checked }); }} /> 自动记住偏好和项目事实</label></p>
-    <p className="memory-description">开启后，正常聊天即可积累记忆，无需专门说“记住”。通用个人偏好保存到全局记忆，可用于当前连接的其他项目；项目偏好和事实只用于所属项目。开启“在聊天中使用已保存的记忆”后，新聊天会自动加载适用的偏好和相关事实。</p>
-    <p className="memory-description">自动保存默认关闭，使用会话当前模型整理后续成功对话，会产生模型用量；“每次询问”模式下暂停。临时侧聊不读写记忆。关闭自动保存仍可明确要求记住。</p>
+  return <div className="memory-settings" role="group" aria-label="记忆使用设置">
+    <label className="memory-setting" htmlFor={`${id}-recall`}>
+      使用记忆
+      <Switch
+        id={`${id}-recall`}
+        label="使用记忆"
+        title="在新聊天中使用已保存的偏好和事实"
+        checked={settings?.recallEnabled ?? false}
+        disabled={!settings || saving}
+        onChange={(recallEnabled) => { if (settings) void update({ ...settings, recallEnabled }); }}
+      />
+    </label>
+    <label className="memory-setting" htmlFor={`${id}-auto-save`}>
+      自动保存
+      <Switch
+        id={`${id}-auto-save`}
+        label="自动保存"
+        title="从聊天中自动保存偏好和事实"
+        describedBy={`${id}-usage`}
+        checked={settings?.autoSave ?? false}
+        disabled={!settings || saving}
+        onChange={(autoSave) => { if (settings) void update({ ...settings, autoSave }); }}
+      />
+      <small id={`${id}-usage`}>消耗模型用量</small>
+    </label>
     {error && <p role="alert">{error}</p>}
   </div>;
 }

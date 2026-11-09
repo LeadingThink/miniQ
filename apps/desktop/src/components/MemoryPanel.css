@@ -1,5 +1,12 @@
 .memory-panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.memory-description, .memory-empty { color: var(--text-dim); font-size: var(--font-body); line-height: 1.65; margin: 0; }
+.memory-empty { color: var(--text-dim); font-size: var(--font-body); line-height: 1.65; margin: 0; }
+.memory-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; }
+.memory-settings { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 20px; }
+.memory-setting, .settings-panel .memory-setting { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; min-height: 36px; color: var(--text-mid); font-size: var(--font-footnote); font-weight: 400; white-space: nowrap; cursor: pointer; }
+.memory-setting:has(:disabled) { cursor: default; }
+.memory-setting small { color: var(--text-dim); font-size: var(--font-caption); }
+.memory-settings > [role="alert"] { flex-basis: 100%; margin: 0; font-size: var(--font-footnote); }
+@media (pointer: coarse) { .memory-setting, .settings-panel .memory-setting { min-height: 44px; } }
 .memory-tabs, .memory-search, .memory-list-heading, .memory-pagination, .memory-confirm > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .memory-tabs button { padding: 8px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: transparent; color: var(--text); cursor: pointer; }
 .memory-tabs button[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }

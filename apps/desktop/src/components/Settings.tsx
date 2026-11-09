@@ -30,6 +30,7 @@ import { ProviderKeyField } from "./ProviderKeyField";
 import { DesktopAccountLogin } from "./DesktopAccountLogin";
 import { DataDirectorySettings } from "./DataDirectorySettings";
 import { AdvancedSettings } from "./AdvancedSettings";
+import { SettingsToggle } from "./SettingsToggle";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
 export const ZAIWEN_API_BASE_URL = DESKTOP_API_BASE_URL;
@@ -520,18 +521,13 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     开启后，使用同一个 API Key 可在手机上查看并控制这台电脑的 miniQ。
                   </p>
                 </div>
-                <label className="remote-access-toggle">
-                  <span>
-                    <strong>允许远程连接</strong>
-                    <small>daemon 主动连接 relay，无需暴露本机端口。开启期间电脑不会闲置休眠（屏幕仍会熄灭），合盖或手动休眠后手机将无法连接。</small>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={remoteEnabled}
-                    disabled={loading || saving}
-                    onChange={(event) => setRemoteEnabled(event.target.checked)}
-                  />
-                </label>
+                <SettingsToggle
+                  label="允许远程连接"
+                  description="daemon 主动连接 relay，无需暴露本机端口。开启期间电脑不会闲置休眠（屏幕仍会熄灭），合盖或手动休眠后手机将无法连接。"
+                  checked={remoteEnabled}
+                  disabled={loading || saving}
+                  onChange={setRemoteEnabled}
+                />
                 {remoteEnabled && (
                   <>
                     <label>

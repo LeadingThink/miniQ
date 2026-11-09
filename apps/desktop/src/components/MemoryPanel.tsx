@@ -37,13 +37,13 @@ function MemoryScopes({ client, workspaceId }: Props) {
     ? { scope, workspaceId } : { scope: "global" };
   return (
     <section className="memory-panel" aria-label="长期记忆管理">
-      <p className="memory-description">查看 AI 已保存的偏好和项目事实。项目记忆仅供该项目使用，全局记忆可供所有项目使用。</p>
-      <MemorySettingsControls client={client} />
-      <div className="memory-tabs" role="group" aria-label="记忆范围">
-        <button type="button" disabled={!workspaceId} aria-pressed={scope === "workspace"} onClick={() => setScope("workspace")}>当前项目</button>
-        <button type="button" aria-pressed={scope === "global"} onClick={() => setScope("global")}>全局</button>
+      <div className="memory-toolbar">
+        <div className="memory-tabs" role="group" aria-label="记忆范围">
+          <button type="button" disabled={!workspaceId} title={workspaceId ? "仅在当前项目使用" : "打开项目后可用"} aria-pressed={scope === "workspace"} onClick={() => setScope("workspace")}>当前项目</button>
+          <button type="button" title="所有项目均可使用" aria-pressed={scope === "global"} onClick={() => setScope("global")}>全局</button>
+        </div>
+        <MemorySettingsControls client={client} />
       </div>
-      {!workspaceId && <p className="memory-description">打开项目后，可管理该项目的记忆。</p>}
       <div className="memory-search" role="search">
         <input type="search" aria-label="搜索记忆" placeholder="搜索记忆内容" value={draft}
           onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {

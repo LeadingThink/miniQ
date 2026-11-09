@@ -1,6 +1,7 @@
 import { Bell } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Switch } from "./ui/Switch";
+import { SettingsToggle } from "./SettingsToggle";
 import { TaskSoundSettings } from "./TaskSoundSettings";
 import { TimeField } from "./TimeField";
 import "./NotificationSettings.css";
@@ -114,19 +115,13 @@ function BackgroundConnectionSetting({ onStatus }: { onStatus: (text: string | n
 
   return (
     <>
-      <label className="remote-access-toggle" htmlFor="task-notification-background">
-        <span>
-          <strong>后台保持连接</strong>
-          <small>通过常驻服务帮助 miniQ 在后台与电脑保持连接。提醒时效仍受网络和手机省电设置影响。开启后通知栏会常驻一条「miniQ 正在后台保持连接」，耗电略有增加；从最近任务中划掉 App 后不再提醒。</small>
-        </span>
-        <input
-          id="task-notification-background"
-          type="checkbox"
-          checked={enabled}
-          disabled={busy}
-          onChange={(event) => void toggle(event.target.checked)}
-        />
-      </label>
+      <SettingsToggle
+        label="后台保持连接"
+        description="通过常驻服务帮助 miniQ 在后台与电脑保持连接。提醒时效仍受网络和手机省电设置影响。开启后通知栏会常驻一条「miniQ 正在后台保持连接」，耗电略有增加；从最近任务中划掉 App 后不再提醒。"
+        checked={enabled}
+        disabled={busy}
+        onChange={(enabled) => void toggle(enabled)}
+      />
       {health && <p role="status">{health}</p>}
       <button type="button" className="secondary" onClick={() => void openBackgroundNotificationSettings().then((ok) => {
         if (!ok) onStatus("无法打开系统通知设置，请在手机设置中找到 miniQ 的通知权限。");
@@ -160,18 +155,12 @@ function QuietHoursSetting({ onStatus, mobile = true }: { onStatus: (text: strin
   };
   return (
     <>
-      <label className="remote-access-toggle" htmlFor="task-notification-quiet">
-        <span>
-          <strong>免打扰时段</strong>
-          <small>{mobile ? "时段内的提醒照常送达通知中心，但不响铃、不震动、不弹横幅" : "时段内不播放提示音，系统通知不受影响"}</small>
-        </span>
-        <input
-          id="task-notification-quiet"
-          type="checkbox"
-          checked={quiet !== null}
-          onChange={(event) => save(event.target.checked ? DEFAULT_QUIET : null)}
-        />
-      </label>
+      <SettingsToggle
+        label="免打扰时段"
+        description={mobile ? "时段内的提醒照常送达通知中心，但不响铃、不震动、不弹横幅" : "时段内不播放提示音，系统通知不受影响"}
+        checked={quiet !== null}
+        onChange={(enabled) => save(enabled ? DEFAULT_QUIET : null)}
+      />
       {quiet && <div className="task-quiet-hours">
         <div>开始<TimeField label="开始" value={quiet.start} onChange={(value) => update("start", value)} /></div>
         <div>结束<TimeField label="结束" value={quiet.end} onChange={(value) => update("end", value)} /></div>
@@ -307,25 +296,19 @@ export function TaskNotificationSettings() {
         通知方式
         {modeSelect}
       </label>
-      {mobile && mode !== "off" && <label className="remote-access-toggle" htmlFor="task-notification-attention">
-        <span>
-          <strong>需要我操作时提醒</strong>
-          <small>任务等待审批或回答时，优先提醒并震动</small>
-        </span>
-        <input
-          id="task-notification-attention"
-          type="checkbox"
-          checked={attention}
-          onChange={(event) => {
-            try {
-              setTaskAttentionEnabled(event.target.checked);
-              setStatus(null);
-            } catch {
-              setStatus("无法保存通知设置，请检查本机存储是否可用。");
-            }
-          }}
-        />
-      </label>}
+      {mobile && mode !== "off" && <SettingsToggle
+        label="需要我操作时提醒"
+        description="任务等待审批或回答时，优先提醒并震动"
+        checked={attention}
+        onChange={(enabled) => {
+          try {
+            setTaskAttentionEnabled(enabled);
+            setStatus(null);
+          } catch {
+            setStatus("无法保存通知设置，请检查本机存储是否可用。");
+          }
+        }}
+      />}
       {mobile && mode !== "off" && <RemotePushStatusRow onStatus={setStatus} />}
       {mobile && mode !== "off" && isBackgroundConnectionSupported() && <BackgroundConnectionSetting onStatus={setStatus} />}
       {mobile && mode !== "off" && <QuietHoursSetting onStatus={setStatus} />}

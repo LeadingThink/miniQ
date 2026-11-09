@@ -129,13 +129,13 @@ it("hides push and quiet hours when notifications are off", () => {
   render(<TaskNotificationSettings />);
   fireEvent.change(screen.getByRole("combobox", { name: "通知方式" }), { target: { value: "off" } });
   expect(screen.queryByText("离线推送")).toBeNull();
-  expect(screen.queryByRole("checkbox", { name: /免打扰时段/ })).toBeNull();
+  expect(screen.queryByRole("switch", { name: /免打扰时段/ })).toBeNull();
 });
 
 it("turns quiet hours on with a default window and saves edits", () => {
   render(<TaskNotificationSettings />);
-  const toggle = screen.getByRole("checkbox", { name: /免打扰时段/ }) as HTMLInputElement;
-  expect(toggle.checked).toBe(false);
+  const toggle = screen.getByRole("switch", { name: /免打扰时段/ });
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
   expect(screen.queryByRole("group", { name: "开始" })).toBeNull();
 
   fireEvent.click(toggle);
@@ -151,7 +151,7 @@ it("turns quiet hours on with a default window and saves edits", () => {
   pick("结束小时", "22"); pick("结束分钟", "30");
   expect(screen.getByText(/全天免打扰/)).toBeTruthy();
 
-  fireEvent.click(screen.getByRole("checkbox", { name: /免打扰时段/ }));
+  fireEvent.click(screen.getByRole("switch", { name: /免打扰时段/ }));
   expect(getQuietHours()).toBeNull();
   expect(screen.queryByRole("group", { name: "开始" })).toBeNull();
 });
@@ -159,7 +159,7 @@ it("turns quiet hours on with a default window and saves edits", () => {
 it("reports a quiet hours save failure", async () => {
   render(<TaskNotificationSettings />);
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("denied"); });
-  fireEvent.click(screen.getByRole("checkbox", { name: /免打扰时段/ }));
+  fireEvent.click(screen.getByRole("switch", { name: /免打扰时段/ }));
   expect(await screen.findByText("无法保存免打扰时段，请检查本机存储是否可用。")).toBeTruthy();
   expect(getQuietHours()).toBeNull();
 });
@@ -169,19 +169,19 @@ it("offers Android background connection instead of an unsupported push row", as
   push.status = "unsupported";
   render(<TaskNotificationSettings />);
   expect(screen.queryByText("离线推送")).toBeNull();
-  const toggle = screen.getByRole("checkbox", { name: /后台保持连接/ }) as HTMLInputElement;
-  expect(toggle.checked).toBe(false);
+  const toggle = screen.getByRole("switch", { name: /后台保持连接/ });
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
 
   fireEvent.click(toggle);
   await waitFor(() => expect(bg.set).toHaveBeenCalledWith(true));
-  expect(((await screen.findByRole("checkbox", { name: /后台保持连接/ })) as HTMLInputElement).checked).toBe(true);
+  expect((await screen.findByRole("switch", { name: /后台保持连接/ })).getAttribute("aria-checked")).toBe("true");
   fireEvent.click(await screen.findByRole("button", { name: "去设置" }));
   await waitFor(() => expect(bg.open).toHaveBeenCalledTimes(1));
 });
 
 it("does not show background connection on iOS", () => {
   render(<TaskNotificationSettings />);
-  expect(screen.queryByRole("checkbox", { name: /后台保持连接/ })).toBeNull();
+  expect(screen.queryByRole("switch", { name: /后台保持连接/ })).toBeNull();
 });
 
 it("shows when a saved background preference has no running service", async () => {
@@ -192,11 +192,11 @@ it("shows when a saved background preference has no running service", async () =
   await screen.findByText("后台连接服务未运行，请关闭开关后重新开启。");
 });
 
-it("explains a rejected enable without leaving the checkbox checked", async () => {
+it("explains a rejected enable without leaving the switch enabled", async () => {
   bg.android = true;
   bg.set.mockRejectedValueOnce(new Error("请允许通知后重试"));
   render(<TaskNotificationSettings />);
-  fireEvent.click(screen.getByRole("checkbox", { name: /后台保持连接/ }));
+  fireEvent.click(screen.getByRole("switch", { name: /后台保持连接/ }));
   await screen.findByText("请允许通知后重试");
-  expect((screen.getByRole("checkbox", { name: /后台保持连接/ }) as HTMLInputElement).checked).toBe(false);
+  expect(screen.getByRole("switch", { name: /后台保持连接/ }).getAttribute("aria-checked")).toBe("false");
 });

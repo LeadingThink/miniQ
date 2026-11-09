@@ -467,9 +467,11 @@
   font-size: var(--font-body);
 }
 
-.remote-access-toggle {
+.remote-access-toggle,
+.settings-panel .settings-toggle,
+.settings-toggle {
   min-height: 52px;
-  display: grid !important;
+  display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
@@ -479,30 +481,34 @@
   border-radius: var(--radius);
 }
 
-.remote-access-toggle > span {
+.remote-access-toggle > span,
+.settings-toggle > span {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.remote-access-toggle strong {
+.remote-access-toggle strong,
+.settings-toggle strong {
   color: var(--text);
   font-size: var(--font-footnote);
 }
 
-.remote-access-toggle small {
+.remote-access-toggle small,
+.settings-toggle small {
   color: var(--text-dim);
   font-size: var(--font-caption);
   font-weight: 400;
   line-height: 1.4;
 }
 
-.settings-panel .remote-access-toggle input[type="checkbox"] {
-  width: 36px;
-  height: 21px;
-  margin: 0;
-  accent-color: var(--accent);
+.settings-toggle {
+  cursor: pointer;
+}
+
+.settings-toggle:has(:disabled) {
+  cursor: default;
 }
 
 .remote-access-toggle > button {
@@ -772,7 +778,7 @@
   font-weight: 500;
 }
 
-.settings-panel input,
+.settings-panel input:not([type="checkbox"]):not([type="radio"]),
 .settings-panel select {
   min-height: 38px;
   background: var(--control-bg);
@@ -788,7 +794,7 @@
     background var(--duration-fast) var(--ease-standard);
 }
 
-.settings-panel input:focus,
+.settings-panel input:not([type="checkbox"]):not([type="radio"]):focus,
 .settings-panel select:focus {
   outline: none;
   border-color: var(--focus-ring);

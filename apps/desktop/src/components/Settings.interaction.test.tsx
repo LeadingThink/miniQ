@@ -34,6 +34,25 @@ afterEach(() => {
 });
 
 describe("appearance settings integration", () => {
+  it("changes remote access from the labelled switch and saves only on submit", async () => {
+    render(<Fixture />);
+    const toggle = await screen.findByRole("switch", { name: "允许远程连接" });
+    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    const description = document.getElementById(toggle.getAttribute("aria-describedby")!);
+    expect(description?.textContent).toContain("合盖或手动休眠后手机将无法连接");
+
+    fireEvent.click(screen.getByText("允许远程连接"));
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect((screen.getByLabelText("设备名称") as HTMLInputElement).value).toBe("desktop");
+    expect(call.mock.calls.some(([method]) => method === "settings.update")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("settings.update", expect.objectContaining({
+      remoteAccess: { enabled: true, relayUrl: DEFAULT_RELAY_URL, deviceName: "desktop" },
+    })));
+  });
+
   it("ignores backdrop clicks and closes only from an explicit control", async () => {
     const onClose = vi.fn();
     render(<Fixture onClose={onClose} />);

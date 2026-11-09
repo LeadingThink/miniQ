@@ -574,55 +574,6 @@
   background: var(--danger-bg);
 }
 
-/* ---- toggle switch ---- */
-.switch {
-  display: inline-flex;
-  align-items: center;
-  width: 36px;
-  height: 21px;
-  border-radius: var(--radius-pill);
-  background: var(--border-strong);
-  padding: 2px;
-  flex: none;
-  cursor: pointer;
-  transition: background var(--duration) var(--ease-standard);
-}
-
-.switch:hover {
-  background: color-mix(in srgb, var(--border-strong) 80%, var(--text));
-}
-
-.switch .switch-knob {
-  display: block;
-  flex: none;
-  width: 17px;
-  height: 17px;
-  border-radius: 50%;
-  background: var(--control-knob);
-  box-shadow: var(--shadow-knob);
-  transition: transform var(--duration) var(--ease-standard);
-}
-
-.switch.on {
-  background: var(--ok);
-}
-
-.switch.on:hover {
-  background: color-mix(in srgb, var(--ok) 85%, var(--text));
-}
-
-.switch:disabled:hover {
-  background: var(--border-strong);
-}
-
-.switch.on:disabled:hover {
-  background: var(--ok);
-}
-
-.switch.on .switch-knob {
-  transform: translateX(15px);
-}
-
 /* Plugin directory: grouped two-column rows (icon, name, one-line summary,
    trailing controls). Details are progressively disclosed per row. */
 .plugin-section {
