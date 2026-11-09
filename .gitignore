@@ -49,3 +49,7 @@ promo/*/build/
 .miniq-diagnostics/
 .playwright-mcp/
 docs/diagnostics/
+
+# Android Studio local IDE state and unversioned design tile exports.
+apps/desktop/android/.idea/
+/nine-grid/
