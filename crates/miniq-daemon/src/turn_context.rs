@@ -415,6 +415,9 @@ mod tests {
             .update_workspace_roots(&workspace.id, "/tmp/primary", &["/tmp/extra".to_string()])
             .unwrap();
         let roots = roots_for(&state, &workspace.id).unwrap();
-        assert_eq!(roots, vec!["/tmp/primary".to_string()]);
+        assert_eq!(
+            roots,
+            vec!["/tmp/primary".to_string(), "/tmp/extra".to_string()]
+        );
     }
 }

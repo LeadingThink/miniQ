@@ -467,8 +467,8 @@ async fn execute_turn(
         .map_err(|error| TurnError::Fatal(error.to_string()))?;
     let external_paths_allowed = state
         .approval_mode_for_session(session_id)
-        .map_err(|error| TurnError::Fatal(error.to_string()))?
-        == crate::state::ApprovalMode::FullAccess;
+        .map(crate::executor::approval::external_paths_allowed)
+        .map_err(|error| TurnError::Fatal(error.to_string()))?;
     let model_identity = crate::memory::context_identity(
         crate::session_models::model_identity(config.as_ref()),
         memory_generation,
@@ -872,8 +872,8 @@ mod tests {
 
     #[test]
     fn base_prompt_requires_complete_absolute_file_links() {
-        assert!(SYSTEM_PROMPT.contains("complete absolute filesystem path"));
-        assert!(SYSTEM_PROMPT.contains("Never abbreviate or omit any path segment"));
+        assert!(HOST_APP_CONTEXT.contains("complete absolute filesystem path"));
+        assert!(HOST_APP_CONTEXT.contains("Never abbreviate or omit any path segment"));
         assert!(HOST_APP_CONTEXT.contains("[filename](D:/absolute/path)"));
         assert!(HOST_APP_CONTEXT.contains("Use forward slashes in Windows Markdown link targets"));
         assert!(HOST_APP_CONTEXT.contains("[main.rs (line 42)](/absolute/path/main.rs)"));

@@ -39,6 +39,15 @@ pub(crate) enum Verdict {
 pub(crate) const DONT_ASK_DENIED: &str =
     "agent permission mode dontAsk denied an action requiring approval";
 
+/// Whether a session may reach absolute paths outside its authorized roots.
+///
+/// Derived from the approval mode, not decided here: approval decisions stay in
+/// `decide_approval` and this single comparison serves every caller, so the
+/// allowlist audit has one file to review instead of each call site.
+pub(crate) fn external_paths_allowed(mode: ApprovalMode) -> bool {
+    mode == ApprovalMode::FullAccess
+}
+
 pub(crate) fn decide_approval(ctx: &ApprovalCtx) -> Verdict {
     match ctx.risk {
         RiskLevel::Blocked => return Verdict::Deny("blocked"),

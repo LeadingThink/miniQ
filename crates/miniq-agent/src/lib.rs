@@ -30,7 +30,8 @@ pub use context::{
 };
 
 pub use context_sections::{
-    truncate_to_budget, ContextSource, ContextState, Section, SectionFingerprint, SectionId,
+    truncate_to_budget, truncation_marker, ContextSource, ContextState, Section,
+    SectionFingerprint, SectionId,
 };
 
 use futures_util::StreamExt;

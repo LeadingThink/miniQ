@@ -266,6 +266,18 @@ impl ContextState {
     }
 }
 
+/// The model-visible marker for a section that lost content to its budget.
+///
+/// Loaders that enforce a byte budget themselves build the same wording here so
+/// every caller reports truncation identically.
+pub fn truncation_marker(id: SectionId, max_bytes: usize) -> String {
+    format!(
+        "\n\n[truncated: this {} section exceeded its {} byte budget]",
+        id.as_str(),
+        max_bytes
+    )
+}
+
 /// Apply a byte budget to one already-rendered block.
 ///
 /// Truncation is never silent: the caller records `truncated` and the model sees
@@ -274,11 +286,7 @@ pub fn truncate_to_budget(id: SectionId, body: String, max_bytes: usize) -> (Str
     if max_bytes == 0 || body.len() <= max_bytes {
         return (body, false);
     }
-    let marker = format!(
-        "\n\n[truncated: this {} section exceeded its {} byte budget]",
-        id.as_str(),
-        max_bytes
-    );
+    let marker = truncation_marker(id, max_bytes);
     let keep = max_bytes.saturating_sub(marker.len());
     let mut cut = keep.min(body.len());
     while cut > 0 && !body.is_char_boundary(cut) {

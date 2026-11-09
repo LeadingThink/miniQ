@@ -171,13 +171,7 @@ async fn compact_locked(
         .as_ref()
         .and_then(|snapshot| snapshot.model_identity.clone());
     let workspace_path = std::path::PathBuf::from(&session.working_directory);
-    let workspace = state
-        .store
-        .get_workspace(&session.workspace_id)
-        .map_err(|error| internal(error.to_string()))?;
-    let roots = std::iter::once(workspace.path)
-        .chain(workspace.additional_paths)
-        .collect::<Vec<_>>();
+    let roots = crate::turn_context::roots_for(state, &session.workspace_id).map_err(internal)?;
     let approval_mode = state
         .approval_mode_for_session(session_id)
         .map_err(|error| internal(error.to_string()))?;
@@ -193,7 +187,9 @@ async fn compact_locked(
             goal: None,
             plan: "",
             memory_target: None,
-            external_paths_allowed: approval_mode == crate::state::ApprovalMode::FullAccess,
+            external_paths_allowed: crate::executor::approval::external_paths_allowed(
+                approval_mode,
+            ),
             side: crate::side_conversation::is_side(&state.store, session_id),
         },
     );
@@ -281,13 +277,8 @@ pub(super) async fn context_usage(state: &AppState, raw: Option<Value>) -> Resul
         .get_model_context(&input.session_id)
         .map_err(store_err)?;
     let workspace_path = std::path::PathBuf::from(&session.working_directory);
-    let workspace = state
-        .store
-        .get_workspace(&session.workspace_id)
-        .map_err(store_err)?;
-    let roots = std::iter::once(workspace.path)
-        .chain(workspace.additional_paths)
-        .collect::<Vec<_>>();
+    let roots = crate::turn_context::roots_for(state, &session.workspace_id)
+        .map_err(|error| RpcError::new(ErrorCode::InternalError, error))?;
     let approval_mode = state
         .approval_mode_for_session(&input.session_id)
         .map_err(store_err)?;
@@ -303,7 +294,9 @@ pub(super) async fn context_usage(state: &AppState, raw: Option<Value>) -> Resul
             goal: None,
             plan: "",
             memory_target: None,
-            external_paths_allowed: approval_mode == crate::state::ApprovalMode::FullAccess,
+            external_paths_allowed: crate::executor::approval::external_paths_allowed(
+                approval_mode,
+            ),
             side: crate::side_conversation::is_side(&state.store, &input.session_id),
         },
     );

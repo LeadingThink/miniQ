@@ -81,6 +81,9 @@ impl InstructionFile {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LoadedInstructions {
     pub files: Vec<InstructionFile>,
+    /// Byte budget these files were loaded under, quoted by the truncation
+    /// marker so the model sees the same number the settings use.
+    pub budget: usize,
 }
 
 impl LoadedInstructions {
@@ -92,6 +95,10 @@ impl LoadedInstructions {
 
     /// Concatenate in discovery order (project root first, cwd last) so the
     /// nearest file reads last and therefore wins on conflict.
+    ///
+    /// When the shared budget cut any file, the result ends with the section
+    /// truncation marker so the model never treats a partial file as complete.
+    /// The marker is additive: it costs a few dozen bytes beyond the budget.
     pub fn text(&self) -> String {
         let mut output = String::new();
         for file in &self.files {
@@ -102,6 +109,12 @@ impl LoadedInstructions {
                 output.push_str("\n\n");
             }
             output.push_str(file.contents.trim_end());
+        }
+        if self.files.iter().any(|file| file.truncated) {
+            output.push_str(&miniq_agent::truncation_marker(
+                miniq_agent::SectionId::ProjectInstructions,
+                self.budget,
+            ));
         }
         output
     }
@@ -126,7 +139,10 @@ impl LoadedInstructions {
 /// directories between the root and `cwd` are probed.
 pub fn load(cwd: &Path, settings: &InstructionSettings) -> LoadedInstructions {
     if !settings.enabled || settings.max_bytes == 0 || settings.filenames.is_empty() {
-        return LoadedInstructions::default();
+        return LoadedInstructions {
+            files: Vec::new(),
+            budget: settings.max_bytes,
+        };
     }
     let directories = search_directories(cwd, &settings.project_root_markers);
     let mut remaining = settings.max_bytes;
@@ -166,7 +182,10 @@ pub fn load(cwd: &Path, settings: &InstructionSettings) -> LoadedInstructions {
             truncated,
         });
     }
-    LoadedInstructions { files }
+    LoadedInstructions {
+        files,
+        budget: settings.max_bytes,
+    }
 }
 
 /// Directories to probe, ordered project root first and `cwd` last.

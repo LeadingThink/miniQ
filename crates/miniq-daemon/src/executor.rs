@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use crate::state::{AppState, ApprovalDecision};
 
 mod adaptation;
-mod approval;
+pub(crate) mod approval;
 mod background_gate;
 pub(crate) mod checkpoint;
 mod effective_set;

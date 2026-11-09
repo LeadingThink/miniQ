@@ -15,7 +15,7 @@ pub(crate) use crate::agent_task_manager::AgentTaskManager;
 use crate::agent_task_manager::{AgentRecord, MessageDisposition};
 use crate::agent_worktree::{self, AgentWorktree};
 use crate::executor::{PermissionPolicy, SessionToolExecutor};
-use crate::state::{AppState, ApprovalMode};
+use crate::state::AppState;
 
 const MAX_AGENT_DEPTH: usize = 3;
 
@@ -232,7 +232,7 @@ impl DaemonAgentBridge {
         let external_paths_allowed = self
             .state
             .approval_mode_for_session(&self.session_id)
-            .is_ok_and(|mode| mode == ApprovalMode::FullAccess);
+            .is_ok_and(crate::executor::approval::external_paths_allowed);
         ToolContext::new(workspace.clone())
             .with_provider_media_uploader(
                 media
@@ -323,7 +323,7 @@ impl DaemonAgentBridge {
                 let full_access = self
                     .state
                     .approval_mode_for_session(&self.session_id)
-                    .is_ok_and(|mode| mode == ApprovalMode::FullAccess);
+                    .is_ok_and(crate::executor::approval::external_paths_allowed);
                 if full_access && std::path::Path::new(cwd).is_absolute() {
                     miniq_sandbox::resolve_external(cwd)
                 } else {
@@ -479,7 +479,7 @@ impl DaemonAgentBridge {
                     external_paths_allowed: self
                         .state
                         .approval_mode_for_session(&self.session_id)
-                        .map(|mode| mode == crate::state::ApprovalMode::FullAccess)
+                        .map(crate::executor::approval::external_paths_allowed)
                         .unwrap_or(false),
                     side: false,
                 },
@@ -553,10 +553,10 @@ fn validate_permission_mode(
     request: &AgentRunRequest,
 ) -> Result<(), ToolError> {
     if request.mode.as_deref() == Some("bypassPermissions")
-        && state
+        && !state
             .approval_mode_for_session(session_id)
+            .map(crate::executor::approval::external_paths_allowed)
             .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?
-            != ApprovalMode::FullAccess
     {
         return Err(ToolError::SandboxDenied(
             "bypassPermissions requires miniQ Full Access mode".into(),
