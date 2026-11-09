@@ -261,7 +261,10 @@ async fn skills_injected_into_prompt_and_readable_by_agent() {
     let system = &requests[0].messages[0];
     assert!(system.content.contains("<available_skills>"));
     assert!(system.content.contains("organize-directory"));
-    assert!(system.content.contains("summarize-changes"));
+    // "盘点这个目录" ranks organize-directory into the shortlist, so the block
+    // stays scoped to this request and reports that it is a selection.
+    assert!(system.content.contains("skills match this request"));
+    assert!(!system.content.contains("summarize-changes"));
 }
 
 #[tokio::test]
