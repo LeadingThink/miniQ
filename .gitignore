@@ -53,3 +53,9 @@ docs/diagnostics/
 # Android Studio local IDE state and unversioned design tile exports.
 apps/desktop/android/.idea/
 /nine-grid/
+
+# Local miniQ runtime state: downloaded tools, release artifacts, session media.
+.miniq/
+
+# Local promotional video workspace and its source media.
+promo/v4/
