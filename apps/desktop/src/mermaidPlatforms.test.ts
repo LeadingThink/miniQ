@@ -1,6 +1,16 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
+it("places read-only context usage before the model picker in the shared workbench", () => {
+  const shell = readFileSync(new URL("./components/AppShell.tsx", import.meta.url), "utf8");
+  expect(shell).toMatch(/modelSlot=\{[\s\S]*?<ContextUsageControl[\s\S]*?<SessionModelControls/);
+  const policy = readFileSync(new URL("../../../crates/miniq-daemon/src/remote_policy.rs", import.meta.url), "utf8");
+  expect(policy).toContain('"session.contextUsage"');
+  const control = readFileSync(new URL("./components/ContextUsageControl.tsx", import.meta.url), "utf8");
+  expect(control).not.toMatch(/@tauri-apps|@capacitor|session\.compact|type="range"/);
+  expect(control).toContain('<Popover');
+});
+
 it("shares compact activity styles without platform-specific WebView selectors", () => {
   for (const [path, selector] of [
     ["./components/DeepThinking.css", /\.deep-thinking\s*\{[^}]*margin: 0;/s],

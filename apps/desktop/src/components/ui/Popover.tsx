@@ -11,15 +11,28 @@ export interface PopoverProps {
   label: string;
   className?: string;
   viewportGap?: number;
+  /** Native dialog top layer; also suspends embedded child WebViews. */
+  topLayer?: boolean;
   children: ReactNode;
 }
 
 /** Non-modal floating panel anchored to a trigger. Escape / outside click closes; focus returns to the anchor. */
 export function Popover(props: PopoverProps) {
-  const panel = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement & HTMLDialogElement>(null);
   const position = useAnchoredPosition(props.anchorRef, panel, props.open, null, props.viewportGap);
   const positioned = position !== null;
   const { open, onClose, anchorRef } = props;
+
+  useEffect(() => {
+    if (!open || !props.topLayer) return;
+    const element = panel.current!;
+    element.showModal();
+    const trigger = anchorRef.current;
+    return () => {
+      element.close();
+      trigger?.focus({ preventScroll: true });
+    };
+  }, [anchorRef, open, props.topLayer]);
 
   useEffect(() => {
     if (!open || !positioned) return;
@@ -38,13 +51,25 @@ export function Popover(props: PopoverProps) {
   }, [anchorRef, onClose, open, positioned]);
 
   if (!open) return null;
+  const Surface = props.topLayer ? "dialog" : "div";
   return createPortal(
-    <div
+    <Surface
       ref={panel}
       className={`ui-popover ${props.className ?? ""}`.trim()}
       role="dialog"
       aria-label={props.label}
       tabIndex={-1}
+      onClick={(event) => {
+        if (!props.topLayer || event.target !== event.currentTarget) return;
+        // A modal dialog retargets backdrop clicks to the dialog itself.
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (event.clientX < rect.left || event.clientX > rect.right ||
+          event.clientY < rect.top || event.clientY > rect.bottom) onClose();
+      }}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
       style={{
         left: position?.left ?? 0,
         top: position?.top ?? 0,
@@ -60,7 +85,7 @@ export function Popover(props: PopoverProps) {
       }}
     >
       {props.children}
-    </div>,
+    </Surface>,
     document.body,
   );
 }

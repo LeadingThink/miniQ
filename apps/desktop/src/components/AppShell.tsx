@@ -25,6 +25,7 @@ import { DesktopUpdatePrompt } from "./DesktopUpdatePrompt";
 import { HeroPage } from "./HeroPage";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 import { SessionModelControls } from "./SessionModelControls";
+import { ContextUsageControl } from "./ContextUsageControl";
 import { SettingsLoadErrorBanner } from "./SettingsLoadErrorBanner";
 import { RemotePermissionNotice } from "./RemotePermissionNotice";
 import { SessionPermissionControls } from "./SessionPermissionControls";
@@ -307,11 +308,14 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
         slashCommands={slashCommands}
         workspaceId={app.catalog.currentWorkspace?.id}
         modelSlot={
-          <SessionModelControls
-            client={app.client}
-            model={app.sessionModel}
-            busy={!!app.busy}
-          />
+          <>
+            <ContextUsageControl client={app.client} sessionId={app.catalog.currentSessionId} />
+            <SessionModelControls
+              client={app.client}
+              model={app.sessionModel}
+              busy={!!app.busy}
+            />
+          </>
         }
         sendBlocked={!!getSendBlockedReason(app)}
         sendBlockedReason={getSendBlockedReason(app)}
