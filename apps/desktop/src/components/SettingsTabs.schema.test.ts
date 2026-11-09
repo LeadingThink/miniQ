@@ -15,7 +15,7 @@ describe("settingsGroupsFromSchema", () => {
       { id: "general", label: "", icon: "settings" },
     ] });
     expect(groups.map((group) => group.id)).toEqual([
-      "services", "general", "appearance", "computer", "skills", "mcp", "plugins", "memory", "advanced",
+      "services", "general", "appearance", "computer", "skills", "instructions", "mcp", "plugins", "memory", "advanced",
     ]);
     expect(groups[0].label).toBe("服务");
     expect(groups[1].label).toBe("通用");

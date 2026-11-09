@@ -257,7 +257,7 @@ describe("appearance settings integration", () => {
     const { unmount } = render(<Fixture />);
     await waitFor(() => expect(call).toHaveBeenCalledWith("settings.get"));
     expect(screen.getAllByRole("tab").map((element) => element.textContent)).toEqual([
-      "通用", "外观", "服务与远程", "电脑控制", "技能", "MCP 连接", "插件", "记忆", "高级",
+      "通用", "外观", "服务与远程", "电脑控制", "技能", "项目指令", "MCP 连接", "插件", "记忆", "高级",
     ]);
     fireEvent.keyDown(screen.getByRole("tab", { name: "服务与远程" }), { key: "ArrowRight" });
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "电脑控制" }));
