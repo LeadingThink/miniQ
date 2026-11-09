@@ -85,7 +85,9 @@ pub struct LoadedInstructions {
 
 impl LoadedInstructions {
     pub fn is_empty(&self) -> bool {
-        self.files.iter().all(|file| file.contents.trim().is_empty())
+        self.files
+            .iter()
+            .all(|file| file.contents.trim().is_empty())
     }
 
     /// Concatenate in discovery order (project root first, cwd last) so the
@@ -271,7 +273,9 @@ mod tests {
             })
             .collect();
         assert_eq!(paths, ["AGENTS.md", "crates/AGENTS.md"]);
-        assert!(loaded.text().find("root rule").unwrap() < loaded.text().find("crate rule").unwrap());
+        assert!(
+            loaded.text().find("root rule").unwrap() < loaded.text().find("crate rule").unwrap()
+        );
     }
 
     #[test]

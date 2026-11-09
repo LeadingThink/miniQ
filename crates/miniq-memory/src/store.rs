@@ -35,8 +35,8 @@ mod session_list;
 mod session_settings;
 mod session_titles;
 mod turn_activity;
-mod turn_timing;
 mod turn_context;
+mod turn_timing;
 mod workspace_roots;
 mod workspaces;
 

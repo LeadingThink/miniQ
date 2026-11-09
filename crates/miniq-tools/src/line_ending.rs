@@ -227,7 +227,11 @@ mod tests {
         assert_eq!(document.lines, ["a", "b", "c"]);
         assert_eq!(
             document.endings,
-            [Some(LineEnding::CrLf), Some(LineEnding::Lf), Some(LineEnding::Cr)]
+            [
+                Some(LineEnding::CrLf),
+                Some(LineEnding::Lf),
+                Some(LineEnding::Cr)
+            ]
         );
         assert_eq!(document.preferred, LineEnding::CrLf);
     }

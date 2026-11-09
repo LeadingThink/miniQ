@@ -35,7 +35,10 @@ use adaptation::unknown_tool_output;
 /// Context accounting calls this instead of `router.specs()` so a usage
 /// estimate counts the effective set: plugin and MCP filtering apply exactly
 /// as they do when the agent builds a completion request.
-pub(crate) fn session_tool_specs(state: &AppState, config: Option<&ProviderConfig>) -> Vec<ToolSpec> {
+pub(crate) fn session_tool_specs(
+    state: &AppState,
+    config: Option<&ProviderConfig>,
+) -> Vec<ToolSpec> {
     let media = config.map(|config| state.media_config_for(config));
     effective_set::effective_set(state, &state.router, media.as_ref()).specs
 }

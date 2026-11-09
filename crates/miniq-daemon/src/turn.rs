@@ -94,7 +94,8 @@ music. Use them when the user's intent clearly asks for that medium without aski
 permission first. Keep ordinary chat on the selected text model. Video and music are resumable \
 asynchronous tasks; preserve returned task identifiers and never submit the same request twice.";
 
-pub(crate) const HOST_APP_CONTEXT: &str = "Host app file references: whenever you reference a local \
+pub(crate) const HOST_APP_CONTEXT: &str =
+    "Host app file references: whenever you reference a local \
 workspace file in a response, use a Markdown link with a concise filename label and the \
 complete absolute filesystem path as its target, for example `[filename](D:/absolute/path)` \
 on Windows or `[filename](/absolute/path)` on Unix. Use forward slashes in Windows Markdown \
@@ -881,9 +882,11 @@ mod tests {
     #[test]
     fn base_prompt_keeps_file_operations_out_of_computer_use() {
         assert!(SYSTEM_PROMPT.contains("Never use computer_use"));
+        assert!(
+            SYSTEM_PROMPT.contains("to create, read, edit, move, rename, or delete ordinary files")
+        );
         assert!(SYSTEM_PROMPT
-            .contains("to create, read, edit, move, rename, or delete ordinary files"));
-        assert!(SYSTEM_PROMPT.contains("use the provided file tools, apply_patch, or shell_run instead"));
+            .contains("use the provided file tools, apply_patch, or shell_run instead"));
         assert!(SYSTEM_PROMPT.contains("only when the user explicitly requests interaction"));
     }
 

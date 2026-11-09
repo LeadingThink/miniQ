@@ -23,10 +23,7 @@ struct WorkspaceParams {
 }
 
 fn workspace_root(state: &AppState, workspace_id: &str) -> Result<PathBuf, RpcError> {
-    let workspace = state
-        .store
-        .get_workspace(workspace_id)
-        .map_err(store_err)?;
+    let workspace = state.store.get_workspace(workspace_id).map_err(store_err)?;
     Ok(PathBuf::from(workspace.path))
 }
 
@@ -93,14 +90,12 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
     let trimmed = input.content.trim_end();
     if trimmed.trim().is_empty() {
         if path.exists() {
-            std::fs::remove_file(&path).map_err(|error| {
-                RpcError::new(ErrorCode::InternalError, error.to_string())
-            })?;
+            std::fs::remove_file(&path)
+                .map_err(|error| RpcError::new(ErrorCode::InternalError, error.to_string()))?;
         }
     } else {
-        miniq_local::write_private_bytes(&path, trimmed.as_bytes()).map_err(|error| {
-            RpcError::new(ErrorCode::InternalError, error.to_string())
-        })?;
+        miniq_local::write_private_bytes(&path, trimmed.as_bytes())
+            .map_err(|error| RpcError::new(ErrorCode::InternalError, error.to_string()))?;
     }
     let _ = state.store.append_audit_event(
         None,

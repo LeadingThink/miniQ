@@ -76,7 +76,11 @@ mod tests {
             .save_turn_context(&session.id, &serde_json::json!([{ "id": "runtime" }]))
             .unwrap();
         assert_eq!(
-            store.get_turn_context(&session.id).unwrap().unwrap().sections,
+            store
+                .get_turn_context(&session.id)
+                .unwrap()
+                .unwrap()
+                .sections,
             serde_json::json!([{ "id": "runtime" }])
         );
 

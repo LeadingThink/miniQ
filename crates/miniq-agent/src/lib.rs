@@ -25,8 +25,8 @@ mod visual_history;
 pub use checkpoint::{CheckpointStore, TurnCheckpoint};
 
 pub use context::{
-    compact_history, estimate_request_tokens, estimate_text_tokens, estimate_tokens, ContextOutcome,
-    ContextPolicy,
+    compact_history, estimate_request_tokens, estimate_text_tokens, estimate_tokens,
+    ContextOutcome, ContextPolicy,
 };
 
 pub use context_sections::{

@@ -55,10 +55,7 @@ pub fn build(state: &AppState, input: TurnContextInput<'_>) -> ContextState {
         SectionId::ProjectInstructions,
         loaded.text(),
         instruction_sources(&loaded, settings.max_bytes),
-        loaded
-            .files
-            .iter()
-            .any(|file| file.truncated),
+        loaded.files.iter().any(|file| file.truncated),
     );
 
     context.set(SectionId::HostFiles, crate::turn::HOST_APP_CONTEXT);
@@ -82,7 +79,11 @@ pub fn build(state: &AppState, input: TurnContextInput<'_>) -> ContextState {
 
     let (roots, roots_truncated) = truncate_to_budget(
         SectionId::Roots,
-        roots_block(input.roots, input.workspace_path, input.external_paths_allowed),
+        roots_block(
+            input.roots,
+            input.workspace_path,
+            input.external_paths_allowed,
+        ),
         ROOTS_BUDGET,
     );
     context.set_with(SectionId::Roots, roots, Vec::new(), roots_truncated);
@@ -160,7 +161,11 @@ fn instruction_sources(
         .map(|file| {
             let budget_limited = file.truncated || file.original_bytes > remaining;
             remaining = remaining.saturating_sub(file.bytes());
-            ContextSource::new(file.path.to_string_lossy(), file.original_bytes, budget_limited)
+            ContextSource::new(
+                file.path.to_string_lossy(),
+                file.original_bytes,
+                budget_limited,
+            )
         })
         .collect()
 }
@@ -186,7 +191,9 @@ fn roots_block(roots: &[String], workspace_path: &Path, external_paths_allowed: 
 mod tests {
     use super::*;
     use crate::state::AppState;
-    use miniq_models::{ChatDelta, CompletionRequest, DeltaStream, ModelCapabilities, ModelProvider};
+    use miniq_models::{
+        ChatDelta, CompletionRequest, DeltaStream, ModelCapabilities, ModelProvider,
+    };
 
     struct NullProvider;
 

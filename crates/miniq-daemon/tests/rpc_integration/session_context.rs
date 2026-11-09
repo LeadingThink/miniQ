@@ -79,7 +79,10 @@ async fn context_usage_compact_and_undo_round_trip() {
         .iter()
         .map(|entry| entry["tokens"].as_u64().unwrap())
         .sum();
-    assert_eq!(split_total, usage["result"]["estimatedTokens"].as_u64().unwrap());
+    assert_eq!(
+        split_total,
+        usage["result"]["estimatedTokens"].as_u64().unwrap()
+    );
     assert!(
         usage["result"]["categories"]
             .as_array()

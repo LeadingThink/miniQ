@@ -77,8 +77,8 @@ pub(crate) fn apply_diff(original: &[u8], diff: &str) -> Result<String, ToolErro
     }
 
     let mut document = line_ending::parse(original);
-    let final_newline = document.endings.last().copied().flatten().is_some()
-        || diff.ends_with('\n');
+    let final_newline =
+        document.endings.last().copied().flatten().is_some() || diff.ends_with('\n');
     let mut cursor = 0;
     for hunk in hunks {
         let position = find_hunk(&document.lines, &hunk, cursor)?;
@@ -144,14 +144,20 @@ mod tests {
     fn inserted_lines_take_the_target_preferred_ending() {
         let original = b"one\r\ntwo\r\n";
         let diff = "@@ -1,2 +1,3 @@\n one\n two\n+three\n";
-        assert_eq!(apply_diff(original, diff).unwrap(), "one\r\ntwo\r\nthree\r\n");
+        assert_eq!(
+            apply_diff(original, diff).unwrap(),
+            "one\r\ntwo\r\nthree\r\n"
+        );
     }
 
     #[test]
     fn mixed_endings_survive_an_unrelated_hunk() {
         let original = b"one\r\ntwo\rthree\nfour\r\n";
         let diff = "@@ -1,4 +1,4 @@\n one\n two\n-three\n+THREE\n four\n";
-        assert_eq!(apply_diff(original, diff).unwrap(), "one\r\ntwo\rTHREE\r\nfour\r\n");
+        assert_eq!(
+            apply_diff(original, diff).unwrap(),
+            "one\r\ntwo\rTHREE\r\nfour\r\n"
+        );
     }
 
     #[test]

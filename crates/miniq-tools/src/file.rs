@@ -392,7 +392,10 @@ mod tests {
         assert_eq!(whole["eol"], "crlf");
 
         let paged = tool
-            .execute(&ctx(dir.path()), json!({"path": "a.txt", "offset": 2, "limit": 1}))
+            .execute(
+                &ctx(dir.path()),
+                json!({"path": "a.txt", "offset": 2, "limit": 1}),
+            )
             .await
             .unwrap();
         assert_eq!(paged["content"], "two");

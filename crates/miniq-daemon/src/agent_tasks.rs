@@ -476,7 +476,9 @@ impl DaemonAgentBridge {
                     goal: None,
                     plan: "",
                     memory_target: None,
-                    external_paths_allowed: self.state.approval_mode_for_session(&self.session_id)
+                    external_paths_allowed: self
+                        .state
+                        .approval_mode_for_session(&self.session_id)
                         .map(|mode| mode == crate::state::ApprovalMode::FullAccess)
                         .unwrap_or(false),
                     side: false,
