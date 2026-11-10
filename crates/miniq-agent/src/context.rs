@@ -56,7 +56,11 @@ pub fn estimate_tokens(messages: &[ChatMessage]) -> usize {
                                 + 8
                         })
                         .sum::<usize>()
-            }) + message.images.len() * 1_024
+            }) + message
+                .images
+                .iter()
+                .map(miniq_models::estimated_prompt_tokens)
+                .sum::<usize>()
                 + 6
         })
         .sum()

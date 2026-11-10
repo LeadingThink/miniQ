@@ -35,6 +35,12 @@ const PROMPT_IMAGE_PATCH_SIZE: u32 = 32;
 const ORIGINAL_MAX_DIMENSION: u32 = 6000;
 const ORIGINAL_MAX_PATCHES: u32 = 10_000;
 const JPEG_QUALITY: u8 = 85;
+// Providers bill an image by its geometry, close to one token per 750 pixels.
+const IMAGE_PIXELS_PER_TOKEN: u64 = 750;
+// Charged when the file backing an attachment is gone and its geometry is
+// unknown: a typical preview and a typical full page.
+const PREVIEW_FALLBACK_TOKENS: usize = 1_024;
+const ORIGINAL_FALLBACK_TOKENS: usize = 4_096;
 // Decoding and re-encoding dominate every turn of a long conversation, so the
 // finished payload is cached by content rather than by path. Sized like Codex's
 // prompt image cache: 32 entries, 64 MB of encoded payloads.
@@ -239,6 +245,33 @@ fn dimensions_fit(width: u32, height: u32, max_dimension: u32, max_patches: u32)
     let patches = u64::from(width.div_ceil(PROMPT_IMAGE_PATCH_SIZE))
         * u64::from(height.div_ceil(PROMPT_IMAGE_PATCH_SIZE));
     width <= max_dimension && height <= max_dimension && patches <= u64::from(max_patches)
+}
+
+/// Input tokens a provider charges for one prompt image.
+///
+/// Cost follows the geometry this module ships, not the file size: a preview is
+/// bounded by [`ImageDetail::target_dimensions`], an original by the prompt patch
+/// budget. Local compaction uses this to decide when history must be summarized.
+/// A flat per-image constant under-counts large screenshots by an order of
+/// magnitude, and an under-counted prompt reaches the provider uncut.
+pub fn estimated_prompt_tokens(image: &ChatImage) -> usize {
+    let fallback = match image.detail {
+        ImageDetail::Preview => PREVIEW_FALLBACK_TOKENS,
+        ImageDetail::Auto | ImageDetail::High => ORIGINAL_FALLBACK_TOKENS,
+    };
+    // Header-only read: no decode, no base64, so estimating a long history stays
+    // cheap even when it carries hundreds of attachments.
+    let Ok((width, height)) = image::image_dimensions(Path::new(&image.path)) else {
+        return fallback;
+    };
+    let (width, height) = match image.detail {
+        ImageDetail::Preview => image.detail.target_dimensions(width, height),
+        ImageDetail::Auto | ImageDetail::High => {
+            prompt_image_dimensions(width, height, ORIGINAL_MAX_DIMENSION, ORIGINAL_MAX_PATCHES)
+        }
+    };
+    let pixels = u64::from(width.max(1)) * u64::from(height.max(1));
+    (pixels / IMAGE_PIXELS_PER_TOKEN).max(256) as usize
 }
 
 /// Encode once in the source format, then degrade to JPEG only if the result

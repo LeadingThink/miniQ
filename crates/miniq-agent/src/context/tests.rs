@@ -12,6 +12,23 @@ fn provider_context_contributes_to_context_limits() {
     assert!(estimate_tokens(&[message]) >= 100);
 }
 
+#[test]
+fn images_are_charged_by_shipped_geometry_not_a_flat_constant() {
+    let mut message = ChatMessage::user("two screenshots");
+    message.images = ["first.png", "second.png"]
+        .map(|path| miniq_models::ChatImage {
+            path: path.into(),
+            mime_type: "image/png".into(),
+            detail: Default::default(),
+        })
+        .to_vec();
+
+    // An image whose file is unavailable is still charged the original
+    // geometry, so two full-detail screenshots can no longer cost 2 × 1024 and
+    // slip past the compaction limit.
+    assert!(estimate_tokens(&[message]) >= 2 * 4_096);
+}
+
 #[tokio::test]
 async fn summarizes_old_context_and_preserves_recent_user_turn() {
     let provider = MockProvider::new(vec![vec![ChatDelta::Text("stable summary".into())]]);

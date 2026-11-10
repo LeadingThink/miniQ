@@ -15,6 +15,35 @@ fn decoded_bytes(encoded: &EncodedImage) -> Vec<u8> {
 }
 
 #[test]
+fn estimated_prompt_tokens_follow_the_geometry_that_ships() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("page.png");
+    image::DynamicImage::new_rgb8(3000, 4000)
+        .save(&path)
+        .unwrap();
+
+    let original = estimated_prompt_tokens(&attachment(&path, ImageDetail::High));
+    let preview = estimated_prompt_tokens(&attachment(&path, ImageDetail::Preview));
+
+    assert!(original > 10_000, "{original} tokens for a full page");
+    assert!(
+        preview > 3_000 && preview < original,
+        "{preview} tokens for a preview of the same page"
+    );
+    assert_eq!(
+        original,
+        estimated_prompt_tokens(&attachment(&path, ImageDetail::Auto)),
+        "auto and high ship the same original geometry"
+    );
+
+    let missing = directory.path().join("deleted.png");
+    assert_eq!(
+        estimated_prompt_tokens(&attachment(&missing, ImageDetail::Preview)),
+        PREVIEW_FALLBACK_TOKENS
+    );
+}
+
+#[test]
 fn preview_fits_both_pixel_and_dimension_budgets_without_upscaling() {
     for (width, height) in [
         (3200, 2400),

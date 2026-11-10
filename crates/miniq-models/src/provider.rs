@@ -103,6 +103,10 @@ pub(crate) fn indicates_context_window_overflow(detail: &str) -> bool {
         || detail.contains("model_context_window_exceeded")
         || detail.contains("input is too long")
         || detail.contains("input exceeds")
+        // Anthropic Messages API rejects an oversized prompt with
+        // "prompt is too long: 1166919 tokens > 1000000 maximum" and no other
+        // marker, so this shape must also trigger local compaction.
+        || detail.contains("prompt is too long")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -408,12 +412,24 @@ mod tests {
             r#"{"error":{"code":"context_length_exceeded"}}"#,
             "maximum context length is 100000 tokens",
             "model_context_window_exceeded",
+            "prompt is too long: 1166919 tokens > 1000000 maximum",
         ] {
             assert!(matches!(
                 ProviderError::from_stream_error("provider error", &Value::String(detail.into())),
                 ProviderError::ContextWindowExceeded
             ));
         }
+    }
+
+    #[test]
+    fn anthropic_prompt_length_rejection_is_context_overflow() {
+        let error = ProviderError::from_api_response(
+            400,
+            r#"{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 1166919 tokens > 1000000 maximum"}}"#
+                .into(),
+            None,
+        );
+        assert!(matches!(error, ProviderError::ContextWindowExceeded));
     }
 
     #[test]
