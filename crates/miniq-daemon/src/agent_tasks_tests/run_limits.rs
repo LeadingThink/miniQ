@@ -1,5 +1,13 @@
 use super::*;
-use miniq_models::ToolCallRequest;
+use miniq_models::{ModelCallPurpose, ToolCallRequest};
+
+fn completion_review() -> Vec<ChatDelta> {
+    vec![ChatDelta::ToolCall(ToolCallRequest {
+        id: "completion-review".into(),
+        name: "report_turn_completion".into(),
+        arguments: serde_json::json!({"status":"finished","reason":"All steps completed."}),
+    })]
+}
 
 fn progress_turn(index: usize) -> Vec<ChatDelta> {
     vec![ChatDelta::ToolCall(ToolCallRequest {
@@ -17,6 +25,7 @@ async fn child_agents_complete_beyond_96_steps_in_foreground_and_background() {
         let directory = tempfile::tempdir().unwrap();
         let mut turns: Vec<_> = (0..100).map(progress_turn).collect();
         turns.push(vec![ChatDelta::Text("done".into())]);
+        turns.push(completion_review());
         let provider = Arc::new(MockProvider::new(turns));
         let bridge = bridge_with_provider(&directory, provider.clone());
         let mut input = request("long delegated task");
@@ -30,7 +39,17 @@ async fn child_agents_complete_beyond_96_steps_in_foreground_and_background() {
 
         assert_eq!(result["status"], "completed", "{result}");
         assert_eq!(result["result"], "done");
-        assert_eq!(provider.requests.lock().unwrap().len(), 101);
+        {
+            let requests = provider.requests.lock().unwrap();
+            assert_eq!(requests.len(), 102);
+            assert!(requests[..101]
+                .iter()
+                .all(|request| request.trace.purpose == ModelCallPurpose::Task));
+            assert_eq!(
+                requests[101].trace.purpose,
+                ModelCallPurpose::CompletionReview
+            );
+        }
         let calls = bridge
             .state
             .store
@@ -50,6 +69,7 @@ async fn restored_child_follow_up_completes_beyond_96_steps() {
     let mut turns = vec![vec![ChatDelta::Text("first result".into())]];
     turns.extend((0..100).map(progress_turn));
     turns.push(vec![ChatDelta::Text("follow-up result".into())]);
+    turns.push(completion_review());
     let provider = Arc::new(MockProvider::new(turns));
     let mut bridge = bridge_with_provider(&directory, provider.clone());
     let first = bridge.run(request("inspect")).await.unwrap();
@@ -71,7 +91,11 @@ async fn restored_child_follow_up_completes_beyond_96_steps() {
     assert_eq!(result["status"], "completed", "{result}");
     assert_eq!(result["result"], "follow-up result");
     let requests = provider.requests.lock().unwrap();
-    assert_eq!(requests.len(), 102);
+    assert_eq!(requests.len(), 103);
+    assert_eq!(
+        requests[102].trace.purpose,
+        ModelCallPurpose::CompletionReview
+    );
     assert!(requests[1]
         .messages
         .iter()
