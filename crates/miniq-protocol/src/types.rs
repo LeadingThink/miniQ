@@ -279,6 +279,8 @@ pub struct ScheduledTask {
     pub name: String,
     pub prompt: String,
     #[serde(default)]
+    pub model: String,
+    #[serde(default)]
     pub mode: ScheduledTaskMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_session_id: Option<String>,

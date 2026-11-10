@@ -79,26 +79,27 @@ fn parse_json(value: String) -> rusqlite::Result<Value> {
 }
 
 pub(super) fn row_to_scheduled_task(row: &Row<'_>) -> rusqlite::Result<ScheduledTask> {
-    let schedule_raw: String = row.get(4)?;
+    let schedule_raw: String = row.get(5)?;
     Ok(ScheduledTask {
         id: row.get(0)?,
         workspace_id: row.get(1)?,
         name: row.get(2)?,
         prompt: row.get(3)?,
-        mode: match row.get::<_, String>(10)?.as_str() {
+        model: row.get(4)?,
+        mode: match row.get::<_, String>(11)?.as_str() {
             "heartbeat" => miniq_protocol::ScheduledTaskMode::Heartbeat,
             "newSession" => miniq_protocol::ScheduledTaskMode::NewSession,
             other => return Err(invalid_text(format!("scheduled task mode {other}"))),
         },
-        target_session_id: row.get(11)?,
-        memory: row.get(12)?,
-        revision: row.get(13)?,
+        target_session_id: row.get(12)?,
+        memory: row.get(13)?,
+        revision: row.get(14)?,
         schedule: serde_json::from_str(&schedule_raw).unwrap_or(Value::Null),
-        enabled: row.get(5)?,
-        next_run_at: row.get(6)?,
-        last_run_at: row.get(7)?,
-        last_session_id: row.get(8)?,
-        created_at: row.get(9)?,
+        enabled: row.get(6)?,
+        next_run_at: row.get(7)?,
+        last_run_at: row.get(8)?,
+        last_session_id: row.get(9)?,
+        created_at: row.get(10)?,
     })
 }
 

@@ -145,6 +145,57 @@ async fn repeated_resume_is_rejected_without_resuming_a_later_pause() {
 }
 
 #[tokio::test]
+async fn task_model_survives_pause_and_resume_without_changing_session_settings() {
+    let provider = Arc::new(WaitingProvider::default());
+    let (_directory, state, session) = fixture(provider.clone());
+    let original = state.store.session_model_settings(&session).unwrap();
+    let cancellation = state.begin_turn(&session).unwrap();
+    set_running(&state, &session).unwrap();
+    crate::turn::spawn_turn(
+        state.clone(),
+        session.clone(),
+        cancellation,
+        Some("task-model".into()),
+    );
+    wait_until(|| provider.0.load(Ordering::SeqCst) == 1).await;
+    pause(&state, target(&session)).unwrap();
+    wait_until(|| !state.has_active_turn(&session)).await;
+    assert_eq!(
+        state
+            .paused_turn_models
+            .lock()
+            .unwrap()
+            .get(&session)
+            .map(String::as_str),
+        Some("task-model")
+    );
+
+    resume(&state, target(&session)).unwrap();
+    wait_until(|| provider.0.load(Ordering::SeqCst) == 2).await;
+    pause(&state, target(&session)).unwrap();
+    wait_until(|| !state.has_active_turn(&session)).await;
+    assert_eq!(
+        state
+            .paused_turn_models
+            .lock()
+            .unwrap()
+            .get(&session)
+            .map(String::as_str),
+        Some("task-model")
+    );
+    assert_eq!(
+        state.store.session_model_settings(&session).unwrap(),
+        original
+    );
+    cancel(&state, target(&session)).await.unwrap();
+    assert!(!state
+        .paused_turn_models
+        .lock()
+        .unwrap()
+        .contains_key(&session));
+}
+
+#[tokio::test]
 async fn a_new_prompt_replaces_runtime_pause_and_drains_its_followup() {
     let waiting = Arc::new(WaitingProvider::default());
     let (_directory, mut state, session) = fixture(waiting.clone());

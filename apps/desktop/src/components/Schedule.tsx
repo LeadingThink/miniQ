@@ -100,7 +100,7 @@ function TemplateButtons({ empty, onCreate }: { empty: boolean; onCreate: (templ
         <span className="template-text"><span className="template-label">{template.name}</span>{empty && <span className="template-desc">{template.desc}</span>}</span>
         {empty && <span className="badge">{describeSchedule(template.schedule)}</span>}
       </button>)}
-      <button type="button" className={empty ? "template-card custom" : "ghost"} onClick={() => onCreate()}>＋ 自定义任务</button>
+      {!empty && <button type="button" className="ghost" onClick={() => onCreate()}>＋ 自定义任务</button>}
     </div>;
   if (!empty) return <div className="schedule-templates">{list}</div>;
   return <EmptyState className="schedule-empty" icon={<CalendarClock size={28} />} title="创建首个定时任务" description="从模板开始，或从头自定义">{list}</EmptyState>;
@@ -224,7 +224,8 @@ export function SchedulePanel(props: SchedulePanelProps) {
   return <div className="page"><div className="page-inner">
     <div className="schedule-page-header">
       <div><div className="page-title">已安排</div><div className="page-sub">定时生成新结果，或持续跟进同一会话。任务记忆会在每次运行时提供给 agent。</div></div>
-      {editor && <button type="button" className="ghost" disabled={saving} onClick={() => setEditor(null)}>返回</button>}
+      {editor && <button type="button" disabled={saving} onClick={() => setEditor(null)}>返回</button>}
+      {!editor && !tasks.loading && visibleTasks.length === 0 && <button type="button" onClick={() => openEditor()}>＋ 自定义任务</button>}
     </div>
     {tasks.loading && <LoadingState label="正在读取定时任务" />}
     {tasks.error && <div className="settings-status" role="alert">{tasks.error}<button type="button" className="ghost" disabled={tasks.loading} onClick={() => void tasks.refresh()}>重新加载</button></div>}

@@ -48,7 +48,7 @@ async fn failed_turn_persists_the_same_redacted_reason_as_the_live_event() {
     let state = AppState::new(store, "test".into(), Arc::new(FailedProvider));
     let mut events = state.events.subscribe();
     let cancel = state.begin_turn(&session.id).unwrap();
-    spawn_turn(state.clone(), session.id.clone(), cancel);
+    spawn_turn(state.clone(), session.id.clone(), cancel, None);
     let error = tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
             if let Event::TurnFailed { error, .. } = events.recv().await.unwrap() {
@@ -198,7 +198,7 @@ async fn cancelled_turn_keeps_tools_partial_output_plan_and_latest_request() {
     let state = AppState::new(store, "test-token".into(), provider.clone());
     let mut events = state.events.subscribe();
     assert!(matches!(
-        execute_turn(&state, &session.id, cancel).await,
+        execute_turn(&state, &session.id, cancel, None).await,
         Err(TurnError::Cancelled)
     ));
     let mut visible = Vec::new();
@@ -247,9 +247,11 @@ async fn cancelled_turn_keeps_tools_partial_output_plan_and_latest_request() {
             "new question, do not continue old work",
         )
         .unwrap();
-    assert!(execute_turn(&state, &session.id, CancellationToken::new())
-        .await
-        .is_ok());
+    assert!(
+        execute_turn(&state, &session.id, CancellationToken::new(), None)
+            .await
+            .is_ok()
+    );
     let requests = provider.requests.lock().unwrap();
     let request = requests.last().unwrap();
     assert!(request.messages[0].content.contains("old remaining work"));

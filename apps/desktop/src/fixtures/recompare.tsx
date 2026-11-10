@@ -27,6 +27,7 @@ const sessions: Session[] = workspaces.map((workspace, index) => ({
 const initialTasks: ScheduledTask[] = [{
   id: "task-1", workspaceId: workspaces[0].id, name: "工作日巡检",
   prompt: "继续核查未完成事项，有变化时说明变化和下一步。",
+  model: "示例模型",
   mode: "heartbeat", targetSessionId: sessions[0].id, memory: "已经完成文件预览；继续检查远程断连。",
   schedule: { type: "weekdays", weekdays: [1, 2, 3, 4, 5], time: "09:00" },
   enabled: false, nextRunAt: now, lastRunAt: now, lastSessionId: sessions[0].id, createdAt: now,
@@ -49,6 +50,8 @@ function Fixture() {
     onStatus: () => noop,
     onEvent: () => noop,
     call: async (method: string, params: Record<string, unknown> = {}) => {
+      if (method === "settings.get") return { provider: { baseUrl: "https://example.invalid/v1", model: "示例模型", hasApiKey: false } };
+      if (method === "settings.models") return { models: ["示例模型", "示例推理模型"] };
       if (method === "schedule.list") return { tasks: tasks.current };
       if (method === "session.list") return { sessions: sessions.filter((session) => session.workspaceId === params.workspaceId) };
       if (method === "schedule.create" || method === "schedule.update") {

@@ -31,6 +31,7 @@ fn heartbeat(state: &AppState, session: &Session) -> ScheduledTask {
             &session.workspace_id,
             "巡检",
             "继续检查未解决事项",
+            "heartbeat-model",
             &json!({"type":"interval","minutes":60}),
             DUE,
             ScheduledTaskMode::Heartbeat,
@@ -67,6 +68,7 @@ async fn heartbeat_preserves_original_conversation_and_uses_its_own_memory() {
         .append_message(&unrelated.id, Role::User, "无关会话的内容")
         .unwrap();
     let task = heartbeat(&state, &session);
+    let original_settings = state.store.session_model_settings(&session.id).unwrap();
     let mut events = state.events.subscribe();
     assert_eq!(fire_task(&state, &task).unwrap(), session.id);
     completed(&mut events, &session.id).await;
@@ -93,6 +95,37 @@ async fn heartbeat_preserves_original_conversation_and_uses_its_own_memory() {
     assert!(request.contains("原来的任务上下文"));
     assert!(request.contains("不重复汇报已解决事项"));
     assert!(!request.contains("无关会话的内容"));
+    assert_eq!(
+        state.store.session_model_settings(&session.id).unwrap(),
+        original_settings
+    );
+}
+
+#[tokio::test]
+async fn new_session_task_persists_selected_model_on_created_session() {
+    let provider = Arc::new(MockProvider::new(Vec::new()));
+    let (state, _directory, session) = setup(provider);
+    let task = state
+        .store
+        .create_scheduled_task(
+            &session.workspace_id,
+            "模型任务",
+            "执行一次",
+            "scheduled-model",
+            &json!({"type":"interval","minutes":60}),
+            DUE,
+            ScheduledTaskMode::NewSession,
+            None,
+            "",
+        )
+        .unwrap();
+
+    let created_session_id = fire_task(&state, &task).unwrap();
+    let settings = state
+        .store
+        .session_model_settings(&created_session_id)
+        .unwrap();
+    assert_eq!(settings.model.as_deref(), Some("scheduled-model"));
 }
 
 #[tokio::test]
@@ -159,6 +192,7 @@ async fn heartbeat_rejects_foreign_workspace_even_when_persisted_directly() {
             &other_workspace.id,
             "invalid",
             "private prompt",
+            "foreign-model",
             &json!({"type":"interval","minutes":60}),
             DUE,
             ScheduledTaskMode::Heartbeat,

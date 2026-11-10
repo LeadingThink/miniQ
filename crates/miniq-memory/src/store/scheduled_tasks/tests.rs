@@ -11,6 +11,7 @@ fn task(store: &Store, workspace: &str) -> ScheduledTask {
             workspace,
             "巡检",
             "检查项目",
+            "test-model",
             &serde_json::json!({"type":"interval","minutes":60}),
             DUE,
             ScheduledTaskMode::NewSession,
@@ -51,6 +52,7 @@ fn legacy_tasks_keep_schedule_and_default_to_new_sessions() {
     let store = Store::open(&database).unwrap();
     let task = store.get_scheduled_task("old-task").unwrap();
     assert_eq!(task.mode, ScheduledTaskMode::NewSession);
+    assert_eq!(task.model, "");
     assert_eq!(task.target_session_id, None);
     assert!(task.memory.is_empty());
     assert_eq!(task.prompt, "完整保留的指令");
@@ -221,6 +223,7 @@ fn task_memory_edits_are_persistent_and_scoped_to_task() {
             &first.workspace_id,
             "新标题",
             "新指令",
+            "edited-model",
             &first.schedule,
             first.mode,
             None,
@@ -252,6 +255,7 @@ fn claimed_tasks_reject_edits_and_cross_session_dispatch() {
             &workspace.id,
             "heartbeat",
             "prompt",
+            "heartbeat-model",
             &serde_json::json!({"type":"interval","minutes":60}),
             DUE,
             ScheduledTaskMode::Heartbeat,
@@ -266,6 +270,7 @@ fn claimed_tasks_reject_edits_and_cross_session_dispatch() {
             &task.workspace_id,
             "edited",
             "edited",
+            "edited-model",
             &task.schedule,
             task.mode,
             task.target_session_id.as_deref(),

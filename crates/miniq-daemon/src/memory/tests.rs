@@ -44,7 +44,7 @@ async fn complete_turn(state: &AppState, session: &str, text: &str) {
         .unwrap();
     let mut events = state.events.subscribe();
     let cancel = state.begin_turn(session).unwrap();
-    crate::turn::spawn_turn(state.clone(), session.into(), cancel);
+    crate::turn::spawn_turn(state.clone(), session.into(), cancel, None);
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             match events.recv().await.unwrap() {

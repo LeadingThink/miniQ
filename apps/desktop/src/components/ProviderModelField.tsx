@@ -14,6 +14,9 @@ interface ProviderModelFieldProps {
   disabled: boolean;
   value: string;
   onChange: (value: string) => void;
+  label?: string;
+  description?: string;
+  showReferenceLinks?: boolean;
 }
 
 function useProviderModels({ client, baseUrl, apiKey, ready }: ProviderModelFieldProps) {
@@ -61,6 +64,7 @@ export function ProviderModelField(props: ProviderModelFieldProps) {
   const [filtering, setFiltering] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const inputId = useId();
   const listId = useId();
   useEffect(() => {
     setOpen(false);
@@ -102,11 +106,11 @@ export function ProviderModelField(props: ProviderModelFieldProps) {
 
   return (
     <div className="provider-model" ref={rootRef}>
-      <label htmlFor="provider-default-model">
-        默认 Chat 模型
+      <label htmlFor={inputId}>
+        {props.label ?? "默认 Chat 模型"}
         <span className="provider-model-input">
           <input
-            id="provider-default-model"
+            id={inputId}
             role="combobox"
             aria-autocomplete="list"
             aria-expanded={open}
@@ -177,18 +181,20 @@ export function ProviderModelField(props: ProviderModelFieldProps) {
           ))}
         </div>
       )}
-      <p>用于所有项目和新会话。项目或会话可以单独更换。可输入模型 ID，或从列表选择。</p>
+      <p>{props.description ?? "用于所有项目和新会话。项目或会话可以单独更换。可输入模型 ID，或从列表选择。"}</p>
       <div className="provider-model-actions">
         <button type="button" className="secondary" disabled={props.disabled || !props.ready || !props.baseUrl || loading} onClick={refresh}>
           {loading ? "正在读取模型列表…" : "刷新模型列表"}
         </button>
-        <ModelRankingLink />
-        <ModelRankingLink
-          href={MODEL_AVAILABILITY_URL}
-          label="查看模型可用性"
-          notice={MODEL_AVAILABILITY_NOTICE}
-          failure="无法打开模型可用性页面，请重试"
-        />
+        {props.showReferenceLinks !== false && <>
+          <ModelRankingLink />
+          <ModelRankingLink
+            href={MODEL_AVAILABILITY_URL}
+            label="查看模型可用性"
+            notice={MODEL_AVAILABILITY_NOTICE}
+            failure="无法打开模型可用性页面，请重试"
+          />
+        </>}
       </div>
       {catalogStatus && <small role="status">{catalogStatus}</small>}
     </div>

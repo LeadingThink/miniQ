@@ -224,6 +224,7 @@ pub struct AppState {
     pub(crate) review_jobs: Arc<Mutex<HashMap<String, CancellationToken>>>,
     /// Sessions whose active turn was interrupted for a user-requested pause.
     pub(crate) paused_turns: Arc<Mutex<HashSet<String>>>,
+    pub(crate) paused_turn_models: Arc<Mutex<HashMap<String, String>>>,
     /// One-shot model-step budgets requested by `session.sendMessage`
     /// (`maxTurns`). Consumed by the next turn of that session.
     pub(crate) turn_step_limits: Arc<Mutex<HashMap<String, usize>>>,
@@ -354,6 +355,7 @@ impl AppState {
             prompt_submissions: Arc::new(crate::prompt_submissions::PromptSubmissions::default()),
             review_jobs: Arc::new(Mutex::new(HashMap::new())),
             paused_turns: Arc::new(Mutex::new(HashSet::new())),
+            paused_turn_models: Arc::new(Mutex::new(HashMap::new())),
             turn_step_limits: Arc::new(Mutex::new(HashMap::new())),
             turn_continuations: Arc::new(Mutex::new(HashMap::new())),
             pending_turn_resumes: Arc::new(Mutex::new(HashSet::new())),
@@ -921,6 +923,7 @@ impl AppState {
     }
 
     pub fn clear_paused_turn(&self, session_id: &str) -> bool {
+        self.paused_turn_models.lock().unwrap().remove(session_id);
         self.pending_turn_resumes.lock().unwrap().remove(session_id);
         self.paused_turns.lock().unwrap().remove(session_id)
     }

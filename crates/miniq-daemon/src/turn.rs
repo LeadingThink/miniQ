@@ -207,10 +207,15 @@ pub(crate) fn runtime_context(workspace_path: &Path) -> String {
 
 /// Run a full turn in a background task. Assumes the user message is already
 /// persisted and the turn slot is registered in `state.active_turns`.
-pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken) {
+pub fn spawn_turn(
+    state: AppState,
+    session_id: String,
+    cancel: CancellationToken,
+    model_override: Option<String>,
+) {
     tokio::spawn(async move {
         let clock = crate::turn_clock::TurnClock::start(&state, &session_id);
-        let result = execute_turn(&state, &session_id, cancel)
+        let result = execute_turn(&state, &session_id, cancel, model_override.clone())
             .await
             .map_err(|error| match error {
                 TurnError::Fatal(error) => TurnError::Fatal(
@@ -226,6 +231,17 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
             state.take_turn_step_limit(&session_id);
             let paused =
                 matches!(result, Err(TurnError::Cancelled)) && state.is_turn_paused(&session_id);
+            if paused {
+                if let Some(model) = &model_override {
+                    state
+                        .paused_turn_models
+                        .lock()
+                        .unwrap()
+                        .insert(session_id.clone(), model.clone());
+                }
+            } else {
+                state.paused_turn_models.lock().unwrap().remove(&session_id);
+            }
             let (outcome, timing_status) = match &result {
                 Ok(()) => ("completed", TurnTimingStatus::Completed),
                 Err(TurnError::Cancelled) if paused => ("paused", TurnTimingStatus::Cancelled),
@@ -331,7 +347,8 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                         session_id: session_id.clone(),
                         status: SessionStatus::Running,
                     });
-                    spawn_turn(state.clone(), session_id.clone(), cancel);
+                    let model = state.paused_turn_models.lock().unwrap().remove(&session_id);
+                    spawn_turn(state.clone(), session_id.clone(), cancel, model);
                 }
                 return;
             }
@@ -377,7 +394,7 @@ pub(crate) fn start_next_queued(state: &AppState, session_id: &str) {
         session_id: session_id.to_string(),
         status: SessionStatus::Running,
     });
-    spawn_turn(state.clone(), session_id.to_string(), cancel);
+    spawn_turn(state.clone(), session_id.to_string(), cancel, None);
 }
 
 enum TurnError {
@@ -398,6 +415,7 @@ async fn execute_turn(
     state: &AppState,
     session_id: &str,
     cancel: CancellationToken,
+    model_override: Option<String>,
 ) -> Result<(), TurnError> {
     let turn_started = Instant::now();
     tracing::info!(session_id, "turn execution started");
@@ -463,7 +481,7 @@ async fn execute_turn(
         "turn input loaded"
     );
     let config = state
-        .provider_config_for_session(session_id, None)
+        .provider_config_for_session(session_id, model_override.as_deref())
         .map_err(|error| TurnError::Fatal(error.to_string()))?;
     let external_paths_allowed = state
         .approval_mode_for_session(session_id)

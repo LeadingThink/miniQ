@@ -18,6 +18,7 @@ impl Store {
         workspace_id: &str,
         name: &str,
         prompt: &str,
+        model: &str,
         schedule: &Value,
         next_run_at: &str,
         mode: ScheduledTaskMode,
@@ -30,6 +31,7 @@ impl Store {
             workspace_id: workspace_id.to_string(),
             name: name.to_string(),
             prompt: prompt.to_string(),
+            model: model.to_string(),
             mode,
             target_session_id: target_session_id.map(str::to_string),
             memory: memory.to_string(),
@@ -43,13 +45,14 @@ impl Store {
         };
         conn.execute(
             "INSERT INTO scheduled_tasks
-               (id, workspace_id, name, prompt, mode, target_session_id, memory, schedule, enabled, next_run_at, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10)",
+                             (id, workspace_id, name, prompt, model, mode, target_session_id, memory, schedule, enabled, next_run_at, created_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10, ?11)",
             params![
                 task.id,
                 task.workspace_id,
                 task.name,
                 task.prompt,
+                task.model,
                 task.mode.as_str(),
                 task.target_session_id,
                 task.memory,
@@ -64,7 +67,7 @@ impl Store {
     pub fn list_scheduled_tasks(&self) -> Result<Vec<ScheduledTask>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, workspace_id, name, prompt, schedule, enabled, next_run_at,
+            "SELECT id, workspace_id, name, prompt, model, schedule, enabled, next_run_at,
                     last_run_at, last_session_id, created_at, mode, target_session_id, memory,
                     revision
              FROM scheduled_tasks ORDER BY created_at DESC",
@@ -76,7 +79,7 @@ impl Store {
     pub fn get_scheduled_task(&self, id: &str) -> Result<ScheduledTask> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT id, workspace_id, name, prompt, schedule, enabled, next_run_at,
+            "SELECT id, workspace_id, name, prompt, model, schedule, enabled, next_run_at,
                     last_run_at, last_session_id, created_at, mode, target_session_id, memory,
                     revision
              FROM scheduled_tasks WHERE id = ?1",
@@ -91,7 +94,7 @@ impl Store {
     pub fn due_scheduled_tasks(&self, now: &str) -> Result<Vec<ScheduledTask>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, workspace_id, name, prompt, schedule, enabled, next_run_at,
+            "SELECT id, workspace_id, name, prompt, model, schedule, enabled, next_run_at,
                     last_run_at, last_session_id, created_at, mode, target_session_id, memory,
                     revision
              FROM scheduled_tasks WHERE enabled = 1 AND dispatching = 0 AND next_run_at <= ?1",
@@ -373,6 +376,7 @@ impl Store {
         workspace_id: &str,
         name: &str,
         prompt: &str,
+        model: &str,
         schedule: &Value,
         mode: ScheduledTaskMode,
         target_session_id: Option<&str>,
@@ -392,13 +396,14 @@ impl Store {
             return Err(MemoryError::InvalidData("任务正在启动，请稍后编辑".into()));
         }
         let changed = conn.execute(
-            "UPDATE scheduled_tasks SET workspace_id=?2, name=?3, prompt=?4, schedule=?5, mode=?6,
-             target_session_id=?7, memory=?8, next_run_at=?9, revision=revision+1 WHERE id=?1 AND dispatching=0",
+            "UPDATE scheduled_tasks SET workspace_id=?2, name=?3, prompt=?4, model=?5, schedule=?6, mode=?7,
+             target_session_id=?8, memory=?9, next_run_at=?10, revision=revision+1 WHERE id=?1 AND dispatching=0",
             params![
                 id,
                 workspace_id,
                 name,
                 prompt,
+                model,
                 serde_json::to_string(schedule)?,
                 mode.as_str(),
                 target_session_id,

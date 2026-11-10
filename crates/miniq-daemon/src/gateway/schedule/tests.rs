@@ -19,6 +19,7 @@ fn setup() -> (AppState, String, String, String) {
 fn input(workspace: &str, target: Value) -> Value {
     json!({
         "workspaceId": workspace, "name": "持续检查", "prompt": "检查变化",
+        "model": "test-model",
         "mode": "heartbeat", "targetSessionId": target,
         "memory": "仅检查 A 项目", "schedule": {"type": "interval", "minutes": 60},
     })

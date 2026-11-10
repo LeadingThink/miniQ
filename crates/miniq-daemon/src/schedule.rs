@@ -8,7 +8,9 @@
 //!   {"type":"weekdays","weekdays":[1,2,3,4,5],"time":"09:00"}
 //!   {"type":"interval","minutes":30}
 
-use miniq_protocol::{Event, ScheduledTask, ScheduledTaskMode, SessionStatus};
+use miniq_protocol::{
+    Event, ScheduledTask, ScheduledTaskMode, SessionModelSettings, SessionStatus,
+};
 use serde::{Deserialize, Serialize};
 use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime, UtcOffset, Weekday};
@@ -200,10 +202,20 @@ fn dispatch_claimed_task(state: &AppState, task: &ScheduledTask) -> Result<Strin
         error
     })?;
     let session = match task.mode {
-        ScheduledTaskMode::NewSession => state
-            .store
-            .create_session(&task.workspace_id, &task.name)
-            .map_err(|e| e.to_string())?,
+        ScheduledTaskMode::NewSession => {
+            let model_settings = (!task.model.trim().is_empty()).then(|| SessionModelSettings {
+                model: Some(task.model.trim().to_string()),
+                ..Default::default()
+            });
+            state
+                .store
+                .create_session_with_model_settings(
+                    &task.workspace_id,
+                    &task.name,
+                    model_settings.as_ref(),
+                )
+                .map_err(|e| e.to_string())?
+        }
         ScheduledTaskMode::Heartbeat => {
             let id = task
                 .target_session_id
@@ -260,7 +272,10 @@ fn dispatch_claimed_task(state: &AppState, task: &ScheduledTask) -> Result<Strin
         session_id: session.id.clone(),
         status: SessionStatus::Running,
     });
-    crate::turn::spawn_turn(state.clone(), session.id.clone(), cancel);
+    let model_override = (task.mode == ScheduledTaskMode::Heartbeat
+        && !task.model.trim().is_empty())
+    .then(|| task.model.trim().to_string());
+    crate::turn::spawn_turn(state.clone(), session.id.clone(), cancel, model_override);
     Ok(session.id)
 }
 

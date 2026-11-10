@@ -13,6 +13,7 @@ const workspaces: Workspace[] = ["one", "two"].map((id) => ({
 }));
 const task: ScheduledTask = {
   id: "scheduled", workspaceId: "one", name: "持续跟进", prompt: "检查并汇报",
+  model: "scheduled-model",
   mode: "heartbeat", targetSessionId: "target", memory: "已有记忆",
   schedule: { type: "weekdays", weekdays: [1, 3, 5], time: "04:30" },
   enabled: true, nextRunAt: "2026-09-23T04:30:00Z", lastRunAt: null,
@@ -24,7 +25,7 @@ function session(id: string, patch: Partial<Session> = {}): Session {
 function setup(tasks: ScheduledTask[] = [], implementation?: (method: string, params: Record<string, unknown>) => Promise<unknown>) {
   const call = vi.fn((method: string, params: Record<string, unknown>) => implementation
     ? implementation(method, params)
-    : Promise.resolve(method === "schedule.list" ? { tasks } : method === "session.list" ? { sessions: [session("target")] } : method === "schedule.runs" ? { runs: [] } : {}));
+    : Promise.resolve(method === "schedule.list" ? { tasks } : method === "session.list" ? { sessions: [session("target")] } : method === "schedule.runs" ? { runs: [] } : method === "settings.get" ? { provider: { baseUrl: "https://models.example/v1", model: "settings-model", hasApiKey: true } } : method === "settings.models" ? { models: ["settings-model", "scheduled-model", "other-model"] } : {}));
   const onOpenSession = vi.fn(), onClose = vi.fn();
   render(<SchedulePanel client={{ call } as unknown as RpcClient} workspaces={workspaces} defaultWorkspaceId="one" onClose={onClose} onOpenSession={onOpenSession} />);
   return { call, onOpenSession, onClose };
@@ -35,7 +36,28 @@ function fill() {
   fireEvent.change(screen.getByLabelText("任务内容"), { target: { value: "持续检查" } });
 }
 
+const settingsResult = { provider: { baseUrl: "https://models.example/v1", model: "settings-model", hasApiKey: true } };
+
 describe("SchedulePanel", () => {
+  it("shows only template cards in the empty state and keeps custom creation in the header", async () => {
+    setup();
+    const create = await screen.findByRole("button", { name: "＋ 自定义任务" });
+    expect(create.closest(".schedule-page-header")).toBeTruthy();
+    expect(document.querySelectorAll(".template-list > button")).toHaveLength(3);
+    fireEvent.click(create);
+    expect(screen.getByRole("heading", { name: "创建定时任务" })).toBeTruthy();
+  });
+
+  it("defaults new tasks to the Settings model and persists a selected model", async () => {
+    const { call } = setup();
+    await createForm(); fill();
+    const model = await screen.findByRole("combobox", { name: "模型" });
+    expect((model as HTMLInputElement).value).toBe("settings-model");
+    fireEvent.change(model, { target: { value: "other-model" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("schedule.create", expect.objectContaining({ model: "other-model" })));
+  });
+
   it("shows the last run as elapsed time without duplicating 前", async () => {
     vi.spyOn(Date, "now").mockReturnValue(new Date("2026-09-23T12:00:00Z").getTime());
     setup([{ ...task, lastRunAt: "2026-09-22T12:00:00Z" }]);
@@ -49,6 +71,7 @@ describe("SchedulePanel", () => {
     } : {});
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
     expect(screen.getByRole("heading", { name: "编辑定时任务" })).toBeTruthy();
+    expect((screen.getByRole("combobox", { name: "模型" }) as HTMLInputElement).value).toBe("scheduled-model");
     await screen.findByRole("option", { name: "会话 target" });
     expect(call).toHaveBeenCalledWith("session.list", { workspaceId: "one" });
     expect(screen.queryByRole("option", { name: "会话 other-project" })).toBeNull();
@@ -59,7 +82,7 @@ describe("SchedulePanel", () => {
     expect(screen.getByRole("button", { name: "执行时间分钟" }).textContent).toBe("30");
     fireEvent.change(screen.getByLabelText("任务记忆"), { target: { value: "更新记忆" } });
     fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
-    await waitFor(() => expect(call).toHaveBeenCalledWith("schedule.update", expect.objectContaining({ id: "scheduled", targetSessionId: "target", memory: "更新记忆", schedule: task.schedule })));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("schedule.update", expect.objectContaining({ id: "scheduled", model: "scheduled-model", targetSessionId: "target", memory: "更新记忆", schedule: task.schedule })));
   });
 
   it("cancels an edit without reusing its id, target, or memory for a template", async () => {
@@ -70,8 +93,9 @@ describe("SchedulePanel", () => {
     expect(screen.getByRole("heading", { name: "创建定时任务" })).toBeTruthy();
     expect((screen.getByLabelText("任务记忆") as HTMLTextAreaElement).value).toBe("");
     expect(screen.queryByLabelText("目标会话")).toBeNull();
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "模型" }) as HTMLInputElement).value).toBe("settings-model"));
     fireEvent.click(screen.getByRole("button", { name: "创建任务" }));
-    await waitFor(() => expect(call).toHaveBeenCalledWith("schedule.create", expect.objectContaining({ name: "每日简报", mode: "newSession", targetSessionId: null, memory: "" })));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("schedule.create", expect.objectContaining({ name: "每日简报", model: "settings-model", mode: "newSession", targetSessionId: null, memory: "" })));
     expect(call.mock.calls.some(([method]) => method === "schedule.update")).toBe(false);
     await createForm();
     expect((screen.getByLabelText("名称") as HTMLInputElement).value).toBe("");
@@ -120,8 +144,11 @@ describe("SchedulePanel", () => {
 
   it("clears project-specific target and memory and ignores a late previous-project list", async () => {
     let resolveOld!: (value: unknown) => void;
-    setup([], (method, params) => method === "schedule.list" ? Promise.resolve({ tasks: [] }) : params.workspaceId === "one"
-      ? new Promise((resolve) => { resolveOld = resolve; }) : Promise.resolve({ sessions: [session("two", { workspaceId: "two" })] }));
+    setup([], (method, params) => method === "schedule.list" ? Promise.resolve({ tasks: [] })
+      : method === "settings.get" ? Promise.resolve(settingsResult)
+      : method === "settings.models" ? Promise.resolve({ models: [] })
+      : params.workspaceId === "one" ? new Promise((resolve) => { resolveOld = resolve; })
+      : Promise.resolve({ sessions: [session("two", { workspaceId: "two" })] }));
     await createForm();
     fireEvent.change(screen.getByLabelText("执行方式"), { target: { value: "heartbeat" } });
     fireEvent.change(screen.getByLabelText("任务记忆"), { target: { value: "项目 one 的秘密" } });
@@ -136,7 +163,10 @@ describe("SchedulePanel", () => {
 
   it("deduplicates a save and keeps the editable draft after failure", async () => {
     let rejectSave!: (cause: Error) => void;
-    const { call } = setup([], (method) => method === "schedule.list" ? Promise.resolve({ tasks: [] }) : new Promise((_resolve, reject) => { rejectSave = reject; }));
+    const { call } = setup([], (method) => method === "schedule.list" ? Promise.resolve({ tasks: [] })
+      : method === "settings.get" ? Promise.resolve(settingsResult)
+      : method === "settings.models" ? Promise.resolve({ models: [] })
+      : new Promise((_resolve, reject) => { rejectSave = reject; }));
     await createForm(); fill();
     const save = screen.getByRole("button", { name: "创建任务" });
     fireEvent.click(save); fireEvent.click(save);
@@ -152,6 +182,8 @@ describe("SchedulePanel", () => {
     let attempts = 0;
     setup([], async (method) => {
       if (method === "schedule.list") return { tasks: [] };
+      if (method === "settings.get") return settingsResult;
+      if (method === "settings.models") return { models: [] };
       if (++attempts === 1) throw new Error("远程暂时断开");
       return { sessions: [session("target")] };
     });

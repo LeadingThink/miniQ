@@ -433,6 +433,7 @@ export interface ScheduledTask {
   workspaceId: string;
   name: string;
   prompt: string;
+  model: string;
   mode: ScheduledTaskMode;
   targetSessionId?: string | null;
   memory: string;

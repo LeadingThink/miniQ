@@ -97,17 +97,6 @@
   transform: translateY(-1px);
 }
 
-.template-card.custom {
-  background: transparent;
-  border-style: dashed;
-}
-
-.template-card.custom .template-icon {
-  background: transparent;
-  border: 1px dashed var(--border-strong);
-  color: var(--text-dim);
-}
-
 .template-icon {
   width: 36px;
   height: 36px;
@@ -238,7 +227,7 @@
   min-width: 0;
 }
 
-.schedule-page-header > .ghost {
+.schedule-page-header > button {
   flex: none;
   margin-top: 1px;
 }
@@ -285,6 +274,127 @@
 
 .schedule-field-menu {
   width: min(360px, calc(100vw - 32px));
+}
+
+/* Task details share one surface; the model picker must not look like a nested settings page. */
+.schedule-details {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.schedule-details label {
+  min-width: 0;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.schedule-configuration {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.schedule-details input,
+.schedule-details textarea,
+.schedule-details select,
+.schedule-configuration .mode-trigger {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-body);
+  font-weight: 400;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.schedule-details textarea {
+  line-height: 1.65;
+  resize: vertical;
+  min-height: 92px;
+}
+
+.schedule-details input:focus-visible,
+.schedule-details textarea:focus-visible,
+.schedule-details select:focus-visible,
+.schedule-configuration .mode-trigger:focus-visible {
+  outline: none;
+  border-color: var(--text-mid);
+  background: var(--bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-mid) 10%, transparent);
+}
+
+.schedule-configuration .mode-trigger {
+  display: flex;
+  justify-content: space-between;
+  text-align: left;
+}
+
+.schedule-details .provider-model {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.schedule-details .provider-model > label,
+.schedule-details .provider-model > small {
+  grid-column: 1 / -1;
+}
+
+.schedule-details .provider-model-input input {
+  width: 100%;
+  padding-right: 40px;
+}
+
+.schedule-details .provider-model > p {
+  align-self: center;
+}
+
+.schedule-details .provider-model-actions button {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text-mid);
+  font-size: var(--font-caption);
+}
+
+.schedule-details .provider-model-menu {
+  top: 68px;
+  right: 0;
+  left: 0;
+}
+
+@media (max-width: 560px) {
+  .schedule-details {
+    padding: 16px;
+    gap: 16px;
+  }
+
+  .schedule-configuration {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .schedule-details .provider-model {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ---- project picker ---- */

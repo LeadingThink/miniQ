@@ -20,9 +20,11 @@ async fn reasoning_streams_before_answer_and_survives_message_persistence() {
     ]]));
     let state = AppState::new(store, "test".into(), provider);
     let mut events = state.events.subscribe();
-    assert!(execute_turn(&state, &session.id, CancellationToken::new())
-        .await
-        .is_ok());
+    assert!(
+        execute_turn(&state, &session.id, CancellationToken::new(), None)
+            .await
+            .is_ok()
+    );
     let mut streamed = String::new();
     let mut saw_answer = false;
     while let Ok(event) = events.try_recv() {
@@ -68,9 +70,11 @@ async fn reasoning_is_preserved_when_stream_ends_without_an_answer() {
         "Partial thinking".into(),
     )]]));
     let state = AppState::new(store, "test".into(), provider);
-    assert!(execute_turn(&state, &session.id, CancellationToken::new())
-        .await
-        .is_err());
+    assert!(
+        execute_turn(&state, &session.id, CancellationToken::new(), None)
+            .await
+            .is_err()
+    );
     let messages = state.store.list_messages(&session.id).unwrap();
     let answer = messages.last().unwrap();
     assert_eq!(answer.reasoning, "Partial thinking");

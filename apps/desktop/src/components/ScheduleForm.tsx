@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 import type { ScheduleSpec, ScheduledTask, ScheduledTaskMode, Session, Workspace } from "../types";
 import { errorMessage } from "../errorMessage";
+import { DEFAULT_MODEL_ID } from "../modelSelection";
 import { MenuSelect, type MenuOption } from "./MenuSelect";
+import { ProviderModelField } from "./ProviderModelField";
 import { TimeField } from "./TimeField";
 
 const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -29,8 +31,14 @@ function initial(task: ScheduledTask | undefined, template: ScheduleTemplate | u
     name: task?.name ?? template?.name ?? "", prompt: task?.prompt ?? template?.prompt ?? "",
     workspaceId: task?.workspaceId ?? defaultWorkspaceId ?? "", schedule,
     mode: task?.mode ?? "newSession" as ScheduledTaskMode,
-    targetSessionId: task?.targetSessionId ?? "", memory: task?.memory ?? "",
+    targetSessionId: task?.targetSessionId ?? "", memory: task?.memory ?? "", model: task?.model ?? "",
   };
+}
+
+interface ProviderView {
+  baseUrl: string;
+  model: string;
+  hasApiKey: boolean;
 }
 
 export function ScheduleForm({ client, workspaces, defaultWorkspaceId, task, template, onPendingChange, onCancel, onSaved }: Props) {
@@ -42,7 +50,9 @@ export function ScheduleForm({ client, workspaces, defaultWorkspaceId, task, tem
   const [weekdays, setWeekdays] = useState("weekdays" in defaults.schedule ? defaults.schedule.weekdays : [1, 2, 3, 4, 5]);
   const [minutes, setMinutes] = useState("minutes" in defaults.schedule ? defaults.schedule.minutes : 60);
   const [mode, setMode] = useState(defaults.mode), [targetSessionId, setTargetSessionId] = useState(defaults.targetSessionId);
-  const [memory, setMemory] = useState(defaults.memory), [sessions, setSessions] = useState<Session[]>([]);
+  const [memory, setMemory] = useState(defaults.memory), [model, setModel] = useState(defaults.model);
+  const [provider, setProvider] = useState<ProviderView | null>(null), [providerReady, setProviderReady] = useState(false);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false), [error, setError] = useState<string | null>(null), [saving, setSaving] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null), [sessionRevision, setSessionRevision] = useState(0);
   const saveLock = useRef(false);
@@ -51,8 +61,21 @@ export function ScheduleForm({ client, workspaces, defaultWorkspaceId, task, tem
     setName(defaults.name); setPrompt(defaults.prompt); setWorkspaceId(defaults.workspaceId); setType(defaults.schedule.type);
     setTime("time" in defaults.schedule ? defaults.schedule.time : "09:00"); setWeekday("weekday" in defaults.schedule ? defaults.schedule.weekday : 1);
     setWeekdays("weekdays" in defaults.schedule ? defaults.schedule.weekdays : [1, 2, 3, 4, 5]); setMinutes("minutes" in defaults.schedule ? defaults.schedule.minutes : 60);
-    setMode(defaults.mode); setTargetSessionId(defaults.targetSessionId); setMemory(defaults.memory); setError(null);
+    setMode(defaults.mode); setTargetSessionId(defaults.targetSessionId); setMemory(defaults.memory); setModel(defaults.model); setError(null);
   }, [defaults]);
+
+  useEffect(() => {
+    let active = true;
+    setProviderReady(false);
+    void client.call<{ provider: ProviderView | null }>("settings.get").then((result) => {
+      if (!active) return;
+      setProvider(result.provider);
+      if (!task) setModel(result.provider?.model?.trim() || DEFAULT_MODEL_ID);
+    }).catch(() => {
+      if (active && !task) setModel(DEFAULT_MODEL_ID);
+    }).finally(() => { if (active) setProviderReady(true); });
+    return () => { active = false; };
+  }, [client, task]);
 
   useEffect(() => {
     let active = true;
@@ -69,7 +92,7 @@ export function ScheduleForm({ client, workspaces, defaultWorkspaceId, task, tem
   const workspaceOptions: MenuOption<string>[] = [{ value: "", label: "选择项目..." }, ...workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name }))];
   const save = async () => {
     if (saveLock.current) return;
-    if (!name.trim() || !prompt.trim() || !workspaceId) return setError("请填写名称、任务内容并选择项目");
+    if (!name.trim() || !prompt.trim() || !workspaceId || !model.trim()) return setError("请填写名称、任务内容、模型并选择项目");
     if (mode === "heartbeat" && (loadingSessions || sessionError || !sessions.some((session) => session.id === targetSessionId))) return setError("请选择要续接的同项目会话");
     if (type === "weekdays" && weekdays.length === 0) return setError("至少选择一个星期几");
     if (type !== "interval" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return setError("请设置有效的执行时间");
@@ -77,7 +100,7 @@ export function ScheduleForm({ client, workspaces, defaultWorkspaceId, task, tem
     saveLock.current = true;
     setSaving(true); onPendingChange(true); setError(null);
     try {
-      await client.call(task ? "schedule.update" : "schedule.create", { ...(task ? { id: task.id } : {}), workspaceId, name: name.trim(), prompt: prompt.trim(), schedule, mode, targetSessionId: mode === "heartbeat" ? targetSessionId : null, memory });
+      await client.call(task ? "schedule.update" : "schedule.create", { ...(task ? { id: task.id } : {}), workspaceId, name: name.trim(), prompt: prompt.trim(), model: model.trim(), schedule, mode, targetSessionId: mode === "heartbeat" ? targetSessionId : null, memory });
       await onSaved();
     } catch (cause) { setError(errorMessage(cause)); }
     finally { saveLock.current = false; setSaving(false); onPendingChange(false); }
@@ -85,10 +108,16 @@ export function ScheduleForm({ client, workspaces, defaultWorkspaceId, task, tem
   return <div className="schedule-form" aria-label={task ? "编辑定时任务" : "创建定时任务"}>
     <h2>{task ? "编辑定时任务" : "创建定时任务"}</h2>
     <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, display: "contents" }}>
+    <div className="schedule-details">
     <label>名称<input value={name} onChange={(e) => setName(e.target.value)} placeholder="每日简报" /></label>
     <label>任务内容<textarea rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} /></label>
+    <div className="schedule-configuration">
     <label>项目<MenuSelect ariaLabel="项目" menuLabel="项目" menuClassName="schedule-field-menu" value={workspaceId} options={workspaceOptions} onChange={(value) => { setWorkspaceId(value); setTargetSessionId(""); setMemory(""); }} /></label>
     <label>执行方式<select value={mode} onChange={(e) => { setMode(e.target.value as ScheduledTaskMode); setTargetSessionId(""); }}><option value="newSession">每次新建会话（推荐）</option><option value="heartbeat">续接已有会话</option></select></label>
+    </div>
+    <ProviderModelField client={client} baseUrl={provider?.baseUrl ?? ""} ready={providerReady && !!provider}
+      disabled={saving} value={model} onChange={setModel} label="模型"
+      description="本任务每次运行时使用的模型。可输入模型 ID，或从列表选择。" showReferenceLinks={false} />
     {mode === "heartbeat" && <>
       <label>目标会话<select value={targetSessionId} onChange={(e) => setTargetSessionId(e.target.value)} disabled={loadingSessions}><option value="">{loadingSessions ? "正在加载会话…" : "选择同项目会话…"}</option>{sessions.map((session) => <option value={session.id} key={session.id}>{session.title || "未命名会话"}</option>)}</select></label>
       {sessionError && <div role="alert">{sessionError}<button type="button" className="ghost" onClick={() => setSessionRevision((value) => value + 1)}>重新加载会话</button></div>}
@@ -96,6 +125,7 @@ export function ScheduleForm({ client, workspaces, defaultWorkspaceId, task, tem
       {!loadingSessions && !sessionError && targetSessionId && !sessions.some((session) => session.id === targetSessionId) && <p role="alert">原目标会话已不可续接，请重新选择。</p>}
     </>}
     <label>任务记忆<textarea rows={3} value={memory} onChange={(e) => setMemory(e.target.value)} placeholder="每次运行附带的长期上下文（可选）" /></label>
+    </div>
     <div className="schedule-when"><MenuSelect ariaLabel="运行频率" menuLabel="运行频率" menuClassName="schedule-when-menu" value={type} options={FREQUENCY_OPTIONS} onChange={setType} />
       {type === "weekly" && <MenuSelect ariaLabel="星期几" menuLabel="星期几" menuClassName="schedule-when-menu" value={String(weekday)} options={WEEKDAY_OPTIONS} onChange={(value) => setWeekday(Number(value))} />}
       {type === "weekdays" && <div className="schedule-weekdays">{DAYS.map((day, index) => <label key={day}><input type="checkbox" checked={weekdays.includes(index + 1)} onChange={() => setWeekdays((current) => current.includes(index + 1) ? current.filter((value) => value !== index + 1) : [...current, index + 1])} />{day}</label>)}</div>}

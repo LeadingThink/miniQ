@@ -88,6 +88,7 @@ async fn schedule_crud_and_run_now() {
             "workspaceId": ws_id,
             "name": "每日简报",
             "prompt": "汇总今天的进展",
+            "model": "scheduled-model",
             "schedule": {"type": "daily", "time": "09:00"},
         }),
     )
@@ -107,6 +108,7 @@ async fn schedule_crud_and_run_now() {
             "workspaceId": ws_id,
             "name": "x",
             "prompt": "y",
+            "model": "scheduled-model",
             "schedule": {"type": "daily", "time": "25:61"},
         }),
     )
@@ -126,6 +128,7 @@ async fn schedule_crud_and_run_now() {
             "workspaceId": ws_id,
             "name": "无目标续接",
             "prompt": "继续",
+            "model": "scheduled-model",
             "mode": "heartbeat",
             "schedule": {"type": "daily", "time": "09:00"},
         }),
@@ -173,6 +176,7 @@ async fn schedule_crud_and_run_now() {
             "workspaceId": ws_id,
             "name": "续接简报",
             "prompt": "继续检查",
+            "model": "heartbeat-model",
             "mode": "heartbeat",
             "targetSessionId": session_id,
             "memory": "只关注阻塞项",

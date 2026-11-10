@@ -208,7 +208,7 @@ fn json_operations_validate_shapes_without_dropping_large_contents() {
             &[
                 "schedule",
                 "create",
-                r#"{"workspaceId":"w","name":"daily","prompt":"task","schedule":{"kind":"once","at":"2026-10-22T00:00:00Z"}}"#,
+                r#"{"workspaceId":"w","name":"daily","prompt":"task","model":"task-model","schedule":{"kind":"once","at":"2026-10-22T00:00:00Z"}}"#,
             ],
             "schedule.create",
         ),
@@ -216,7 +216,7 @@ fn json_operations_validate_shapes_without_dropping_large_contents() {
             &[
                 "schedule",
                 "update",
-                r#"{"id":"t","name":"daily","prompt":"task","schedule":{}}"#,
+                r#"{"id":"t","name":"daily","prompt":"task","model":"task-model","schedule":{}}"#,
             ],
             "schedule.update",
         ),

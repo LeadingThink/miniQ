@@ -246,6 +246,7 @@ fn startup_recovery_atomically_terminates_process_owned_state() {
             &ws.id,
             "scheduled",
             "run",
+            "scheduled-model",
             &json!({"kind":"interval","seconds":3600}),
             "2099-01-01T00:00:00Z",
             ScheduledTaskMode::NewSession,

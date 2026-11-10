@@ -329,7 +329,7 @@ pub(super) async fn send_message(state: &AppState, raw: Option<Value>) -> Result
         crate::session_titles::spawn(state, &input.session_id);
         state.set_turn_step_limit(&input.session_id, input.max_turns);
         let turn = admission.take().expect("reserved prompt");
-        crate::turn::spawn_turn(state.clone(), input.session_id.clone(), turn.start());
+        crate::turn::spawn_turn(state.clone(), input.session_id.clone(), turn.start(), None);
         to_value(json!({ "message": message }))
     })
 }
@@ -449,7 +449,7 @@ pub(super) async fn rewrite_message(
         state.clear_paused_turn(&input.session_id);
         crate::session_titles::spawn(state, &input.session_id);
         let turn = admission.take().expect("rewrite owns its turn slot");
-        crate::turn::spawn_turn(state.clone(), input.session_id.clone(), turn.start());
+        crate::turn::spawn_turn(state.clone(), input.session_id.clone(), turn.start(), None);
         to_value(json!({ "message": rewrite.message }))
     })
 }
@@ -606,7 +606,8 @@ pub(super) fn resume(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
             state.end_turn(&input.session_id);
             return Err(error);
         }
-        crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
+        let model = state.paused_turn_models.lock().unwrap().remove(&input.session_id);
+        crate::turn::spawn_turn(state.clone(), input.session_id, cancel, model);
         Ok(json!({ "resumed": true }))
     })
 }

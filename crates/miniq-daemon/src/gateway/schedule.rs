@@ -15,6 +15,7 @@ struct CreateParams {
     workspace_id: String,
     name: String,
     prompt: String,
+    model: String,
     schedule: Value,
     #[serde(default)]
     mode: ScheduledTaskMode,
@@ -72,10 +73,13 @@ fn validate_target(
 
 pub(super) fn create(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: CreateParams = params(raw)?;
-    if input.name.trim().is_empty() || input.prompt.trim().is_empty() {
+    if input.name.trim().is_empty()
+        || input.prompt.trim().is_empty()
+        || input.model.trim().is_empty()
+    {
         return Err(RpcError::new(
             ErrorCode::InvalidParams,
-            "name and prompt must not be empty",
+            "name, prompt, and model must not be empty",
         ));
     }
     state
@@ -97,6 +101,7 @@ pub(super) fn create(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
             &input.workspace_id,
             input.name.trim(),
             &input.prompt,
+            input.model.trim(),
             &input.schedule,
             &next_run,
             input.mode,
@@ -179,6 +184,7 @@ struct UpdateParams {
     workspace_id: Option<String>,
     name: String,
     prompt: String,
+    model: String,
     schedule: Value,
     #[serde(default)]
     mode: ScheduledTaskMode,
@@ -190,10 +196,13 @@ struct UpdateParams {
 
 pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: UpdateParams = params(raw)?;
-    if input.name.trim().is_empty() || input.prompt.trim().is_empty() {
+    if input.name.trim().is_empty()
+        || input.prompt.trim().is_empty()
+        || input.model.trim().is_empty()
+    {
         return Err(RpcError::new(
             ErrorCode::InvalidParams,
-            "name and prompt must not be empty",
+            "name, prompt, and model must not be empty",
         ));
     }
     let existing = state
@@ -222,6 +231,7 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
             workspace_id,
             input.name.trim(),
             input.prompt.trim(),
+            input.model.trim(),
             &input.schedule,
             input.mode,
             target_session_id,

@@ -9,6 +9,7 @@ use serde_json::Value;
 pub(super) struct ScheduleContent {
     name: String,
     prompt: String,
+    model: String,
     schedule: Value,
     #[serde(default)]
     mode: ScheduledTaskMode,
