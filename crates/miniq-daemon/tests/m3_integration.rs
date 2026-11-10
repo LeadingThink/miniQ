@@ -109,6 +109,11 @@ async fn plan_document_artifact_flow() {
         // checklist step is still in progress.
         vec![ChatDelta::Text("Progress reconciled".into())],
         vec![tool_call(
+            "completion-continue",
+            "report_turn_completion",
+            json!({"status":"continue","reason":"Reconcile the unfinished report checklist."}),
+        )],
+        vec![tool_call(
             "review",
             "task_update",
             json!({"tasks": [
@@ -117,6 +122,11 @@ async fn plan_document_artifact_flow() {
             ]}),
         )],
         vec![ChatDelta::Text("报告已生成".into())],
+        vec![tool_call(
+            "completion-finished",
+            "report_turn_completion",
+            json!({"status":"finished","reason":"Report exists and the checklist is complete."}),
+        )],
         vec![ChatDelta::Text("Follow-up answer".into())],
     ]));
     let (port, token) = start(provider).await;
