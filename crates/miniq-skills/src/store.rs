@@ -1,9 +1,10 @@
 //! Skill discovery and storage.
 //!
 //! Roots in priority order (same name: higher shadows lower):
-//! 1. `<workspace>/.miniq/skills/` — project skills
-//! 2. `<data_dir>/skills/`         — user global skills (incl. distilled)
-//! 3. bundled                      — compiled into the binary
+//! 1. `<workspace>/.miniq/skills/` — project skills (native, wins on conflict)
+//! 2. `<workspace>/.agents/skills/` — project skills (generic harness compat, read-only)
+//! 3. `<data_dir>/skills/`         — user global skills (incl. distilled)
+//! 4. bundled                      — compiled into the binary
 //!
 //! Enabled/disabled state lives in `<data_dir>/skills-state.json`, not in
 //! the SKILL.md, so toggling never rewrites user files.
@@ -157,10 +158,15 @@ impl SkillStore {
             by_name.insert(skill.meta.name.clone(), Skill { enabled, ..skill });
         }
         if let Some(ws) = workspace {
-            let project_root = ws.join(".miniq").join("skills");
-            for skill in scan_root(&project_root, SkillSource::Project) {
-                let enabled = !disabled.contains(&skill.meta.name);
-                by_name.insert(skill.meta.name.clone(), Skill { enabled, ..skill });
+            // Generic harness compat: read-only, shadowed by native project skills.
+            for root in [
+                ws.join(".agents").join("skills"),
+                ws.join(".miniq").join("skills"),
+            ] {
+                for skill in scan_root(&root, SkillSource::Project) {
+                    let enabled = !disabled.contains(&skill.meta.name);
+                    by_name.insert(skill.meta.name.clone(), Skill { enabled, ..skill });
+                }
             }
         }
 
@@ -548,6 +554,54 @@ mod tests {
         let skills = store.discover(Some(ws.path()));
         let mine = skills.iter().find(|s| s.meta.name == "my-skill").unwrap();
         assert_eq!(mine.source, SkillSource::Project);
+    }
+
+    #[test]
+    fn agents_skills_are_discovered_and_shadowed_by_miniq() {
+        let data = tempfile::tempdir().unwrap();
+        let ws = tempfile::tempdir().unwrap();
+        let store = store(data.path());
+
+        // Generic harness layout without `version` must parse (defaults to 1).
+        write_skill(
+            &ws.path().join(".agents/skills"),
+            "shared-skill",
+            "agents compat",
+        );
+        let skills = store.discover(Some(ws.path()));
+        let found = skills
+            .iter()
+            .find(|s| s.meta.name == "shared-skill")
+            .unwrap();
+        assert_eq!(found.source, SkillSource::Project);
+        assert_eq!(found.meta.version, 1);
+        assert_eq!(
+            found
+                .dir
+                .as_ref()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .file_name()
+                .unwrap(),
+            ".agents"
+        );
+
+        // Native project skills win on name conflict; .agents copy stays read-only.
+        write_skill(
+            &ws.path().join(".miniq/skills"),
+            "shared-skill",
+            "native override",
+        );
+        let skills = store.discover(Some(ws.path()));
+        let found = skills
+            .iter()
+            .find(|s| s.meta.name == "shared-skill")
+            .unwrap();
+        assert_eq!(found.meta.description, "native override");
+        assert!(store.delete(Some(ws.path()), "shared-skill").is_err());
     }
 
     #[test]
