@@ -17,8 +17,8 @@ android {
         applicationId "com.leadingthink.miniq"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 114
-        versionName "0.1.114"
+        versionCode 115
+        versionName "0.1.115"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // Consumed by the optional :miniq-jpush module (see settings.gradle).
         manifestPlaceholders = [
