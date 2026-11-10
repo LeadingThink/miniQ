@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { ChevronDown, ChevronRight, ChevronUp, Folder, FolderOpen, MoreHorizontal, PencilLine, Plus, Trash2 } from "lucide-react";
 import type { Session, Workspace } from "../types";
 import { revealInFinder } from "../fileActions";
+import { revealFileLabel } from "../linkActions";
 import { DropdownMenu } from "./DropdownMenu";
 import { ConfirmDialog } from "./ui/Dialog";
 import { useProjectDisclosure } from "./SidebarNavigation";
@@ -193,11 +194,14 @@ export function WorkspaceGroup(props: WorkspaceGroupProps) {
             {props.canReveal && (
               <button type="button" className="dropdown-item" onClick={() => {
                 setMenuOpen(false);
-                void revealInFinder(props.workspace.path, { directory: true }).catch((cause) =>
+                void revealInFinder(props.workspace.path, {
+                  workspacePath: props.workspace.path,
+                  workspacePaths: props.workspace.additionalPaths,
+                }).catch((cause) =>
                   props.onError?.(cause instanceof Error ? cause.message : String(cause)),
                 );
               }}>
-                <FolderOpen size={13} /><span>在 Finder 中显示</span>
+                <FolderOpen size={13} /><span>{revealFileLabel()}</span>
               </button>
             )}
             <button
