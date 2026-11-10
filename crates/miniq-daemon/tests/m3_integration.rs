@@ -105,7 +105,9 @@ async fn plan_document_artifact_flow() {
             "doc_write",
             json!({"path": "out/report.docx", "content": "# 摘要\n一切正常。", "title": "数据摘要报告"}),
         )],
-        vec![ChatDelta::Text("报告已生成".into())],
+        // The interim status line: this answer must not end the turn while a
+        // checklist step is still in progress.
+        vec![ChatDelta::Text("Progress reconciled".into())],
         vec![tool_call(
             "review",
             "task_update",
@@ -114,7 +116,7 @@ async fn plan_document_artifact_flow() {
                 {"content":"生成报告", "status":"completed"}
             ]}),
         )],
-        vec![ChatDelta::Text("Progress reconciled".into())],
+        vec![ChatDelta::Text("报告已生成".into())],
         vec![ChatDelta::Text("Follow-up answer".into())],
     ]));
     let (port, token) = start(provider).await;
