@@ -44,7 +44,7 @@ import type { VoicePreview } from "../voiceTranscription";
 import { savePastedFile } from "../localFiles";
 import { clipboardFiles } from "../clipboardFiles";
 import { readDraft, storeDraft, readAttachments, storeAttachments, readPastes, storePastes } from "../composerDraft";
-import { expandPastes, isLargePaste, nextContextPlaceholder, nextPlaceholder, type DraftContext, type PendingPaste } from "../largePaste";
+import { charCount, expandPastes, isLargePaste, nextContextPlaceholder, nextPlaceholder, type DraftContext, type PendingPaste } from "../largePaste";
 import { ComposerField as ComposerFieldView } from "./ComposerField";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { RemotePathDialog } from "./RemotePathDialog";
@@ -749,10 +749,19 @@ export function ComposerCard(props: {
       <div className="composer-input-row">
         {goalMode && <span className="composer-goal-prefix">目标</span>}
         <ComposerFieldView
+          key={props.draftKey}
           fieldRef={fieldRef}
           draft={draft}
           pastes={pastes}
           readOnly={sending || slash.pending}
+          onUpdatePaste={(placeholder, text) => {
+            if (sendingRef.current || slash.pending) return;
+            applyPastes(pastesRef.current.map((paste) => paste.placeholder !== placeholder ? paste : {
+              ...paste,
+              text,
+              label: paste.kind === "file-selection" ? paste.label : `粘贴内容 ${charCount(text)} 字`,
+            }));
+          }}
           autoFocus={props.autoFocus}
           placeholder={props.busy ? "任务执行中，发送的消息会加入队列..." : props.placeholder}
           describedBy={keyboardHintId}

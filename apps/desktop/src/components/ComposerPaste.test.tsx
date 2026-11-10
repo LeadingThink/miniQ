@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ComposerCard } from "./Composer";
 
@@ -75,6 +75,99 @@ it("ignores a whitespace-only clipboard", () => {
 });
 
 const longText = "长".repeat(1500);
+
+it("opens all 17575 characters, saves edits with a new count, and restores them across remounts", async () => {
+  const onSend = vi.fn().mockResolvedValue(true);
+  const view = render(<ComposerCard {...props} draftKey="paste-edit" onSend={onSend} />);
+  pasteOutside(screen.getByRole("textbox", { name: "消息" }), { text: "文".repeat(17575) });
+  const opener = screen.getByRole("button", { name: "展开粘贴内容 17575 字" });
+  opener.focus();
+  fireEvent.click(opener);
+  const dialog = screen.getByRole("dialog", { name: "查看和编辑粘贴内容" });
+  const editor = within(dialog).getByRole<HTMLTextAreaElement>("textbox", { name: "完整文本" });
+  expect(editor.value).toBe("文".repeat(17575));
+  expect(document.activeElement).toBe(editor);
+  const edited = "修改开头\n" + "🙂".repeat(1800) + "\n修改结尾";
+  fireEvent.change(editor, { target: { value: edited } });
+  expect(within(dialog).getByRole("status").textContent).toBe("1810 字");
+  fireEvent.click(within(dialog).getByRole("button", { name: "保存修改" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(opener);
+  expect(screen.getByRole("button", { name: "展开粘贴内容 1810 字" })).toBeTruthy();
+  view.unmount();
+  render(<ComposerCard {...props} draftKey="paste-edit" onSend={onSend} />);
+  fireEvent.click(screen.getByRole("button", { name: "展开粘贴内容 1810 字" }));
+  expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "完整文本" }).value).toBe(edited);
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送消息" })));
+  expect(onSend).toHaveBeenCalledExactlyOnceWith(edited, []);
+});
+
+it.each(["取消", "Escape"])("discards unsaved edits with %s without intercepting modal pastes", async (action) => {
+  const onSend = vi.fn().mockResolvedValue(true);
+  render(<ComposerCard {...props} draftKey="paste-cancel-edit" onSend={onSend} />);
+  pasteOutside(document.body, { text: longText });
+  fireEvent.click(screen.getByRole("button", { name: "展开粘贴内容 1500 字" }));
+  const dialog = screen.getByRole("dialog");
+  const editor = within(dialog).getByRole("textbox");
+  expect(pasteOutside(editor, { text: "不要拦截" }).defaultPrevented).toBe(false);
+  expect(pasteOutside(dialog, { text: "不要插入后台草稿" }).defaultPrevented).toBe(false);
+  fireEvent.change(editor, { target: { value: "未保存" } });
+  if (action === "Escape") fireEvent.keyDown(editor, { key: "Escape" });
+  else fireEvent.click(within(dialog).getByRole("button", { name: action }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送消息" })));
+  expect(onSend).toHaveBeenCalledExactlyOnceWith(longText, []);
+});
+
+it("edits only the selected same-length paste while preserving surrounding text", async () => {
+  const onSend = vi.fn().mockResolvedValue(true);
+  render(<ComposerCard {...props} draftKey="paste-edit-two" onSend={onSend} />);
+  fireEvent.change(screen.getByRole("textbox", { name: "消息" }), { target: { value: "前文" } });
+  pasteOutside(document.body, { text: longText });
+  pasteOutside(document.body, { text: "二".repeat(1500) });
+  fireEvent.click(screen.getByRole("button", { name: "展开粘贴内容 1500 字 #2" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "完整文本" }), { target: { value: "短文本" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  expect(screen.getByRole("button", { name: "展开粘贴内容 3 字" })).toBeTruthy();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送消息" })));
+  expect(onSend).toHaveBeenCalledExactlyOnceWith(`前文${longText}短文本`, []);
+});
+
+it("closes the editor on session changes without applying edits to either draft", () => {
+  const view = render(<ComposerCard {...props} draftKey="paste-session-a" />);
+  pasteOutside(document.body, { text: longText });
+  fireEvent.click(screen.getByRole("button", { name: "展开粘贴内容 1500 字" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "完整文本" }), { target: { value: "不能串会话" } });
+  view.rerender(<ComposerCard {...props} draftKey="paste-session-b" />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "消息" }).value).toBe("");
+  view.rerender(<ComposerCard {...props} draftKey="paste-session-a" />);
+  fireEvent.click(screen.getByRole("button", { name: "展开粘贴内容 1500 字" }));
+  expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "完整文本" }).value).toBe(longText);
+});
+
+it("retains saved edits after a rejected send and only allows viewing during a pending send", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+  render(<ComposerCard {...props} draftKey="paste-rejected" onSend={onSend} />);
+  pasteOutside(document.body, { text: longText });
+  fireEvent.click(screen.getByRole("button", { name: "展开粘贴内容 1500 字" }));
+  const editor = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "完整文本" });
+  fireEvent.keyDown(editor, { key: "Escape", isComposing: true });
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  fireEvent.change(editor, { target: { value: "保存后的内容" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+  fireEvent.click(screen.getByRole("button", { name: "展开粘贴内容 6 字" }));
+  expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "完整文本" }).readOnly).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "保存修改" }).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  await act(async () => finish(false));
+  fireEvent.click(screen.getByRole("button", { name: "展开粘贴内容 6 字" }));
+  expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "完整文本" }).value).toBe("保存后的内容");
+  expect(JSON.parse(localStorage.getItem("miniq.draft.paste-rejected.pastes")!)[0].text).toBe("保存后的内容");
+});
 
 it("collapses a long paste and restores it when the message is sent", async () => {
   const onSend = vi.fn().mockResolvedValue(true);

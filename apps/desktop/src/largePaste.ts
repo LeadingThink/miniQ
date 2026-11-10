@@ -49,10 +49,9 @@ export function nextContextPlaceholder(label: string, taken: readonly string[]):
 
 /** Restores every collapsed paste still present in the draft. */
 export function expandPastes(draft: string, pastes: readonly PendingPaste[]): string {
-  return pastes.reduce(
-    (text, paste) => text.split(paste.placeholder).join(paste.text),
-    draft,
-  );
+  return draftSegments(draft, pastes)
+    .map((segment) => segment.kind === "text" ? segment.text : segment.paste.text)
+    .join("");
 }
 
 export type DraftSegment =

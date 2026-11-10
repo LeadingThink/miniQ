@@ -43,3 +43,12 @@ it("splits a draft into text and one chip per paste", () => {
   ]);
   expect(draftSegments("没有占位符", pastes)).toEqual([{ kind: "text", text: "没有占位符" }]);
 });
+
+it("preserves literal placeholder text inside edited pastes without recursively expanding it", () => {
+  const pastes = [
+    { placeholder: "[粘贴内容 3 字]", text: "保留 [粘贴内容 2 字] 原样" },
+    { placeholder: "[粘贴内容 2 字]", text: "de" },
+  ];
+  expect(expandPastes("[粘贴内容 3 字]\n[粘贴内容 2 字]", pastes))
+    .toBe("保留 [粘贴内容 2 字] 原样\nde");
+});

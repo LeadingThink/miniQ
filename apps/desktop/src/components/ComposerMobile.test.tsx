@@ -24,6 +24,22 @@ it("does not focus the mobile composer unless a caller explicitly requests it", 
   expect(document.activeElement).not.toBe(input);
 });
 
+it("edits a long paste on a touch-only remote workbench without native clipboard or file APIs", async () => {
+  const client = { mode: "remote", call: vi.fn().mockResolvedValue({ skills: [] }) } as unknown as RpcClient;
+  const { input, onSend } = setup({ client });
+  fireEvent.paste(input, { clipboardData: { items: [], files: [], getData: () => "长".repeat(17575) } });
+  fireEvent.click(screen.getByRole("button", { name: "展开粘贴内容 17575 字" }));
+  const dialog = screen.getByRole("dialog");
+  const editor = within(dialog).getByRole<HTMLTextAreaElement>("textbox", { name: "完整文本" });
+  fireEvent.change(editor, { target: { value: "手机修改\n完整内容" } });
+  fireEvent.keyDown(editor, { key: "Enter", ctrlKey: true });
+  expect(onSend).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole("button", { name: "保存修改" }));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送消息" })));
+  expect(onSend).toHaveBeenCalledExactlyOnceWith("手机修改\n完整内容", []);
+  expect(client.call).not.toHaveBeenCalledWith(expect.stringMatching(/clipboard|upload|file/i), expect.anything());
+});
+
 it("inserts a soft-keyboard newline without sending, then sends the entire draft from the button", async () => {
   const { input, onSend } = setup();
   fireEvent.change(input, { target: { value: "第一行下一行" } });
