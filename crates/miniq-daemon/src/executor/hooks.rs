@@ -9,6 +9,15 @@ pub(super) fn after_success(
     call: &ToolCallRequest,
     output: &Value,
 ) {
+    crate::turn_continuation::note_process(
+        &executor.state,
+        &crate::turn_continuation::key(&executor.session_id, executor.owner_agent_id()),
+        matches!(
+            call.name.as_str(),
+            "shell_run" | "shell_batch" | "terminal_start"
+        ),
+        output,
+    );
     match call.name.as_str() {
         "task_update" => {
             let tasks: Vec<miniq_protocol::PlanTask> = call

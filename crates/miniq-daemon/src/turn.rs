@@ -737,6 +737,8 @@ async fn execute_turn(
             .map(|message| message.id.clone()),
     );
     let max_steps = state.take_turn_step_limit(session_id);
+    let continuation_key = crate::turn_continuation::key(session_id, None);
+    crate::turn_continuation::begin(state, &continuation_key);
     tracing::info!(
         session_id,
         elapsed_ms = turn_started.elapsed().as_millis() as u64,
@@ -757,6 +759,7 @@ async fn execute_turn(
         },
     )
     .await;
+    crate::turn_continuation::end(state, &continuation_key);
     let _ = forwarder.await;
     if let Some(message) = checkpoint.partial_message.lock().unwrap().take() {
         state.emit(Event::MessageCreated {
@@ -765,7 +768,7 @@ async fn execute_turn(
         });
     }
 
-    let mut outcome = match outcome {
+    let outcome = match outcome {
         Ok(outcome) => {
             tracing::info!(
                 session_id,
@@ -781,7 +784,7 @@ async fn execute_turn(
 
     let reconcile_started = Instant::now();
     executor
-        .reconcile_plan(&provider, &mut outcome, context_policy())
+        .reconcile_plan(&provider, &outcome, context_policy())
         .await;
     tracing::info!(
         elapsed_ms = reconcile_started.elapsed().as_millis() as u64,

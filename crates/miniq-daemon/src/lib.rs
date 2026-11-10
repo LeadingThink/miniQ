@@ -42,6 +42,7 @@ pub mod turn;
 mod turn_checkpoint;
 mod turn_clock;
 mod turn_context;
+mod turn_continuation;
 mod turn_summary;
 
 use miniq_models::{ModelProvider, ProviderConfig};

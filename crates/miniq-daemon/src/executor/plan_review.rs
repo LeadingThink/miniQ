@@ -58,7 +58,7 @@ impl SessionToolExecutor {
     pub(crate) async fn reconcile_plan(
         &self,
         provider: &dyn ModelProvider,
-        outcome: &mut TurnOutcome,
+        outcome: &TurnOutcome,
         context_policy: ContextPolicy,
     ) {
         let source = self
@@ -87,8 +87,7 @@ impl SessionToolExecutor {
             source,
         };
         let mut history = outcome.provider_history.clone();
-        let instruction = ChatMessage::user(reviewer.instructions());
-        history.push(instruction.clone());
+        history.push(ChatMessage::user(reviewer.instructions()));
         // The visible answer has already streamed. Review text is internal;
         // actual plan tool calls still use the normal audit and event path.
         let (events, _) = tokio::sync::mpsc::channel(1);
@@ -107,14 +106,12 @@ impl SessionToolExecutor {
             },
         );
         match tokio::time::timeout(REVIEW_TIMEOUT, review).await {
-            Ok(Ok(review)) => {
-                if let Some(answer) = outcome.provider_history.last() {
-                    outcome.appended.push(answer.clone());
-                }
-                outcome.appended.push(instruction);
-                outcome.appended.extend(review.appended);
-                outcome.provider_history = review.provider_history;
-            }
+            // The review transcript stays internal. Its tool calls already
+            // persist through the normal evidence path, but its instruction
+            // ("the task has ended ... do not perform more work") and its
+            // answer must not enter the model-visible history: a later turn
+            // would read an authoritative note telling it to stop early.
+            Ok(Ok(_)) => {}
             result => {
                 let reason = match result {
                     Err(_) => "timeout".to_string(),
@@ -135,7 +132,7 @@ impl ReviewExecutor<'_> {
             ReviewPlan::Graph(tasks) => ("task_item_update", tasks.clone()),
         };
         format!(
-            "[miniQ completion review]\nThe task has ended and the final answer above is already \
+            "[miniQ completion review]\nThe turn is ending and the final answer above has been \
              delivered. Reconcile the existing checklist against the actual tool results in this \
              transcript. This is bookkeeping only: do not perform more work or repeat side effects. \
              Call {tool} to mark only verified work completed. Leave blocked, skipped, cancelled, \

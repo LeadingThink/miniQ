@@ -122,9 +122,9 @@ async fn reconciles_two_of_five_and_preserves_the_delivered_answer() {
         vec![ChatDelta::Text("Internal acknowledgement".into())],
     ]);
     let mut events = executor.state.events.subscribe();
-    let mut result = outcome();
+    let result = outcome();
     executor
-        .reconcile_plan(&provider, &mut result, ContextPolicy::default())
+        .reconcile_plan(&provider, &result, ContextPolicy::default())
         .await;
     assert_eq!(result.final_text, outcome().final_text);
     assert_eq!(
@@ -146,10 +146,18 @@ async fn reconciles_two_of_five_and_preserves_the_delivered_answer() {
         .unwrap()
         .content
         .contains("never infer completion"));
+    // The review transcript stays internal: nothing it said or called reaches
+    // the model-visible history, so a later turn cannot read its "the task has
+    // ended / do not perform more work" instruction.
+    assert_eq!(
+        result.provider_history.len(),
+        outcome().provider_history.len()
+    );
     assert!(result
         .provider_history
         .iter()
-        .any(|message| message.tool_call_id.is_some()));
+        .all(|message| message.tool_call_id.is_none() && message.tool_calls.is_empty()));
+    assert!(result.appended.is_empty());
     let mut updated = false;
     while let Ok(event) = events.try_recv() {
         if let miniq_protocol::Event::PlanUpdated {
@@ -216,7 +224,7 @@ async fn completed_empty_and_cancelled_plans_need_no_provider_requests() {
     let (_dir, executor) = fixture();
     let provider = MockProvider::new(vec![]);
     executor
-        .reconcile_plan(&provider, &mut outcome(), ContextPolicy::default())
+        .reconcile_plan(&provider, &outcome(), ContextPolicy::default())
         .await;
     for tasks in [json!([]), json!([task("done", "completed")])] {
         executor
@@ -224,7 +232,7 @@ async fn completed_empty_and_cancelled_plans_need_no_provider_requests() {
             .await
             .unwrap();
         executor
-            .reconcile_plan(&provider, &mut outcome(), ContextPolicy::default())
+            .reconcile_plan(&provider, &outcome(), ContextPolicy::default())
             .await;
     }
     executor
@@ -236,7 +244,7 @@ async fn completed_empty_and_cancelled_plans_need_no_provider_requests() {
         .unwrap();
     executor.cancel.cancel();
     executor
-        .reconcile_plan(&provider, &mut outcome(), ContextPolicy::default())
+        .reconcile_plan(&provider, &outcome(), ContextPolicy::default())
         .await;
     assert!(provider.requests.lock().unwrap().is_empty());
 }
@@ -250,9 +258,9 @@ async fn provider_failure_or_missing_update_preserves_the_answer_and_real_progre
         .await
         .unwrap();
     for provider in [MockProvider::new(vec![]), MockProvider::text("No change")] {
-        let mut result = outcome();
+        let result = outcome();
         executor
-            .reconcile_plan(&provider, &mut result, ContextPolicy::default())
+            .reconcile_plan(&provider, &result, ContextPolicy::default())
             .await;
         assert_eq!(result.final_text, outcome().final_text);
         assert_eq!(
@@ -289,8 +297,8 @@ async fn cancelling_bookkeeping_is_prompt_and_does_not_discard_the_deliverable()
         .await
         .unwrap();
     let cancel = executor.cancel.clone();
-    let mut result = outcome();
-    let review = executor.reconcile_plan(&WaitingProvider, &mut result, ContextPolicy::default());
+    let result = outcome();
+    let review = executor.reconcile_plan(&WaitingProvider, &result, ContextPolicy::default());
     let stop = async move {
         tokio::task::yield_now().await;
         cancel.cancel();
@@ -323,9 +331,9 @@ async fn a_stalled_review_times_out_without_losing_the_answer() {
         .await
         .unwrap();
     let started = tokio::time::Instant::now();
-    let mut result = outcome();
+    let result = outcome();
     executor
-        .reconcile_plan(&WaitingProvider, &mut result, ContextPolicy::default())
+        .reconcile_plan(&WaitingProvider, &result, ContextPolicy::default())
         .await;
     assert!(started.elapsed() >= REVIEW_TIMEOUT);
     assert_eq!(result.final_text, outcome().final_text);
@@ -360,9 +368,9 @@ async fn a_model_that_ignores_review_instructions_cannot_loop_forever() {
             })
             .collect(),
     );
-    let mut result = outcome();
+    let result = outcome();
     executor
-        .reconcile_plan(&provider, &mut result, ContextPolicy::default())
+        .reconcile_plan(&provider, &result, ContextPolicy::default())
         .await;
     assert_eq!(provider.requests.lock().unwrap().len(), 3);
     assert_eq!(

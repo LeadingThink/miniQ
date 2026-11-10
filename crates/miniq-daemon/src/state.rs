@@ -227,6 +227,11 @@ pub struct AppState {
     /// One-shot model-step budgets requested by `session.sendMessage`
     /// (`maxTurns`). Consumed by the next turn of that session.
     pub(crate) turn_step_limits: Arc<Mutex<HashMap<String, usize>>>,
+    /// Per-turn continuation bookkeeping: how many times a turn already kept
+    /// itself open past a text-only answer, and which background processes it
+    /// started that have not reported a terminal status.
+    pub(crate) turn_continuations:
+        Arc<Mutex<HashMap<String, crate::turn_continuation::TurnContinuation>>>,
     /// Resume requests received while the paused turn is still cleaning up.
     pub(crate) pending_turn_resumes: Arc<Mutex<HashSet<String>>>,
     pub(crate) activity: crate::activity::ActivityGate,
@@ -350,6 +355,7 @@ impl AppState {
             review_jobs: Arc::new(Mutex::new(HashMap::new())),
             paused_turns: Arc::new(Mutex::new(HashSet::new())),
             turn_step_limits: Arc::new(Mutex::new(HashMap::new())),
+            turn_continuations: Arc::new(Mutex::new(HashMap::new())),
             pending_turn_resumes: Arc::new(Mutex::new(HashSet::new())),
             activity: crate::activity::ActivityGate::default(),
             share_uploads: Arc::new(tokio::sync::Semaphore::new(2)),

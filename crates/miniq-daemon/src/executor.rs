@@ -77,7 +77,7 @@ impl SessionToolExecutor {
         }
     }
 
-    fn owner_agent_id(&self) -> Option<&str> {
+    pub(crate) fn owner_agent_id(&self) -> Option<&str> {
         self.ctx
             .agents
             .as_ref()
@@ -92,7 +92,7 @@ impl SessionToolExecutor {
         })
     }
 
-    fn audit(&self, event_type: &str, payload: Value) {
+    pub(crate) fn audit(&self, event_type: &str, payload: Value) {
         if let Err(e) =
             self.state
                 .store
@@ -526,8 +526,15 @@ impl ToolExecutor for SessionToolExecutor {
     }
 
     async fn completion_gate(&self, cancel: &CancellationToken) -> Option<String> {
-        self.background_children_gate(cancel, background_gate::BACKGROUND_SETTLE_TIMEOUT)
+        if let Some(instruction) = self
+            .background_children_gate(cancel, background_gate::BACKGROUND_SETTLE_TIMEOUT)
             .await
+        {
+            return Some(instruction);
+        }
+        // Child agents settle first: their results are evidence the checklist
+        // cannot be finished without.
+        self.continuation_instruction()
     }
 
     async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {

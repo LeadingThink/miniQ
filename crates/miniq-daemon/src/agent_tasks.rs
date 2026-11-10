@@ -104,6 +104,9 @@ impl DaemonAgentBridge {
         history.push(ChatMessage::user(request.prompt.clone()));
         loop {
             let turn_id = miniq_memory::new_id("turn");
+            let continuation_key =
+                crate::turn_continuation::key(&self.session_id, Some(&record.id));
+            crate::turn_continuation::begin(&self.state, &continuation_key);
             let observed = crate::observed_provider::ObservedProvider::new(
                 provider.clone(),
                 self.state.store.clone(),
@@ -193,6 +196,7 @@ impl DaemonAgentBridge {
                 .map_err(|error| ToolError::ExecutionFailed(error.to_string()))??;
             match outcome {
                 Ok(outcome) => {
+                    crate::turn_continuation::end(&self.state, &continuation_key);
                     let next = self
                         .state
                         .agent_tasks
@@ -209,6 +213,7 @@ impl DaemonAgentBridge {
                     history = next_history;
                 }
                 Err(error) => {
+                    crate::turn_continuation::end(&self.state, &continuation_key);
                     self.state
                         .agent_tasks
                         .finalize_worktree(&record, worktree)
