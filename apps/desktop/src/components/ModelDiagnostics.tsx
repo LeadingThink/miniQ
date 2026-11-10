@@ -204,6 +204,7 @@ const purpose = {
   task: "任务",
   compaction: "上下文压缩",
   planReview: "计划核对",
+  completionReview: "任务结束核对",
   skillLearning: "技能提炼",
   memoryExtraction: "记忆提炼",
   sessionTitle: "会话标题",

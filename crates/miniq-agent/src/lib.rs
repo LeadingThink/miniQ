@@ -11,6 +11,7 @@
 
 use async_trait::async_trait;
 mod checkpoint;
+mod completion_check;
 mod context;
 mod context_sections;
 mod image_history_tool;
@@ -52,6 +53,8 @@ pub enum AgentError {
     Cancelled,
     #[error("agent exhausted its configured budget of {steps} model steps")]
     StepLimitExceeded { steps: usize },
+    #[error("任务仍未完成，已达到自动续跑上限（{continuations} 次）；已保留执行记录")]
+    CompletionCheckLimitExceeded { continuations: usize },
     #[error("agent repeated the same tool batch {repetitions} times")]
     RepeatedToolLoop { repetitions: usize },
     #[error("failed to persist turn context: {0}")]
@@ -245,6 +248,9 @@ pub struct RunLimits {
     pub max_steps: Option<usize>,
     pub repeated_tool_batch_limit: usize,
     pub max_model_retries: usize,
+    /// Read-only completion review for interactive or delegated task turns.
+    /// Internal jobs and callers without task ownership leave this disabled.
+    pub verify_completion: bool,
     pub context_policy: ContextPolicy,
 }
 
@@ -256,6 +262,7 @@ impl Default for RunLimits {
             max_steps: None,
             repeated_tool_batch_limit: 4,
             max_model_retries: 10,
+            verify_completion: false,
             context_policy: ContextPolicy::default(),
         }
     }
@@ -380,6 +387,7 @@ async fn run_turn_inner(
     let capabilities = provider.capabilities().await;
     let mut steps = 0;
     let mut loop_guard = loop_guard::LoopGuard::default();
+    let mut completion_check = completion_check::CompletionCheck::default();
 
     loop {
         if cancel.is_cancelled() {
@@ -712,10 +720,30 @@ async fn run_turn_inner(
         };
 
         if tool_calls.is_empty() {
-            if let Some(instruction) = executor.completion_gate(&cancel).await {
-                if cancel.is_cancelled() {
-                    return Err(AgentError::Cancelled);
+            let mut instruction = executor.completion_gate(&cancel).await;
+            if instruction.is_none()
+                && limits.verify_completion
+                && limits.purpose == miniq_models::ModelCallPurpose::Task
+                && completion_check.tools_executed
+            {
+                instruction = completion_check
+                    .instruction(
+                        provider,
+                        &image_executor.messages(&state.history),
+                        &text,
+                        &provider_context,
+                        steps,
+                        &cancel,
+                    )
+                    .await?;
+                if instruction.is_some() {
+                    completion_check.record_continuation()?;
                 }
+            }
+            if cancel.is_cancelled() {
+                return Err(AgentError::Cancelled);
+            }
+            if let Some(instruction) = instruction {
                 state.partial_text.clear();
                 if !text.trim().is_empty() {
                     let mut assistant = ChatMessage::assistant(text);
@@ -802,6 +830,7 @@ async fn run_turn_inner(
         state.commit_interim(limits, &events).await?;
         state.history.truncate(base);
         tool_batch::execute(executor, &tool_calls, state, limits, &cancel).await?;
+        completion_check.tools_executed = true;
         tracing::info!(
             step = steps,
             elapsed_ms = tool_started.elapsed().as_millis() as u64,

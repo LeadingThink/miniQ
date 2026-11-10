@@ -59,6 +59,17 @@ const record: ModelCallRecord = {
 const client = (call: ReturnType<typeof vi.fn>) =>
   ({ call, onStatus: () => () => {} }) as unknown as RpcClient;
 
+it("labels completion reviews separately from task execution", async () => {
+  const call = vi.fn().mockResolvedValue({
+    calls: [{ ...record, trace: { ...record.trace, purpose: "completionReview" } }],
+    nextCursor: null,
+  });
+  render(
+    <ModelDiagnostics client={client(call)} sessionId="one" onClose={vi.fn()} />,
+  );
+  expect(await screen.findByText(/任务结束核对/)).toBeTruthy();
+});
+
 it("scopes child diagnostics and resets pending data when switching children", async () => {
   const call = vi.fn().mockResolvedValue({ calls: [], nextCursor: null });
   const rpc = client(call);

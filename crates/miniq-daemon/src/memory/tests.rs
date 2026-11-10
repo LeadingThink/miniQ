@@ -100,6 +100,29 @@ async fn memory_recall_only_enters_task_wire_requests_and_deletion_revalidates()
     assert_eq!(original.messages.len(), 2);
 }
 #[tokio::test]
+async fn completion_reviews_receive_the_same_current_user_constraints_as_task_requests() {
+    let mock = Arc::new(MockProvider::new(vec![vec![], vec![]]));
+    let (state, _, session) = fixture(mock.clone());
+    save(&state);
+    let provider = MemoryProvider::new(
+        mock.clone(),
+        state.clone(),
+        &session,
+        "报告",
+        state.store.memory_generation().unwrap(),
+    )
+    .unwrap();
+    for purpose in [ModelCallPurpose::Task, ModelCallPurpose::CompletionReview] {
+        let mut request = request();
+        request.trace.purpose = purpose;
+        let _ = provider.stream_complete(request).await.unwrap();
+    }
+    let calls = mock.requests.lock().unwrap();
+    assert_eq!(calls[0].messages[1].content, calls[1].messages[1].content);
+    assert!(calls[1].messages[1].content.contains("工作报告先给结论"));
+}
+
+#[tokio::test]
 async fn memory_is_used_by_real_turn_but_not_saved_in_snapshot() {
     let mock = Arc::new(MockProvider::text("报告已完成。"));
     let (state, _, session) = fixture(mock.clone());

@@ -773,6 +773,7 @@ async fn execute_turn(
             checkpoint: Some(checkpoint.clone()),
             context_policy: context_policy(),
             max_steps,
+            verify_completion: true,
             ..RunLimits::default()
         },
     )

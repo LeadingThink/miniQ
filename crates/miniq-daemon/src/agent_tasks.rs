@@ -183,6 +183,7 @@ impl DaemonAgentBridge {
                 events,
                 cancel.clone(),
                 RunLimits {
+                    verify_completion: true,
                     checkpoint: Some(Arc::new(crate::turn_checkpoint::AgentCheckpoint {
                         manager: self.state.agent_tasks.clone(),
                         record: record.clone(),

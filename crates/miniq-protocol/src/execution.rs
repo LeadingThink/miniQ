@@ -82,6 +82,7 @@ pub enum ModelCallPurpose {
     Task,
     Compaction,
     PlanReview,
+    CompletionReview,
     SkillLearning,
     MemoryExtraction,
     SessionTitle,

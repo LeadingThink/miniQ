@@ -80,7 +80,10 @@ impl ModelProvider for MemoryProvider {
             }
         }
         miniq_models::strip_memory_payloads(&mut request.messages);
-        if request.trace.purpose == ModelCallPurpose::Task {
+        if matches!(
+            request.trace.purpose,
+            ModelCallPurpose::Task | ModelCallPurpose::CompletionReview
+        ) {
             self.refresh_tool_references(&mut request.messages)
                 .map_err(|e| ProviderError::Config(e.to_string()))?;
             let rows = self

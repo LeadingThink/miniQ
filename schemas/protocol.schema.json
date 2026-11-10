@@ -3747,6 +3747,7 @@
           "task",
           "compaction",
           "planReview",
+          "completionReview",
           "skillLearning",
           "memoryExtraction",
           "sessionTitle",
