@@ -159,6 +159,7 @@ async fn tool_list_reports_toolset() {
             "shell_batch",
             "shell_run",
             "skill_read",
+            "skill_search",
             "synthesize_speech",
             "task_create",
             "task_get",
