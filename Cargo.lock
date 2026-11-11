@@ -2816,7 +2816,7 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniq-agent"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "async-trait",
  "axum",
@@ -2835,7 +2835,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-cli"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "anyhow",
  "clap",
@@ -2868,7 +2868,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-daemon"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2916,7 +2916,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-docs"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "calamine",
  "csv",
@@ -2932,7 +2932,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-local"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "base64 0.22.1",
  "dunce",
@@ -2953,7 +2953,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-memory"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "miniq-protocol",
  "rusqlite",
@@ -2968,7 +2968,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-models"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "async-trait",
  "axum",
@@ -2990,7 +2990,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-plugins"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "async-trait",
  "dunce",
@@ -3016,7 +3016,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-protocol"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "schemars",
  "serde",
@@ -3026,7 +3026,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-sandbox"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "dunce",
  "miniq-protocol",
@@ -3036,7 +3036,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-session-connectors"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "miniq-protocol",
  "rayon",
@@ -3050,7 +3050,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-skills"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "async-trait",
  "regex",
@@ -3064,7 +3064,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-tools"
-version = "0.1.219"
+version = "0.1.220"
 dependencies = [
  "async-trait",
  "axum",

@@ -39,7 +39,7 @@ async fn background_cohort_exceeds_old_count_limits_and_preserves_each_result() 
             message.role == miniq_models::ChatRole::System
                 && message
                     .content
-                    .starts_with("You are a coding assistant running inside miniQ,")
+                    .starts_with("You are an AI coworker running inside miniQ,")
                 && !message.content.contains("miniQ execution policy")
         })
     }));

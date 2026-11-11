@@ -243,7 +243,7 @@ async fn foreground_agent_completes_and_resumes_with_preserved_history() {
                     message.role == miniq_models::ChatRole::System
                         && message
                             .content
-                            .starts_with("You are a coding assistant running inside miniQ,")
+                            .starts_with("You are an AI coworker running inside miniQ,")
                 })
                 .count(),
             1
