@@ -144,15 +144,16 @@ it("shows a read error and preserves the draft without attaching a local path", 
   expect(releaseUploadSources).toHaveBeenCalled();
 });
 
-it.each(["paste", "drop"])("rejects an over-limit %s before staging any files", async (method) => {
+it.each(["paste", "drop"])("attaches an over-ten %s without dropping files", async (method) => {
+  let uploaded = 0;
+  vi.mocked(uploadRemoteFile).mockImplementation(async () => receipt(`/project/inbox/${uploaded++}.pdf`));
+  vi.mocked(stageDesktopUploadSources).mockImplementation(async paths => paths.map(path => ({ ...source, name: path.split("\\").pop()! })));
   storeAttachments("draft-A", Array.from({ length: 9 }, (_, index) => `/existing/${index}.pdf`));
   render(<ComposerCard {...props} />);
   if (method === "drop") await drop(["C:\\one.pdf", "C:\\two.pdf"]);
   else await paste(undefined, [new File(["1"], "one.pdf"), new File(["2"], "two.pdf")]);
-  expect(props.onError).toHaveBeenCalledWith(expect.stringContaining("最多附加 10"));
-  expect(stageDesktopUploadSources).not.toHaveBeenCalled();
-  expect(stageBrowserUploadSources).not.toHaveBeenCalled();
-  expect(readAttachments("draft-A")).toHaveLength(9);
+  await waitFor(() => expect(readAttachments("draft-A")).toHaveLength(11));
+  expect(props.onError).not.toHaveBeenCalled();
 });
 
 it("waits through preparation and upload, then sends an attachment-only message once", async () => {

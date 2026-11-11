@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "miniQ",
-  "version": "0.1.223",
+  "version": "0.1.224",
   "identifier": "dev.miniq.desktop",
   "build": {
-    "beforeDevCommand": "cargo build --manifest-path ../../Cargo.toml -p miniq-daemon && npm run dev",
+    "beforeDevCommand": "npm run prepare:ripgrep && cargo build --manifest-path ../../Cargo.toml -p miniq-daemon && npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run prepare:daemon && npm run build",
+    "beforeBuildCommand": "npm run prepare:ripgrep && npm run prepare:daemon && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -33,7 +33,8 @@
     "targets": ["nsis"],
     "createUpdaterArtifacts": true,
     "icon": ["icons/icon.ico", "icons/icon.png", "icons/icon.icns"],
-    "externalBin": ["binaries/miniq-daemon"],
+    "externalBin": ["binaries/miniq-daemon", "binaries/rg"],
+    "resources": { "resources/ripgrep/": "licenses/ripgrep/" },
     "macOS": {
       "entitlements": "Entitlements.plist"
     },

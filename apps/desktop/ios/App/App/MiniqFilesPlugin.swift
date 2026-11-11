@@ -120,11 +120,7 @@ public class MiniqFilesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func beginUploadPick(_ call: CAPPluginCall) {
         guard let id = MiniqUploadValidation.identifier(call.getString("id")),
-            let kind = call.getString("kind"), kind == "files" || kind == "photos",
-            let limitValue = call.options["limit"] as? NSNumber,
-            CFGetTypeID(limitValue) != CFBooleanGetTypeID(),
-            let limit = call.getInt("limit"), (1...10).contains(limit),
-            call.getDouble("limit") == Double(limit)
+            let kind = call.getString("kind"), kind == "files" || kind == "photos"
         else { call.reject("文件选择参数无效"); return }
         guard uploadPicker == nil, !operationInUse(id),
             let presenter = bridge?.viewController, presenter.presentedViewController == nil
@@ -134,7 +130,7 @@ public class MiniqFilesPlugin: CAPPlugin, CAPBridgedPlugin {
             if let existing = uploadCache { cache = existing }
             else { cache = try MiniqUploadCache(); uploadCache = cache }
         } catch { call.reject("无法创建文件上传缓存"); return }
-        let picker = MiniqUploadPicker(id: id, limit: limit, cache: cache) { [weak self] result in
+        let picker = MiniqUploadPicker(id: id, cache: cache) { [weak self] result in
             self?.uploadPicker = nil
             switch result {
             case .success(let files): call.resolve(["files": files.map(\.metadata)])

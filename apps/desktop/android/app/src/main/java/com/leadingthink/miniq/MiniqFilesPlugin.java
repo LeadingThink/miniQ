@@ -46,11 +46,10 @@ public class MiniqFilesPlugin extends Plugin {
     private static final class UploadPicker {
         final PluginCall call;
         final MiniqUploadFiles.Operation operation;
-        final int limit;
         boolean awaitingResult = true;
         boolean settled;
-        UploadPicker(PluginCall call, MiniqUploadFiles.Operation operation, int limit) {
-            this.call = call; this.operation = operation; this.limit = limit;
+        UploadPicker(PluginCall call, MiniqUploadFiles.Operation operation) {
+            this.call = call; this.operation = operation;
         }
     }
 
@@ -62,23 +61,22 @@ public class MiniqFilesPlugin extends Plugin {
     @PluginMethod
     public synchronized void pickUpload(PluginCall call) {
         String kind = call.getString("kind");
-        Integer limit = call.getInt("limit");
         if (destroyed || uploads == null) { call.reject("文件上传缓存不可用"); return; }
         if (uploadPicker != null || active != null || picker != null) {
             call.reject("请先关闭当前文件选择窗口"); return;
         }
-        if ((!"files".equals(kind) && !"photos".equals(kind)) || limit == null || limit < 1 || limit > 10) {
+        if (!"files".equals(kind) && !"photos".equals(kind)) {
             call.reject("文件选择参数无效"); return;
         }
         MiniqUploadFiles.Operation operation;
         try { operation = uploads.beginPick(call.getString("id")); }
         catch (IOException error) { call.reject(error.getMessage()); return; }
-        UploadPicker selection = new UploadPicker(call, operation, limit);
+        UploadPicker selection = new UploadPicker(call, operation);
         uploadPicker = selection;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("photos".equals(kind) ? "image/*" : "*/*");
-        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, limit > 1);
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         try { getActivity().runOnUiThread(() -> launchUploadPicker(selection, intent)); }
         catch (Exception ignored) {
@@ -115,8 +113,8 @@ public class MiniqFilesPlugin extends Plugin {
         Intent data = result.getData();
         ClipData clip = data == null ? null : data.getClipData();
         int count = clip == null ? (data != null && data.getData() != null ? 1 : 0) : clip.getItemCount();
-        if (count < 1 || count > selection.limit) {
-            finishUploadPick(selection, false, "所选文件数量超过限制或无效"); return;
+        if (count < 1) {
+            finishUploadPick(selection, false, "所选文件数量无效"); return;
         }
         for (int i = 0; i < count; i++) {
             Uri uri = clip == null ? data.getData() : clip.getItemAt(i).getUri();
@@ -127,7 +125,7 @@ public class MiniqFilesPlugin extends Plugin {
         }
         uploadWorker.execute(() -> {
             boolean prepared = false;
-            try { uploads.prepare(selection.operation, sources, selection.limit); prepared = true; }
+            try { uploads.prepare(selection.operation, sources); prepared = true; }
             catch (Exception ignored) { /* Never expose provider paths or signed URLs. */ }
             finishUploadPick(selection, prepared, prepared ? null : "无法读取文件、文件名无效或文件超过 200 MiB");
         });

@@ -21,11 +21,10 @@ export function validateUploadSize(size: number): void {
     throw new Error("单个文件不能超过 200 MiB");
 }
 
-export async function pickUploadSources(kind: "files" | "photos", limit: number, signal?: AbortSignal): Promise<RemoteUploadSource[]> {
+export async function pickUploadSources(kind: "files" | "photos", signal?: AbortSignal): Promise<RemoteUploadSource[]> {
   const { pickNativeUploadFiles, releaseNativeUploadFiles } = await import("./nativeFileTransfer");
-  const files = await pickNativeUploadFiles(kind, limit, signal);
+  const files = await pickNativeUploadFiles(kind, signal);
   try {
-    if (files.length > limit) throw new Error("所选文件数量超过附件上限");
     return files.map((file) => {
       validateUploadSize(file.size);
       if (!file.id || !file.name || !/^[a-f0-9]{64}$/.test(file.sha256)) throw new Error("本机文件缓存信息无效，请重新选择");

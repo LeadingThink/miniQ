@@ -16,9 +16,9 @@ beforeEach(() => {
 afterEach(() => { vi.clearAllMocks(); });
 
 it("returns only native cache metadata and uploads the opaque id without a File or base64", async () => {
-  const files = await transfer.pickNativeUploadFiles("photos", 3);
+  const files = await transfer.pickNativeUploadFiles("photos");
   expect(files).toEqual([source]);
-  expect(native.pickUpload).toHaveBeenCalledWith({ id: expect.any(String), kind: "photos", limit: 3 });
+  expect(native.pickUpload).toHaveBeenCalledWith({ id: expect.any(String), kind: "photos" });
   const onProgress = vi.fn();
   native.upload.mockImplementation(async ({ id }) => {
     const listener = native.addListener.mock.calls[0][1];
@@ -35,7 +35,7 @@ it("returns only native cache metadata and uploads the opaque id without a File 
 it("releases a late picker result when the initiating draft was cancelled", async () => {
   const controller = new AbortController();
   native.pickUpload.mockImplementation(async () => { controller.abort(); return { files: [source] }; });
-  await expect(transfer.pickNativeUploadFiles("files", 10, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+  await expect(transfer.pickNativeUploadFiles("files", controller.signal)).rejects.toMatchObject({ name: "AbortError" });
   expect(native.cancel).toHaveBeenCalledWith({ id: native.pickUpload.mock.calls[0][0].id });
   expect(native.releaseUpload).toHaveBeenCalledExactlyOnceWith({ ids: [source.id] });
 });

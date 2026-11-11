@@ -46,7 +46,7 @@ public final class MiniqUploadFilesTest {
         byte[] bytes = fixture(180_001);
         try (MiniqUploadFiles store = new MiniqUploadFiles(cache)) {
             MiniqUploadFiles.Operation pick = store.beginPick(id());
-            store.prepare(pick, Arrays.asList(source("原片 📷.HEIC", bytes), source("empty.bin", new byte[0])), 2);
+            store.prepare(pick, Arrays.asList(source("原片 📷.HEIC", bytes), source("empty.bin", new byte[0])));
             check(pick.prepared.size() == 2, "all selected sources prepared");
             expectFailure(() -> store.beginUpload(id(), pick.prepared.get(0).id, URL));
             List<MiniqUploadFiles.CachedFile> result = store.finishPick(pick, true);
@@ -79,7 +79,7 @@ public final class MiniqUploadFilesTest {
                     return new ByteArrayInputStream(bytes);
                 }
             };
-            store.prepare(operation, Collections.singletonList(original), 1);
+            store.prepare(operation, Collections.singletonList(original));
             MiniqUploadFiles.CachedFile file = operation.prepared.get(0);
             expectFailure(() -> store.readUploadChunk(file.id, 0, 1));
             store.finishPick(operation, true);
@@ -143,25 +143,21 @@ public final class MiniqUploadFilesTest {
         try (MiniqUploadFiles store = new MiniqUploadFiles(cache)) {
             for (String name : Arrays.asList("../secret", "a/b", "a\\b", "a\n", "a\u007f", ".", "..", "")) {
                 MiniqUploadFiles.Operation op = store.beginPick(id());
-                expectFailure(() -> store.prepare(op, Arrays.asList(source("first", fixture(7)), source(name, fixture(9))), 2));
+                expectFailure(() -> store.prepare(op, Arrays.asList(source("first", fixture(7)), source(name, fixture(9)))));
                 check(store.finishPick(op, false).isEmpty() && blobCount(cache) == 0, "invalid name rolls back whole selection");
             }
-            MiniqUploadFiles.Operation excess = store.beginPick(id());
-            expectFailure(() -> store.prepare(excess, Arrays.asList(source("a", fixture(1)), source("b", fixture(1))), 1));
-            check(excess.directory == null, "over-limit selection is rejected before copying");
-            store.finishPick(excess, false);
             MiniqUploadFiles.Operation failed = store.beginPick(id());
             MiniqUploadFiles.Source broken = source("broken", new InputStream() {
                 @Override public int read() throws IOException { throw new IOException("private path should stay native"); }
             });
-            expectFailure(() -> store.prepare(failed, Arrays.asList(source("first", fixture(65_537)), broken), 2));
+            expectFailure(() -> store.prepare(failed, Arrays.asList(source("first", fixture(65_537)), broken)));
             store.finishPick(failed, false);
             check(blobCount(cache) == 0, "provider failure removes earlier and partial cache files");
             List<MiniqUploadFiles.Source> ten = new ArrayList<>();
             for (int i = 0; i < 10; i++) ten.add(source("same.bin", fixture(i)));
             MiniqUploadFiles.Operation accepted = store.beginPick(id());
-            store.prepare(accepted, ten, 10);
-            check(store.finishPick(accepted, true).size() == 10, "ten selected files are preserved");
+            store.prepare(accepted, ten);
+            check(store.finishPick(accepted, true).size() == 10, "a ten-file selection is preserved");
         }
     }
 
@@ -170,7 +166,7 @@ public final class MiniqUploadFilesTest {
         FakeConnection response = new FakeConnection(URI.create(URL));
         try (MiniqUploadFiles store = new MiniqUploadFiles(cache, uri -> response)) {
             MiniqUploadFiles.Operation exact = store.beginPick(id());
-            store.prepare(exact, Collections.singletonList(source("large.raw", generated(MiniqUploadFiles.MAX_BYTES))), 1);
+            store.prepare(exact, Collections.singletonList(source("large.raw", generated(MiniqUploadFiles.MAX_BYTES))));
             MiniqUploadFiles.CachedFile file = store.finishPick(exact, true).get(0);
             check(file.size == MiniqUploadFiles.MAX_BYTES, "200 MiB accepted under 32 MiB Java heap");
             byte[] lastChunk = store.readUploadChunk(file.id, file.size - MiniqUploadFiles.MAX_CHUNK_BYTES, MiniqUploadFiles.MAX_CHUNK_BYTES);
@@ -182,7 +178,7 @@ public final class MiniqUploadFilesTest {
             check(response.count == file.size && hex(response.digest.digest()).equals(file.sha256), "large upload preserves hash");
             store.release(Collections.singletonList(file.id));
             MiniqUploadFiles.Operation excess = store.beginPick(id());
-            expectFailure(() -> store.prepare(excess, Collections.singletonList(source("too-large", generated(MiniqUploadFiles.MAX_BYTES + 1))), 1));
+            expectFailure(() -> store.prepare(excess, Collections.singletonList(source("too-large", generated(MiniqUploadFiles.MAX_BYTES + 1)))));
             store.finishPick(excess, false);
             check(blobCount(cache) == 0, "200 MiB plus one byte rejected and removed");
         }
@@ -195,7 +191,7 @@ public final class MiniqUploadFilesTest {
             MiniqUploadFiles.Operation operation = store.beginPick(id());
             BlockingInput input = new BlockingInput();
             FutureTask<Boolean> pending = run(() -> {
-                try { store.prepare(operation, Collections.singletonList(source("blocked", input)), 1); return false; }
+                try { store.prepare(operation, Collections.singletonList(source("blocked", input))); return false; }
                 catch (IOException expected) { return store.finishPick(operation, false).isEmpty(); }
             });
             await(input.started);
@@ -206,7 +202,7 @@ public final class MiniqUploadFilesTest {
             check(keep.path.exists() && blobCount(cache) == 1, "cancel preserves other selection");
             MiniqUploadFiles.Operation before = store.beginPick(id());
             store.cancel(before.id);
-            expectFailure(() -> store.prepare(before, Collections.singletonList(source("unused", fixture(1))), 1));
+            expectFailure(() -> store.prepare(before, Collections.singletonList(source("unused", fixture(1)))));
             check(store.finishPick(before, false).isEmpty(), "cancel before provider read");
         }
     }
@@ -294,7 +290,7 @@ public final class MiniqUploadFilesTest {
         MiniqUploadFiles.Operation pick = preparing.beginPick(id());
         BlockingInput source = new BlockingInput();
         FutureTask<Boolean> copying = run(() -> {
-            try { preparing.prepare(pick, Collections.singletonList(source("partial", source)), 1); return false; }
+            try { preparing.prepare(pick, Collections.singletonList(source("partial", source))); return false; }
             catch (IOException expected) { preparing.finishPick(pick, false); return true; }
         });
         await(source.started);
@@ -342,7 +338,7 @@ public final class MiniqUploadFilesTest {
 
     private static MiniqUploadFiles.CachedFile pick(MiniqUploadFiles store, String name, byte[] bytes) throws Exception {
         MiniqUploadFiles.Operation operation = store.beginPick(id());
-        store.prepare(operation, Collections.singletonList(source(name, bytes)), 1);
+        store.prepare(operation, Collections.singletonList(source(name, bytes)));
         return store.finishPick(operation, true).get(0);
     }
     private static MiniqUploadFiles.Source source(String name, byte[] bytes) { return source(name, new ByteArrayInputStream(bytes)); }

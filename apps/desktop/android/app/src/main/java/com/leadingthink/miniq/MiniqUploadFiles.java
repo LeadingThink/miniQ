@@ -133,9 +133,9 @@ final class MiniqUploadFiles implements AutoCloseable {
         return operation;
     }
 
-    void prepare(Operation operation, List<Source> sources, int limit) throws Exception {
-        if (limit < 1 || limit > 10 || sources.isEmpty() || sources.size() > limit)
-            throw new IOException("所选文件数量超过限制或无效");
+    void prepare(Operation operation, List<Source> sources) throws Exception {
+        if (sources.isEmpty())
+            throw new IOException("所选文件数量无效");
         synchronized (this) {
             operation.check();
             if (closed || operations.get(operation.id) != operation) throw new IOException("文件操作已结束");

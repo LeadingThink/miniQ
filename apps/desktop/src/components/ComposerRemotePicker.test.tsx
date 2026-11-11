@@ -94,13 +94,15 @@ it("removes the current transfer and continues uploading the remaining selection
   expect(uploadRemoteFile).toHaveBeenCalledTimes(2);
   expect(readAttachments("upload-A")).toEqual(["/project/inbox/second.heic"]);
 });
-it("rejects above ten including existing attachments without uploading a subset", async () => {
+it("attaches every selected file beyond ten including existing attachments", async () => {
+  let uploaded = 0;
+  vi.mocked(uploadRemoteFile).mockImplementation(async () => receipt(`/project/inbox/${uploaded++}.heic`));
   storeAttachments("upload-A", Array.from({ length: 9 }, (_, i) => `/existing/${i}.txt`));
   render(<ComposerCard {...base} />);
   open(); await choose("选择本机文件", 2);
-  expect(base.onError).toHaveBeenCalledWith(expect.stringContaining("最多附加 10"));
-  expect(uploadRemoteFile).not.toHaveBeenCalled();
-  expect(readAttachments("upload-A")).toHaveLength(9);
+  await waitFor(() => expect(readAttachments("upload-A")).toHaveLength(11));
+  expect(uploadRemoteFile).toHaveBeenCalledTimes(2);
+  expect(base.onError).not.toHaveBeenCalled();
 });
 it("attaches existing desktop paths without an upload or send", () => {
   render(<ComposerCard {...base} />);
@@ -158,12 +160,13 @@ it.each(["workspace", "client", "unmount"])("keeps a late workspace receipt in t
   expect(readAttachments("hero-B")).toEqual([]);
   expect(base.onSend).not.toHaveBeenCalled();
 });
-it("enforces the ten attachment limit for the workspace scope", async () => {
+it("attaches every file for the workspace scope", async () => {
+  let uploaded = 0;
+  vi.mocked(uploadRemoteFile).mockImplementation(async () => receipt(`/project/inbox/${uploaded++}.heic`));
   storeAttachments("hero-A", Array.from({ length: 9 }, (_, i) => `/existing/${i}.txt`));
   render(<ComposerCard {...projectBase} />);
   open(); await choose("选择本机文件", 2);
-  expect(base.onError).toHaveBeenCalledWith(expect.stringContaining("最多附加 10"));
-  expect(uploadRemoteFile).not.toHaveBeenCalled();
+  await waitFor(() => expect(readAttachments("hero-A")).toHaveLength(11));
 });
 it("closes the upload sheet when the project changes", () => {
   const view = render(<ComposerCard {...projectBase} />);

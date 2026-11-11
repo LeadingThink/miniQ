@@ -31,6 +31,8 @@ apps/desktop/scripts/*
 !apps/desktop/scripts/macos_privacy.node-test.mjs
 !apps/desktop/scripts/interim-migration.node-test.mjs
 !apps/desktop/scripts/prepare-daemon-sidecar.mjs
+!apps/desktop/scripts/prepare-ripgrep.mjs
+!apps/desktop/scripts/prepare-ripgrep.node-test.mjs
 !apps/desktop/scripts/linux-terminal.mjs
 !apps/desktop/scripts/linux-terminal.node-test.mjs
 dist-android/

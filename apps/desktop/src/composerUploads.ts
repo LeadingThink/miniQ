@@ -2,7 +2,6 @@ import type { RpcClient } from "./rpc";
 import { uploadRemoteFile, type RemoteUploadScope } from "./remoteTransfer";
 import { pickUploadSources, releaseUploadSources, stageBrowserUploadSources, type RemoteUploadSource } from "./remoteUploadSource";
 import { stageDesktopUploadSources } from "./desktopUploadSource";
-import { MAX_COMPOSER_ATTACHMENTS } from "./composerInput";
 import { errorMessage } from "./errorMessage";
 import { throwIfAborted } from "./abortSignal";
 
@@ -21,7 +20,6 @@ interface Entry extends ComposerUploadItem {
   controller?: AbortController;
   removed?: boolean;
   picker?: "files" | "photos";
-  reserved?: number;
 }
 
 /** Pending originals stay with their draft, including failed uploads awaiting retry. */
@@ -38,7 +36,7 @@ export class ComposerUploads {
 
   getSnapshot = () => this.snapshot;
   get pendingCount() {
-    return this.entries.reduce((count, entry) => count + (entry.state === "preparing" ? entry.reserved ?? 1 : 1), 0);
+    return this.entries.length;
   }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -54,31 +52,27 @@ export class ComposerUploads {
     return { id: ++this.sequence, name, input, size, state: "preparing", progress: 0 };
   }
 
-  select(selection: ComposerUploadSelection, attachedCount: number): Promise<void> {
+  select(selection: ComposerUploadSelection): Promise<void> {
     if (this.picking) return Promise.reject(new Error("正在选择文件，请稍后再添加"));
-    const limit = MAX_COMPOSER_ATTACHMENTS - attachedCount - this.entries.length;
     const inputs = typeof selection === "string" ? [] : Array.isArray(selection) ? selection : [...new Set(selection.paths)];
-    if (limit <= 0 || inputs.length > limit) {
-      return Promise.reject(new Error(`每条消息最多附加 ${MAX_COMPOSER_ATTACHMENTS} 个文件，请减少选择后重试`));
-    }
     if (typeof selection !== "string" && !inputs.length) return Promise.resolve();
-    const entries = typeof selection === "string" ? [{ ...this.entry("所选文件"), picker: selection, reserved: limit }]
+    const entries = typeof selection === "string" ? [{ ...this.entry("所选文件"), picker: selection }]
       : inputs.map(input => typeof input === "string"
         ? this.entry(input.replace(/\\/g, "/").split("/").pop() || input, input)
         : this.entry(input.name, input, input.size));
     this.entries.push(...entries);
     this.picking = typeof selection === "string";
-    const task = this.prepare(entries, selection, limit);
+    const task = this.prepare(entries, selection);
     this.publish();
     return task;
   }
 
-  private async prepare(entries: Entry[], selection: ComposerUploadSelection, limit: number): Promise<void> {
+  private async prepare(entries: Entry[], selection: ComposerUploadSelection): Promise<void> {
     const controller = new AbortController();
     for (const entry of entries) entry.controller = controller;
     let sources: RemoteUploadSource[] = [];
     try {
-      sources = typeof selection === "string" ? await pickUploadSources(selection, limit, controller.signal)
+      sources = typeof selection === "string" ? await pickUploadSources(selection, controller.signal)
         : Array.isArray(selection) ? await stageBrowserUploadSources(selection, controller.signal)
           : await stageDesktopUploadSources([...new Set(selection.paths)], controller.signal);
       throwIfAborted(controller.signal);
@@ -151,7 +145,7 @@ export class ComposerUploads {
     if (source) await releaseUploadSources([source]);
   }
 
-  retry(id: number, attachedCount: number) {
+  retry(id: number) {
     const entry = this.entries.find(item => item.id === id);
     if (!entry || entry.state !== "failed" || this.picking) return;
     entry.error = undefined;
@@ -159,10 +153,9 @@ export class ComposerUploads {
     if (entry.source) void this.upload(entry);
     else if (entry.picker) {
       this.picking = true;
-      entry.reserved = MAX_COMPOSER_ATTACHMENTS - attachedCount - this.entries.length + 1;
-      void this.prepare([entry], entry.picker, entry.reserved);
+      void this.prepare([entry], entry.picker);
     } else if (entry.input !== undefined) {
-      void this.prepare([entry], typeof entry.input === "string" ? { paths: [entry.input] } : [entry.input], 1);
+      void this.prepare([entry], typeof entry.input === "string" ? { paths: [entry.input] } : [entry.input]);
     }
     this.publish();
   }

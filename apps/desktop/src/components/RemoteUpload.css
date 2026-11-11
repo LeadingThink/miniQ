@@ -53,8 +53,7 @@
 }
 .remote-upload-tile svg { margin-bottom: 4px; color: var(--accent); }
 .remote-upload-tile small { color: var(--text-mid); font-size: var(--font-footnote); overflow-wrap: anywhere; }
-.remote-upload-tile:hover:not(:disabled) { background: var(--bg-hover); opacity: 1; }
-.remote-upload-tile:disabled { opacity: .5; }
+.remote-upload-tile:hover { background: var(--bg-hover); opacity: 1; }
 .remote-upload-error, .remote-upload-hint { margin: 0; overflow-wrap: anywhere; font-size: var(--font-footnote); }
 .remote-upload-error { padding: 8px 10px; border-radius: var(--radius); color: var(--danger); background: var(--danger-bg); }
 .remote-upload-hint { color: var(--text-muted); }

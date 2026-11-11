@@ -58,7 +58,7 @@ pub(crate) fn spawn(state: &AppState, session_id: &str) {
 async fn generate(state: &AppState, source: &Message) -> Result<Option<String>, String> {
     let session_id = &source.session_id;
     let config = state
-        .provider_config_for_session(session_id, Some("gemini-3.8-flash"))
+        .provider_config_for_session(session_id, None)
         .map_err(|e| e.to_string())?;
     let Some(config) = config else {
         return Ok(None);
@@ -143,6 +143,68 @@ mod tests {
             tokio::task::yield_now().await;
         }
         panic!("title job did not complete");
+    }
+
+    #[tokio::test]
+    async fn title_requests_follow_the_effective_session_model_and_settings() {
+        use axum::{routing::post, Json, Router};
+        use miniq_protocol::{ApiProtocol, ReasoningEffort, SessionModelSettings};
+        use serde_json::{json, Value};
+
+        let (requests, mut received) = tokio::sync::mpsc::unbounded_channel();
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(move |Json(body): Json<Value>| {
+                let requests = requests.clone();
+                async move {
+                    requests.send(body).unwrap();
+                    (
+                        [("content-type", "text/event-stream")],
+                        "data: {\"choices\":[{\"delta\":{\"content\":\"整理项目报告\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+                    )
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let (mut state, source) = fixture(Arc::new(miniq_models::mock::MockProvider::text("")));
+        state.provider_override = None;
+        {
+            let mut settings = state.settings.lock().unwrap();
+            let config = settings.provider.as_mut().unwrap();
+            config.base_url = format!("http://{address}/v1");
+            config.model = "gpt-5.6-sol".into();
+            config.api_protocol = ApiProtocol::ChatCompletions;
+        }
+
+        for (selection, expected_model, expected_effort) in [
+            (SessionModelSettings::default(), "gpt-5.6-sol", Value::Null),
+            (
+                SessionModelSettings {
+                    model: Some("gpt-6-sol".into()),
+                    api_protocol: ApiProtocol::ChatCompletions,
+                    reasoning_effort: Some(ReasoningEffort::High),
+                },
+                "gpt-6-sol",
+                json!("high"),
+            ),
+        ] {
+            state
+                .store
+                .set_session_model_settings(&source.session_id, &selection)
+                .unwrap();
+            assert_eq!(
+                generate(&state, &source).await.unwrap(),
+                Some("整理项目报告".into())
+            );
+            let request = received.try_recv().unwrap();
+            assert_eq!(request["model"], expected_model);
+            assert_eq!(request["reasoning_effort"], expected_effort);
+            assert_eq!(request["messages"][1]["content"], source.content);
+        }
+        assert!(received.try_recv().is_err());
+        server.abort();
     }
 
     #[tokio::test]

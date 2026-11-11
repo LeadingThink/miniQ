@@ -11,7 +11,6 @@ import { ArrowUp, Folder, LoaderCircle, Paperclip, Plus, Slash, Square, Target }
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
   COMPOSER_PLACEHOLDER,
-  MAX_COMPOSER_ATTACHMENTS,
   canSendComposer,
   shouldShowComposerSend,
 } from "../composerInput";
@@ -101,20 +100,12 @@ function resizeComposer(field: HTMLElement | null) {
   }
 }
 
-/** Unique attachment paths in order, capped at the limit the daemon enforces. */
+/** Unique attachment paths in order. */
 function mergeAttachments(
   current: readonly string[],
   incoming: readonly string[],
-): { paths: string[]; dropped: number } {
-  const unique = [...new Set([...current, ...incoming])];
-  return {
-    paths: unique.slice(0, MAX_COMPOSER_ATTACHMENTS),
-    dropped: Math.max(0, unique.length - MAX_COMPOSER_ATTACHMENTS),
-  };
-}
-
-function attachmentLimitMessage(dropped: number): string {
-  return `每条消息最多附加 ${MAX_COMPOSER_ATTACHMENTS} 个文件，${dropped} 个未添加`;
+): string[] {
+  return [...new Set([...current, ...incoming])];
 }
 
 /** Rounded composer card: textarea + context chip row + circular send. */
@@ -367,13 +358,11 @@ export function ComposerCard(props: {
     // Native pickers and clipboard saves may finish after switching sessions.
     // Keep the result with the draft which initiated that operation.
     if (!mountedRef.current || draftKeyRef.current !== props.draftKey) {
-      storeAttachments(props.draftKey, mergeAttachments(readAttachments(props.draftKey), paths).paths);
+      storeAttachments(props.draftKey, mergeAttachments(readAttachments(props.draftKey), paths));
       return;
     }
     if (sendingRef.current) return;
-    const merged = mergeAttachments(attachmentsRef.current, paths);
-    applyAttachments(merged.paths);
-    if (merged.dropped > 0) props.onError?.(attachmentLimitMessage(merged.dropped));
+    applyAttachments(mergeAttachments(attachmentsRef.current, paths));
   };
 
   const uploads = useComposerUploads(props.client, remoteUploadScope, props.draftKey, (paths) => {
@@ -392,7 +381,7 @@ export function ComposerCard(props: {
       return;
     }
     try {
-      await uploads.queue.select(selection, attachmentsRef.current.length);
+      await uploads.queue.select(selection);
     } catch (cause) {
       props.onError?.(cause instanceof Error ? cause.message : String(cause));
     }
@@ -724,15 +713,12 @@ export function ComposerCard(props: {
           onSelect={uploadFiles} onClose={() => setRemoteAttachment(false)} onAttach={addAttachments} />
         : remoteAttachment && <RemotePathDialog host={remoteHost} purpose="attachment" uploadNeedsProject={props.client?.mode === "remote"}
           onSubmit={async (path) => {
-            if (attachments.length >= MAX_COMPOSER_ATTACHMENTS) {
-              throw new Error(`每条消息最多附加 ${MAX_COMPOSER_ATTACHMENTS} 个文件`);
-            }
             addAttachments([path]);
           }} onClose={() => setRemoteAttachment(false)} />)}
       {voicePreview && <VoiceTranscript preview={voicePreview} />}
       {slash.menu}
       {!slash.menu && mention.menu}
-      <ComposerUploadList items={uploads.items} onRetry={id => uploads.queue?.retry(id, attachmentsRef.current.length)} onRemove={id => uploads.queue?.remove(id)} />
+      <ComposerUploadList items={uploads.items} onRetry={id => uploads.queue?.retry(id)} onRemove={id => uploads.queue?.remove(id)} />
       {attachments.length > 0 && (
         <div className="attach-row">
           {attachments.map((path) => (

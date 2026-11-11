@@ -456,8 +456,6 @@ pub(super) async fn rewrite_message(
 
 use super::session_queue::emit_queue_changed;
 
-const MAX_ATTACHMENTS: usize = 10;
-
 fn validate_message(
     state: &AppState,
     session_id: &str,
@@ -473,12 +471,6 @@ fn validate_message(
         return Err(RpcError::new(
             ErrorCode::InvalidParams,
             "message content is empty",
-        ));
-    }
-    if message.attachments.len() > MAX_ATTACHMENTS {
-        return Err(RpcError::new(
-            ErrorCode::InvalidParams,
-            format!("一次最多附加 {MAX_ATTACHMENTS} 个文件"),
         ));
     }
     attachments::prepare(

@@ -32,9 +32,9 @@ beforeEach(() => {
   vi.mocked(uploadRemoteFile).mockReset().mockImplementation(async (_client, _scope, source) => receipt(source.name));
 });
 
-it("uses the original picker with remaining capacity and releases each confirmed source", async () => {
-  await queue.select("photos", 8);
-  expect(pickUploadSources).toHaveBeenCalledWith("photos", 2, expect.any(AbortSignal));
+it("uses the original picker and releases each confirmed source", async () => {
+  await queue.select("photos");
+  expect(pickUploadSources).toHaveBeenCalledWith("photos", expect.any(AbortSignal));
   expect(stageBrowserUploadSources).not.toHaveBeenCalled();
   expect(vi.mocked(uploadRemoteFile).mock.calls.map(args => args.slice(0, 3))).toEqual([
     [client, { sessionId: "original" }, first], [client, { sessionId: "original" }, second],
@@ -49,7 +49,7 @@ it("stages the whole browser selection before the first network upload", async (
   const staged = deferred<RemoteUploadSource[]>();
   vi.mocked(stageBrowserUploadSources).mockReturnValueOnce(staged.promise);
   const originals = [new File(["x"], "first.heic"), new File(["y"], "second.heic")];
-  const selected = queue.select(originals, 0);
+  const selected = queue.select(originals);
   expect(queue.getSnapshot().map(item => item.name)).toEqual(["first.heic", "second.heic"]);
   expect(stageBrowserUploadSources).toHaveBeenCalledWith(originals, expect.any(AbortSignal));
   expect(uploadRemoteFile).not.toHaveBeenCalled();
@@ -61,11 +61,11 @@ it("stages the whole browser selection before the first network upload", async (
 it("cancels a pending picker and releases late sources without uploading", async () => {
   const picked = deferred<RemoteUploadSource[]>();
   vi.mocked(pickUploadSources).mockReturnValueOnce(picked.promise);
-  const selected = queue.select("files", 0);
+  const selected = queue.select("files");
   const waiting = queue.wait(new AbortController().signal);
   queue.pause();
   expect(await waiting).toBe(false);
-  expect(vi.mocked(pickUploadSources).mock.calls[0][2]?.aborted).toBe(true);
+  expect(vi.mocked(pickUploadSources).mock.calls[0][1]?.aborted).toBe(true);
   picked.resolve([first, second]);
   await selected;
   expect(uploadRemoteFile).not.toHaveBeenCalled();
@@ -75,12 +75,12 @@ it("cancels a pending picker and releases late sources without uploading", async
 
 it("retains a failed original for retry and uploads the other files independently", async () => {
   vi.mocked(uploadRemoteFile).mockRejectedValueOnce(new Error("桌面离线"));
-  await queue.select("files", 0);
+  await queue.select("files");
   expect(queue.getSnapshot()).toEqual([expect.objectContaining({ name: "first.heic", state: "failed", error: "桌面离线" })]);
   expect(first.release).not.toHaveBeenCalled();
   expect(second.release).toHaveBeenCalledOnce();
   expect(await queue.wait(new AbortController().signal)).toBe(false);
-  queue.retry(queue.getSnapshot()[0].id, 1);
+  queue.retry(queue.getSnapshot()[0].id);
   expect(await queue.wait(new AbortController().signal)).toBe(true);
   expect(pickUploadSources).toHaveBeenCalledOnce();
   expect(first.release).toHaveBeenCalledOnce();
@@ -90,7 +90,7 @@ it("retains a failed original for retry and uploads the other files independentl
 it("removes one preparing file without cancelling the other originals", async () => {
   const staged = deferred<RemoteUploadSource[]>();
   vi.mocked(stageBrowserUploadSources).mockReturnValueOnce(staged.promise);
-  const selected = queue.select([new File(["x"], "first.heic"), new File(["y"], "second.heic")], 0);
+  const selected = queue.select([new File(["x"], "first.heic"), new File(["y"], "second.heic")]);
   queue.remove(queue.getSnapshot()[0].id);
   expect(vi.mocked(stageBrowserUploadSources).mock.calls[0][1]?.aborted).toBe(false);
   staged.resolve([first, second]);
@@ -104,7 +104,7 @@ it("releases a removed queued source even when the batch is then paused", async 
   vi.mocked(uploadRemoteFile).mockImplementationOnce((_client, _scope, _source, signal) => new Promise((_resolve, reject) => {
     signal?.addEventListener("abort", () => reject(new DOMException("cancelled", "AbortError")));
   }));
-  const selected = queue.select("files", 0);
+  const selected = queue.select("files");
   await vi.waitFor(() => expect(uploadRemoteFile).toHaveBeenCalledOnce());
   queue.remove(queue.getSnapshot()[1].id);
   queue.pause();
@@ -116,20 +116,20 @@ it("releases a removed queued source even when the batch is then paused", async 
   expect(first.release).toHaveBeenCalledOnce();
 });
 
-it("retries a failed native picker with its original kind and current remaining capacity", async () => {
+it("retries a failed native picker with its original kind", async () => {
   vi.mocked(pickUploadSources).mockRejectedValueOnce(new Error("权限已失效"));
-  await queue.select("photos", 7);
+  await queue.select("photos");
   expect(queue.pendingCount).toBe(1);
-  queue.retry(queue.getSnapshot()[0].id, 8);
-  expect(queue.pendingCount).toBe(2);
+  queue.retry(queue.getSnapshot()[0].id);
+  expect(queue.pendingCount).toBe(1);
   expect(await queue.wait(new AbortController().signal)).toBe(true);
-  expect(pickUploadSources).toHaveBeenLastCalledWith("photos", 2, expect.any(AbortSignal));
+  expect(pickUploadSources).toHaveBeenLastCalledWith("photos", expect.any(AbortSignal));
 });
 
 it("does not complete a waiting send when the native selection is cancelled", async () => {
   const picked = deferred<RemoteUploadSource[]>();
   vi.mocked(pickUploadSources).mockReturnValueOnce(picked.promise);
-  const selected = queue.select("files", 0);
+  const selected = queue.select("files");
   const waiting = queue.wait(new AbortController().signal);
   picked.resolve([]);
   await selected;
@@ -137,20 +137,22 @@ it("does not complete a waiting send when the native selection is cancelled", as
   expect(queue.getSnapshot()).toEqual([]);
 });
 
-it("counts pending and attached files without staging an over-limit subset", async () => {
+it("stages a selection larger than ten and reports every pending file", async () => {
+  const sources = Array.from({ length: 12 }, (_, index) => cached(`file-${index}`));
   const staged = deferred<RemoteUploadSource[]>();
   vi.mocked(stageBrowserUploadSources).mockReturnValueOnce(staged.promise);
-  const selected = queue.select([new File(["x"], "first.heic")], 8);
-  await expect(queue.select([new File(["y"], "second.heic"), new File(["z"], "third.heic")], 8)).rejects.toThrow("最多附加 10");
-  expect(stageBrowserUploadSources).toHaveBeenCalledOnce();
-  staged.resolve([first]);
+  const selected = queue.select(Array.from({ length: 12 }, (_, index) => new File(["x"], `file-${index}.heic`)));
+  expect(queue.pendingCount).toBe(12);
+  staged.resolve(sources);
   await selected;
+  expect(queue.pendingCount).toBe(0);
+  expect(queue.onAttach).toHaveBeenCalledTimes(12);
 });
 
 it("stops waiting immediately on failure even while another file is uploading", async () => {
   const uploading = deferred<ReturnType<typeof receipt>>();
   vi.mocked(uploadRemoteFile).mockRejectedValueOnce(new Error("网络错误")).mockReturnValueOnce(uploading.promise);
-  const selected = queue.select("files", 0);
+  const selected = queue.select("files");
   expect(await queue.wait(new AbortController().signal)).toBe(false);
   uploading.resolve(receipt("second.heic"));
   await selected;

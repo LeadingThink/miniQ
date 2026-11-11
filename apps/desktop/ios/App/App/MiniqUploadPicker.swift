@@ -8,7 +8,6 @@ final class MiniqUploadPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewC
     UIAdaptivePresentationControllerDelegate
 {
     let id: String
-    private let limit: Int
     private let cache: MiniqUploadCache
     private let completion: (Result<[MiniqCachedUpload], Error>) -> Void
     private let cancellation = MiniqUploadCancellation()
@@ -19,10 +18,9 @@ final class MiniqUploadPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewC
     private var staged: [MiniqCachedUpload] = [] // Worker only.
     private var finished = false // Worker only.
 
-    init(id: String, limit: Int, cache: MiniqUploadCache,
+    init(id: String, cache: MiniqUploadCache,
          completion: @escaping (Result<[MiniqCachedUpload], Error>) -> Void) {
         self.id = id
-        self.limit = limit
         self.cache = cache
         self.completion = completion
         super.init()
@@ -33,7 +31,7 @@ final class MiniqUploadPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewC
         let picker: UIViewController
         if kind == "photos" {
             var configuration = PHPickerConfiguration()
-            configuration.selectionLimit = limit
+            configuration.selectionLimit = 0
             configuration.selection = .ordered
             configuration.filter = .images
             configuration.preferredAssetRepresentationMode = .current
@@ -42,7 +40,7 @@ final class MiniqUploadPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewC
             picker = photos
         } else {
             let documents = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: false)
-            documents.allowsMultipleSelection = limit > 1
+            documents.allowsMultipleSelection = true
             documents.delegate = self
             picker = documents
         }
@@ -64,7 +62,6 @@ final class MiniqUploadPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewC
         selectionReceived = true
         worker.async {
             guard !self.finished else { return }
-            guard urls.count <= self.limit else { self.finish(.failure(self.limitError)); return }
             do {
                 for url in urls {
                     try self.cancellation.check()
@@ -73,10 +70,6 @@ final class MiniqUploadPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewC
                 self.finish(.success(self.staged))
             } catch { self.finish(.failure(error)) }
         }
-    }
-
-    private var limitError: NSError {
-        NSError(domain: "MiniqUpload", code: 1, userInfo: [NSLocalizedDescriptionKey: "选择的文件不能超过 \(limit) 份"])
     }
 
     private func copyDocument(_ source: URL) throws -> MiniqCachedUpload {
@@ -107,7 +100,6 @@ final class MiniqUploadPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewC
         if results.isEmpty { cancel(); return }
         worker.async {
             guard !self.finished else { return }
-            guard results.count <= self.limit else { self.finish(.failure(self.limitError)); return }
             self.copyPhoto(results, index: 0)
         }
     }

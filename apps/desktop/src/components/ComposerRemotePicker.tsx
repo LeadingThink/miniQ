@@ -2,7 +2,6 @@ import { FileText, ImagePlus, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ComposerUploadSelection } from "../composerUploads";
 import { usesNativeUploadPicker } from "../remoteUploadSource";
-import { MAX_COMPOSER_ATTACHMENTS } from "../composerInput";
 import { isRemoteAbsolutePath } from "./RemotePathDialog";
 import "./RemoteUpload.css";
 
@@ -55,7 +54,6 @@ export function ComposerRemotePicker(props: {
     if (usesNativeUploadPicker()) void select(kind);
     else (kind === "files" ? files : photos).current?.click();
   };
-  const full = props.count >= MAX_COMPOSER_ATTACHMENTS;
   return <>
     {inputs.map(input => <input key={input.id} ref={input.active ? input.kind === "files" ? files : photos : undefined}
       type="file" multiple hidden aria-label={input.active ? input.kind === "files" ? "选择本机文件" : "选择照片原件" : undefined}
@@ -66,15 +64,15 @@ export function ComposerRemotePicker(props: {
       onClick={event => { if (event.target === dialog.current) props.onClose(); }}>
       <span className="remote-upload-grab" aria-hidden="true" />
       <header className="remote-upload-head">
-        <div><h2>附加文件</h2><p>上传到电脑当前项目的收件箱 · 已附加 {props.count}/{MAX_COMPOSER_ATTACHMENTS}</p></div>
+        <div><h2>附加文件</h2><p>上传到电脑当前项目的收件箱 · 已附加 {props.count} 个</p></div>
         <button type="button" className="icon-button" aria-label="关闭" onClick={props.onClose}><X size={18} /></button>
       </header>
       <div className="remote-upload-body">
         <div className="remote-upload-actions">
-          <button type="button" className="remote-upload-tile" aria-label="上传照片原件" disabled={full} onClick={() => choose("photos")}>
+          <button type="button" className="remote-upload-tile" aria-label="上传照片原件" onClick={() => choose("photos")}>
             <ImagePlus size={22} aria-hidden="true" /><strong>照片</strong><small>从相册选择</small>
           </button>
-          <button type="button" className="remote-upload-tile" aria-label="上传本机文件" disabled={full} onClick={() => choose("files")}>
+          <button type="button" className="remote-upload-tile" aria-label="上传本机文件" onClick={() => choose("files")}>
             <Upload size={22} aria-hidden="true" /><strong>文件</strong><small>任意类型，保留原件</small>
           </button>
         </div>
@@ -82,7 +80,6 @@ export function ComposerRemotePicker(props: {
           <summary>附加电脑上已有的文件</summary>
           <form onSubmit={event => {
             event.preventDefault();
-            if (full) { setError(`每条消息最多附加 ${MAX_COMPOSER_ATTACHMENTS} 个文件`); return; }
             if (!isRemoteAbsolutePath(path.trim())) { setError("请输入远程电脑上的完整绝对路径"); return; }
             props.onAttach([path.trim()]);
             props.onClose();

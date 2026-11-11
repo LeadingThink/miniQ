@@ -1,6 +1,6 @@
 import { ArrowUp, Loader2, MessageSquareText, Paperclip, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { MAX_COMPOSER_ATTACHMENTS, canSendComposer } from "../composerInput";
+import { canSendComposer } from "../composerInput";
 import { errorMessage } from "../errorMessage";
 import { useDroppedFiles } from "../hooks/useDroppedFiles";
 import { savePastedFile } from "../localFiles";
@@ -41,9 +41,8 @@ function storedWidth(): number {
   return Math.min(SIDE_WIDTH_MAX, Math.max(SIDE_WIDTH_MIN, Math.round(value)));
 }
 
-function uniquePaths(current: string[], incoming: string[]): { paths: string[]; dropped: number } {
-  const paths = [...new Set([...current, ...incoming])].slice(0, MAX_COMPOSER_ATTACHMENTS);
-  return { paths, dropped: Math.max(0, current.length + incoming.filter((path) => !current.includes(path)).length - MAX_COMPOSER_ATTACHMENTS) };
+function uniquePaths(current: string[], incoming: string[]): string[] {
+  return [...new Set([...current, ...incoming])];
 }
 
 export function SideConversationPanel({ client, open, workspace, sourceSessionId, onClose, onSideSessionChange, idleMs = SIDE_CONVERSATION_IDLE_MS }: Props) {
@@ -155,9 +154,7 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
 
   const addAttachments = (paths: string[]) => {
     if (busyRef.current) return;
-    const merged = uniquePaths(attachmentsRef.current, paths);
-    setAttachments(merged.paths);
-    if (merged.dropped > 0) setError(`每条消息最多附加 ${MAX_COMPOSER_ATTACHMENTS} 个文件，${merged.dropped} 个未添加`);
+    setAttachments(uniquePaths(attachmentsRef.current, paths));
   };
   useDroppedFiles(textareaRef, addAttachments, setError);
 

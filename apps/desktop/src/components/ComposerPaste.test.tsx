@@ -233,13 +233,10 @@ it("forgets the hidden text once its placeholder is deleted", async () => {
   expect(screen.queryByText("粘贴内容 1500 字")).toBeNull();
 });
 
-it("stops at ten attachments and reports how many were dropped", async () => {
-  const onError = vi.fn();
+it("attaches every pasted file without a count cap", async () => {
   fake.save.mockImplementation(async (file: File) => `/cache/pasted-files/${file.name}`);
-  render(<ComposerCard busy={false} placeholder="消息" draftKey="paste-cap" onSend={vi.fn()} onError={onError} />);
+  render(<ComposerCard busy={false} placeholder="消息" draftKey="paste-cap" onSend={vi.fn()} />);
   const files = Array.from({ length: 12 }, (_, index) => new File(["pdf"], `f${index}.pdf`, { type: "application/pdf" }));
   pasteOutside(document.body, { files });
-  expect(await screen.findByText("f9.pdf")).toBeTruthy();
-  expect(screen.queryByText("f10.pdf")).toBeNull();
-  expect(onError).toHaveBeenCalledWith("每条消息最多附加 10 个文件，2 个未添加");
+  expect(await screen.findByText("f11.pdf")).toBeTruthy();
 });

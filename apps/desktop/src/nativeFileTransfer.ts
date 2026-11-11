@@ -13,7 +13,7 @@ export interface NativeUploadFile { id: string; name: string; size: number; sha2
 interface NativeFilesPlugin {
   save(options: NativeRemoteFile & { id: string }): Promise<NativeSaveResult>;
   cancel(options: { id: string }): Promise<void>;
-  pickUpload(options: { id: string; kind: "files" | "photos"; limit: number }): Promise<{ files: NativeUploadFile[] }>;
+  pickUpload(options: { id: string; kind: "files" | "photos" }): Promise<{ files: NativeUploadFile[] }>;
   upload(options: { id: string; fileId: string; url: string }): Promise<{ status: "uploaded" | "cancelled" }>;
   readUploadChunk(options: { fileId: string; offset: number; length: number }): Promise<{ dataBase64: string }>;
   releaseUpload(options: { ids: string[] }): Promise<void>;
@@ -23,13 +23,13 @@ const nativeFiles = registerPlugin<NativeFilesPlugin>("MiniqFiles");
 
 /** Provider access remains open until every selected original is copied and
  * hashed in native private storage. Only metadata crosses the bridge. */
-export async function pickNativeUploadFiles(kind: "files" | "photos", limit: number, signal?: AbortSignal): Promise<NativeUploadFile[]> {
+export async function pickNativeUploadFiles(kind: "files" | "photos", signal?: AbortSignal): Promise<NativeUploadFile[]> {
   throwIfAborted(signal);
   const id = crypto.randomUUID();
   const cancel = () => { void nativeFiles.cancel({ id }).catch(() => {}); };
   signal?.addEventListener("abort", cancel, { once: true });
   try {
-    const { files } = await nativeFiles.pickUpload({ id, kind, limit });
+    const { files } = await nativeFiles.pickUpload({ id, kind });
     if (signal?.aborted) {
       await releaseNativeUploadFiles(files.map((file) => file.id));
       throwIfAborted(signal);

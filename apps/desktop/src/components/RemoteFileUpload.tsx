@@ -36,7 +36,7 @@ export function RemoteFileUpload({ access, onError }: {
         try {
             selected = Array.isArray(selection)
                 ? await stageBrowserUploadSources(selection, controller.signal)
-                : await pickUploadSources(selection, 10, controller.signal);
+                : await pickUploadSources(selection, controller.signal);
             throwIfAborted(controller.signal);
             for (const file of selected) {
                 if (controller.signal.aborted) break;

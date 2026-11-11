@@ -1,5 +1,9 @@
-//! PATH discovery for desktop-launched daemons. Only PATH is imported.
-use std::ffi::OsString;
+//! PATH discovery for desktop-launched daemons, including bundled tools.
+use std::{
+    env::JoinPathsError,
+    ffi::{OsStr, OsString},
+    path::Path,
+};
 
 #[derive(Debug, Clone)]
 pub struct PathResolution {
@@ -9,6 +13,43 @@ pub struct PathResolution {
 
 /// The caller caches this result for the desktop process lifetime.
 pub fn resolve() -> PathResolution {
+    let mut result = resolve_user_path();
+    if let Ok(executable) = std::env::current_exe() {
+        match with_bundled_tools(result.path.as_deref(), &executable) {
+            Ok(path) => result.path = path,
+            Err(error) => {
+                let message = format!("could not add bundled tools to PATH: {error}");
+                result.diagnostic = Some(match result.diagnostic {
+                    Some(previous) => format!("{previous}; {message}"),
+                    None => message,
+                });
+            }
+        }
+    }
+    result
+}
+
+fn with_bundled_tools(
+    inherited: Option<&OsStr>,
+    executable: &Path,
+) -> Result<Option<OsString>, JoinPathsError> {
+    let Some(directory) = executable.parent() else {
+        return Ok(inherited.map(OsStr::to_os_string));
+    };
+    if !directory
+        .join(if cfg!(windows) { "rg.exe" } else { "rg" })
+        .is_file()
+    {
+        return Ok(inherited.map(OsStr::to_os_string));
+    }
+    let paths = inherited.into_iter().flat_map(std::env::split_paths);
+    std::env::join_paths(
+        std::iter::once(directory.to_path_buf()).chain(paths.filter(|path| path != directory)),
+    )
+    .map(Some)
+}
+
+fn resolve_user_path() -> PathResolution {
     let inherited = std::env::var_os("PATH");
     #[cfg(unix)]
     {
@@ -210,12 +251,117 @@ mod unix {
     }
 }
 
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn bundled_executable(directory: &Path) -> std::path::PathBuf {
+        let rg = directory.join(if cfg!(windows) { "rg.exe" } else { "rg" });
+        std::fs::copy(std::env::current_exe().unwrap(), rg).unwrap();
+        directory.join(if cfg!(windows) {
+            "miniq-desktop.exe"
+        } else {
+            "miniq-desktop"
+        })
+    }
+
+    #[cfg(windows)]
     #[test]
     fn windows_preserves_process_path() {
-        let result = super::resolve();
+        let result = resolve_user_path();
         assert_eq!(result.path, std::env::var_os("PATH"));
         assert!(result.diagnostic.is_none());
+    }
+
+    #[test]
+    fn bundled_tools_precede_existing_path_and_are_not_duplicated() {
+        let root = tempfile::tempdir().unwrap();
+        let bundled = root.path().join("miniQ 安装目录");
+        std::fs::create_dir(&bundled).unwrap();
+        let executable = bundled_executable(&bundled);
+        let inherited = std::env::join_paths([root.path(), &bundled, root.path()]).unwrap();
+        let path = with_bundled_tools(Some(&inherited), &executable)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            std::env::split_paths(&path).collect::<Vec<_>>(),
+            vec![
+                bundled.clone(),
+                root.path().to_path_buf(),
+                root.path().to_path_buf()
+            ]
+        );
+        assert_eq!(
+            with_bundled_tools(Some(&path), &executable).unwrap(),
+            Some(path)
+        );
+    }
+
+    #[test]
+    fn unbundled_development_build_preserves_missing_and_existing_path() {
+        let root = tempfile::tempdir().unwrap();
+        let executable = root.path().join("miniq-desktop");
+        assert_eq!(with_bundled_tools(None, &executable).unwrap(), None);
+        let path = std::env::join_paths([root.path()]).unwrap();
+        assert_eq!(
+            with_bundled_tools(Some(&path), &executable).unwrap(),
+            Some(path)
+        );
+    }
+
+    #[test]
+    fn bundled_tools_work_without_an_inherited_path() {
+        let root = tempfile::tempdir().unwrap();
+        let executable = bundled_executable(root.path());
+        let path = with_bundled_tools(None, &executable).unwrap().unwrap();
+        assert_eq!(
+            std::env::split_paths(&path).collect::<Vec<_>>(),
+            vec![root.path()]
+        );
+    }
+
+    #[test]
+    fn shell_finds_bundled_rg_outside_the_install_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let bundled = root.path().join("miniQ 安装目录");
+        let workspace = root.path().join("workspace");
+        std::fs::create_dir(&bundled).unwrap();
+        std::fs::create_dir(&workspace).unwrap();
+        // The test harness is a native executable; --list identifies which binary ran.
+        let executable = bundled_executable(&bundled);
+        let inherited = std::env::var_os("PATH");
+        let path = with_bundled_tools(inherited.as_deref(), &executable)
+            .unwrap()
+            .unwrap();
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = crate::subprocess::command("powershell.exe");
+            command.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "rg --list",
+            ]);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let mut command = crate::subprocess::command("/bin/sh");
+            command.args(["-c", "rg --list"]);
+            command
+        };
+        let output = command
+            .env("PATH", path)
+            .current_dir(workspace)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout)
+            .contains("runtime_path::tests::shell_finds_bundled_rg_outside_the_install_directory"));
     }
 }
