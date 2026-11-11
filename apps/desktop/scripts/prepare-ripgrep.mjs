@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const ripgrepVersion = "15.1.0";
@@ -90,8 +90,11 @@ export function stageRipgrep({ bytes, release, tauriDirectory }) {
     const archive = join(temporary, release.archive);
     writeFileSync(archive, bytes);
     const members = [release.executable, ...licenseFiles];
-    execFileSync("tar", ["-xf", archive, "-C", temporary,
-      ...members.map(name => `${release.directory}/${name}`)]);
+    // Git for Windows treats an absolute `C:\\...` archive argument as a
+    // remote tar URL. Run from the temporary directory and pass a relative
+    // archive name so the same command works on every runner.
+    execFileSync("tar", ["-xf", basename(archive), "-C", ".",
+      ...members.map(name => `${release.directory}/${name}`)], { cwd: temporary });
     const binaryDirectory = join(tauriDirectory, "binaries");
     const licenseDirectory = join(tauriDirectory, "resources", "ripgrep");
     mkdirSync(binaryDirectory, { recursive: true });
