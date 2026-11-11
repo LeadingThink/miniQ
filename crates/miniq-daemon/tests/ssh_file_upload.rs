@@ -118,7 +118,7 @@ async fn gateway_uploads_session_and_workspace_scopes_atomically() {
         assert_eq!(result["size"], bytes.len());
         assert_eq!(result["sha256"], hash(&bytes));
         let path = Path::new(result["path"].as_str().unwrap());
-        assert!(path.starts_with(expected_root.join("inbox")));
+        assert!(path.starts_with(dunce::canonicalize(&expected_root).unwrap().join("inbox")));
         assert_eq!(std::fs::read(path).unwrap(), bytes);
         let receipt = call(
             &state,
@@ -280,8 +280,16 @@ async fn upload_cancel_status_limits_and_expiry_are_isolated_from_downloads() {
         b"x",
     )
     .await;
-    tokio::time::advance(std::time::Duration::from_secs(901)).await;
-    tokio::task::yield_now().await;
+    tokio::time::advance(std::time::Duration::from_secs(899)).await;
+    let scope = json!({"sessionId":session,"transferId":expired["transferId"]});
+    assert_eq!(
+        call(&state, actor, "file.transfer.status", scope.clone())
+            .await
+            .result
+            .unwrap()["status"],
+        "ready"
+    );
+    tokio::time::advance(std::time::Duration::from_secs(2)).await;
     assert!(call(
         &state,
         actor,
@@ -291,6 +299,23 @@ async fn upload_cancel_status_limits_and_expiry_are_isolated_from_downloads() {
     .await
     .error
     .is_some());
+    for method in ["file.upload.commit", "file.transfer.cancel"] {
+        assert!(call(&state, actor, method, scope.clone())
+            .await
+            .error
+            .is_some());
+    }
+    for index in 0..2 {
+        let next = prepare(
+            &state,
+            actor,
+            json!({"sessionId":session}),
+            &format!("after-expiry-{index}.txt"),
+            b"x",
+        )
+        .await;
+        assert_ne!(next["transferId"], expired["transferId"]);
+    }
 }
 
 #[tokio::test]

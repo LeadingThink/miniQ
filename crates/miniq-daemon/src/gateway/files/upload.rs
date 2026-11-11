@@ -15,6 +15,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 pub(crate) const CHUNK_BYTES: usize = 262_144;
@@ -104,6 +105,7 @@ struct Entry {
     size: u64,
     hash: String,
     expires: u64,
+    deadline: Instant,
     cancel: CancellationToken,
     state: AsyncMutex<UploadState>,
 }
@@ -136,9 +138,9 @@ impl Uploads {
     }
 
     fn expire(&self) {
-        let now = now();
+        let now = Instant::now();
         self.entries.lock().unwrap().retain(|_, entry| {
-            let keep = entry.expires > now;
+            let keep = entry.deadline > now;
             if !keep {
                 entry.cancel.cancel();
             }
@@ -153,7 +155,9 @@ impl Uploads {
             .lock()
             .unwrap()
             .get(&input.transfer_id)
-            .filter(|entry| entry.scope == scope && &entry.actor == actor && entry.expires > now())
+            .filter(|entry| {
+                entry.scope == scope && &entry.actor == actor && entry.deadline > Instant::now()
+            })
             .cloned()
             .ok_or_else(|| invalid("File upload unavailable; prepare it again"))
     }
@@ -215,12 +219,14 @@ impl Uploads {
             return Err(invalid("Too many active file uploads; retry later"));
         }
         let id = uuid::Uuid::new_v4().to_string();
+        let deadline = Instant::now() + LEASE;
         let entry = Arc::new(Entry {
             scope,
             actor,
             size: input.size,
             hash: input.sha256.to_ascii_lowercase(),
             expires: now() + LEASE.as_millis() as u64,
+            deadline,
             cancel: CancellationToken::new(),
             state: AsyncMutex::new(UploadState {
                 destination: Some(destination),
@@ -236,7 +242,7 @@ impl Uploads {
         let cancel = entry.cancel.clone();
         let expired_id = id.clone();
         tokio::spawn(async move {
-            tokio::time::sleep(LEASE).await;
+            tokio::time::sleep_until(deadline).await;
             cancel.cancel();
             if let Some(entries) = entries.upgrade() {
                 entries.lock().unwrap().remove(&expired_id);
@@ -259,7 +265,10 @@ impl Uploads {
         };
         let entry = self.entry(&transfer, &actor)?;
         let mut upload = entry.state.lock().await;
-        if upload.phase != Phase::Ready || entry.cancel.is_cancelled() || entry.expires <= now() {
+        if upload.phase != Phase::Ready
+            || entry.cancel.is_cancelled()
+            || entry.deadline <= Instant::now()
+        {
             return Err(invalid("File upload unavailable"));
         }
         let remaining = entry
@@ -294,7 +303,10 @@ impl Uploads {
         if upload.phase == Phase::Completed {
             return Ok(upload.result.clone());
         }
-        if upload.phase != Phase::Ready || entry.cancel.is_cancelled() || entry.expires <= now() {
+        if upload.phase != Phase::Ready
+            || entry.cancel.is_cancelled()
+            || entry.deadline <= Instant::now()
+        {
             return Err(invalid("File upload unavailable"));
         }
         if upload.received != entry.size {
