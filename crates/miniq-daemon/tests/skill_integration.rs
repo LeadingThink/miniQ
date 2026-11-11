@@ -269,12 +269,24 @@ async fn skills_injected_into_prompt_and_readable_by_agent() {
 
 #[tokio::test]
 async fn disabled_skill_leaves_prompt() {
-    let provider = Arc::new(MockProvider::new(vec![vec![ChatDelta::Text("ok".into())]]));
+    let provider = Arc::new(MockProvider::new(vec![
+        vec![ChatDelta::Text("ok".into())],
+        vec![ChatDelta::Text("ok".into())],
+    ]));
     let (port, token) = start(provider.clone()).await;
     let mut ws = connect(port, &token).await;
 
     let dir = tempfile::tempdir().unwrap();
     let sess_id = setup_session(&mut ws, dir.path()).await;
+
+    call(
+        &mut ws,
+        "enabled",
+        "session.sendMessage",
+        json!({"sessionId": sess_id, "message": {"role": "user", "content": "盘点这个目录"}}),
+    )
+    .await;
+    next_event_of(&mut ws, "turn_completed").await;
 
     call(
         &mut ws,
@@ -287,15 +299,41 @@ async fn disabled_skill_leaves_prompt() {
         &mut ws,
         "r2",
         "session.sendMessage",
+        json!({"sessionId": sess_id, "message": {"role": "user", "content": "盘点这个目录"}}),
+    )
+    .await;
+    next_event_of(&mut ws, "turn_completed").await;
+
+    let requests = provider.requests.lock().unwrap();
+    assert!(requests[0].messages[0]
+        .content
+        .contains("organize-directory"));
+    let system = &requests[1].messages[0];
+    assert!(!system.content.contains("organize-directory"));
+}
+
+#[tokio::test]
+async fn unmatched_request_omits_skills_but_keeps_discovery_tools() {
+    let provider = Arc::new(MockProvider::text("ok"));
+    let (port, token) = start(provider.clone()).await;
+    let mut ws = connect(port, &token).await;
+    let dir = tempfile::tempdir().unwrap();
+    let sess_id = setup_session(&mut ws, dir.path()).await;
+    call(
+        &mut ws,
+        "unmatched",
+        "session.sendMessage",
         json!({"sessionId": sess_id, "message": {"role": "user", "content": "hi"}}),
     )
     .await;
     next_event_of(&mut ws, "turn_completed").await;
 
     let requests = provider.requests.lock().unwrap();
-    let system = &requests[0].messages[0];
-    assert!(!system.content.contains("organize-directory"));
-    assert!(system.content.contains("summarize-changes"));
+    let request = &requests[0];
+    assert!(!request.messages[0].content.contains("<available_skills>"));
+    for name in ["skill_search", "skill_read", "tool_search"] {
+        assert!(request.tools.iter().any(|tool| tool.name == name));
+    }
 }
 
 #[tokio::test]
