@@ -243,15 +243,14 @@ async fn foreground_agent_completes_and_resumes_with_preserved_history() {
                     message.role == miniq_models::ChatRole::System
                         && message
                             .content
-                            .starts_with(crate::parallel_policy::PARALLEL_POLICY)
+                            .starts_with("You are a coding assistant running inside miniQ,")
                 })
                 .count(),
             1
         );
         let policy = &request.messages[0].content;
-        assert!(policy.contains("Apply Occam's razor to delegation at every level"));
-        assert!(policy.contains("a child agent considers further delegation"));
-        assert!(!policy.contains("usually 2-4 workers"));
+        assert!(policy.contains("- Be concise in your responses"));
+        assert!(!policy.contains("miniQ execution policy"));
     }
     assert!(requests[1]
         .messages

@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use miniq_agent::{AgentError, CheckpointStore, TurnCheckpoint};
+use miniq_agent::{AgentError, CheckpointStore, InterimKind, TurnCheckpoint};
 use miniq_models::ChatMessage;
 use miniq_protocol::{Message, Role};
 
@@ -32,7 +32,11 @@ impl std::fmt::Debug for SessionCheckpoint {
 
 #[async_trait]
 impl CheckpointStore for SessionCheckpoint {
-    async fn commit_interim(&self, checkpoint: TurnCheckpoint) -> Result<(), AgentError> {
+    async fn commit_interim(
+        &self,
+        checkpoint: TurnCheckpoint,
+        kind: InterimKind,
+    ) -> Result<(), AgentError> {
         let (ack, drained) = tokio::sync::oneshot::channel();
         self.events
             .upgrade()
@@ -55,7 +59,10 @@ impl CheckpointStore for SessionCheckpoint {
             id: self.message_id.lock().unwrap().clone(),
             session_id: self.session_id.clone(),
             role: Role::Assistant,
-            assistant_kind: Some(miniq_protocol::AssistantMessageKind::Commentary),
+            assistant_kind: Some(match kind {
+                InterimKind::Commentary => miniq_protocol::AssistantMessageKind::Commentary,
+                InterimKind::Continuation => miniq_protocol::AssistantMessageKind::Interim,
+            }),
             content: checkpoint.display_text,
             attachments: Vec::new(),
             created_at: miniq_memory::now_iso(),

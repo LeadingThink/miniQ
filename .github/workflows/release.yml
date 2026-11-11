@@ -54,6 +54,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
+      - name: Test agent prompt template
+        run: node --test scripts/pi-prompt.node-test.mjs
       - name: Install frontend dependencies
         working-directory: apps/desktop
         run: npm ci
@@ -176,6 +178,8 @@ jobs:
           cargo test --release --locked -p miniq-protocol --lib memory_write:: --target ${{ matrix.target }}
           cargo test --release --locked -p miniq-protocol --test serde_roundtrip --target ${{ matrix.target }}
           cargo test --release --locked -p miniq-tools --lib native::tests --target ${{ matrix.target }}
+          cargo test --release --locked -p miniq-tools --lib skill::tests --target ${{ matrix.target }}
+          cargo test --release --locked -p miniq-tools --lib catalog::tests --target ${{ matrix.target }}
           cargo test --release --locked -p miniq-tools --lib shell::tests::pipe_shells_have_no_console_window_and_preserve_output --target ${{ matrix.target }}
           cargo check --release --locked --workspace --target ${{ matrix.target }}
       - name: Build Windows terminal launcher

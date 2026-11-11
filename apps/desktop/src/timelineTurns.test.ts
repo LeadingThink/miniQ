@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import type { TimelineGroup } from "./timelineModel";
 import type { ToolCall, TurnTiming } from "./types";
 import {
-  LIVE_VISIBLE_GROUPS, groupTimelineTurns, liveTurnContent, recordCount, searchRecordKeys, turnSeparators,
+  LIVE_VISIBLE_GROUPS, completedTurnContent, groupTimelineTurns, liveTurnContent, recordCount, searchRecordKeys, turnSeparators,
 } from "./timelineTurns";
 
 const timing: TurnTiming = { startedAt: "2026-09-20T10:00:00Z", completedAt: "2026-09-20T10:01:00Z", elapsedMs: 60_000, status: "completed" };
@@ -11,6 +11,18 @@ const message = (id: string, role: "user" | "assistant", at: string, turnTiming?
 });
 const tools = (at: string, ...ids: string[]): TimelineGroup => ({
   kind: "tools", at, calls: ids.map((id): ToolCall => ({ id, sessionId: "s", toolName: "shell_exec", input: {}, status: "succeeded", createdAt: at })),
+});
+
+it.each(["completed", "failed", "cancelled"] as const)("keeps interim history markers separate from final output after %s", (status) => {
+  const interim = message("interim", "assistant", timing.completedAt!);
+  if (interim.kind === "message") interim.message.assistantKind = "interim";
+  const commentary = message("commentary", "assistant", timing.startedAt);
+  if (commentary.kind === "message") commentary.message.assistantKind = "commentary";
+  const [turn] = groupTimelineTurns([message("u", "user", timing.startedAt, { ...timing, status }), commentary, interim]);
+  const content = completedTurnContent(turn);
+  expect(content.output).toEqual([interim]);
+  expect(content.process).toEqual([commentary]);
+  expect(searchRecordKeys(content.output)).toBe("message:interim");
 });
 
 it("attaches each turn's recorded timing, preferring the latest live update", () => {

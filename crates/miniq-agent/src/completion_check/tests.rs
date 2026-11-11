@@ -5,11 +5,17 @@ use miniq_models::{mock::MockProvider, ToolCallRequest};
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
+mod interim;
+
 #[derive(Default)]
 struct Executor(Mutex<Vec<String>>);
 
 #[async_trait]
 impl ToolExecutor for Executor {
+    fn should_verify_completion(&self) -> bool {
+        true
+    }
+
     fn specs(&self) -> Vec<ToolSpec> {
         vec![ToolSpec {
             name: "work".into(),
@@ -21,6 +27,23 @@ impl ToolExecutor for Executor {
     async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {
         self.0.lock().unwrap().push(call.id.clone());
         Ok(json!({"ok":true,"action":call.id}))
+    }
+}
+
+struct OrdinaryExecutor;
+
+#[async_trait]
+impl ToolExecutor for OrdinaryExecutor {
+    fn specs(&self) -> Vec<ToolSpec> {
+        vec![ToolSpec {
+            name: "work".into(),
+            description: "Execute one ordinary action".into(),
+            parameters: json!({"type":"object"}),
+        }]
+    }
+
+    async fn execute(&self, _: &ToolCallRequest) -> Result<Value, AgentError> {
+        Ok(json!({"ok":true}))
     }
 }
 
@@ -351,6 +374,27 @@ async fn continuation_is_checkpointed_before_the_next_side_effect() {
     }));
 }
 
+#[tokio::test]
+async fn ordinary_tool_turns_do_not_request_a_completion_review() {
+    let provider = MockProvider::new(vec![work("inspect"), answer("已检查")]);
+    let (events, _) = tokio::sync::mpsc::channel(32);
+    let outcome = run_turn_with_limits(
+        &provider,
+        &OrdinaryExecutor,
+        vec![ChatMessage::user("检查这个文件")],
+        events,
+        CancellationToken::new(),
+        RunLimits {
+            verify_completion: true,
+            ..RunLimits::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(outcome.final_text, "已检查");
+    assert_eq!(provider.requests.lock().unwrap().len(), 2);
+}
+
 struct GatedExecutor {
     work: Executor,
     pending: std::sync::atomic::AtomicUsize,
@@ -358,6 +402,10 @@ struct GatedExecutor {
 
 #[async_trait]
 impl ToolExecutor for GatedExecutor {
+    fn should_verify_completion(&self) -> bool {
+        true
+    }
+
     fn specs(&self) -> Vec<ToolSpec> {
         self.work.specs()
     }

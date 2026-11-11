@@ -4,9 +4,9 @@
 
 ## 协议
 
-本节说明 relay 的签名对象存储协议。SSH 主机的 `file.download.prepare` 返回连接分块描述符，具体字段及读取、释放接口见 [SSH 文件预览与下载](ssh-connections.md#ssh-文件预览与下载)。两者共用会话文件权限校验，客户端按目标连接选择传输协议。
+本节说明 relay 的签名对象存储协议。SSH 主机的文件上传和下载使用连接分块协议，见 [SSH 文件预览与下载](ssh-connections.md#ssh-文件预览与下载)及 [SSH 文件上传](ssh-connections.md#ssh-文件上传)。客户端按准备接口返回的描述符选择传输协议。
 
-此通道针对当前连接桌面的本地会话项目；它不是任意 SSH 主机的通用文件上传接口。每个文件最大 200 MiB。SHA-256 使用 64 位小写十六进制。上传保持所选 File 的原始字节，包含 HEIC；预览转换不能替换上传原件。系统照片选择器可能返回兼容格式，若必须保留相机原始 HEIC，应从系统文件选择器选取原件；此通道本身不做 JPEG 重编码。HEIC 能否直接预览取决于平台解码支持，不能预览仍可保存原文件。
+此对象存储通道针对当前连接桌面的本地会话项目。SSH 上传通过已连接主机的 `host.call` 转发。每个文件最大 200 MiB。SHA-256 使用 64 位小写十六进制。上传保持所选 File 的原始字节，包含 HEIC；预览转换不能替换上传原件。系统照片选择器可能返回兼容格式，若必须保留相机原始 HEIC，应从系统文件选择器选取原件；此通道本身不做 JPEG 重编码。HEIC 能否直接预览取决于平台解码支持，不能预览仍可保存原文件。
 
 - `file.download.prepare {sessionId,path,revision}`：验证会话文件权限与版本，流式上传到私有对象，返回 `{transferId,getUrl,expiresAt,size,sha256,revision}`。
 - 上传范围（scope）：`file.upload.prepare`、`file.upload.commit`、`file.transfer.cancel` 与 `file.transfer.status` 必须**恰好提供** `sessionId` 或 `workspaceId` 之一；两者同时出现或都缺失返回 `InvalidParams`（“Specify either sessionId or workspaceId, not both” / “Specify exactly one of sessionId or workspaceId”），未知字段同样被拒绝。`sessionId` 保存到该会话工作目录的 `inbox/`；`workspaceId` 用于新会话尚未创建时，保存到该项目根目录的 `inbox/`，不会创建隐藏会话或伪造会话 ID。两种范围共用同一套目的地校验（规范化路径、符号链接与 `inbox` 逃逸拒绝、`.partial` 暂存、文件名规则、禁止覆盖）。传输记录按“调用手机 + 范围”隔离：用某一范围准备的传输，不能以另一个会话或项目提交、取消或查询。`file.download.prepare` 与 `file.transfer.status` 对下载仍只使用 `sessionId`。

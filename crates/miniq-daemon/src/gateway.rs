@@ -160,6 +160,16 @@ async fn dispatch_from(
         | "file.transfer.cancel" => {
             files::download::dispatch(state, &req.method, req.params, remote_actor.clone()).await
         }
+        "file.upload.prepare" | "file.upload.write" | "file.upload.commit" => {
+            files::upload::Uploads::dispatch(
+                &state.file_uploads,
+                state,
+                &req.method,
+                req.params,
+                remote_actor.clone(),
+            )
+            .await
+        }
         "file.read" => {
             files::read(
                 state,

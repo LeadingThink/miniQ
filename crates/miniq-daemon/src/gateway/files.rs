@@ -2,6 +2,7 @@
 pub(crate) mod access;
 pub(crate) mod download;
 mod transfer;
+pub(crate) mod upload;
 use super::common::{params, store_err};
 use crate::state::AppState;
 use base64::Engine;
@@ -16,6 +17,7 @@ use std::{
 };
 pub(crate) use transfer::{
     check_transfer_revision, transfer_destination, transfer_source, Destination, TransferScope,
+    MAX_TRANSFER_BYTES,
 };
 
 // Each chunk can use the existing encrypted object-storage data plane. Requests

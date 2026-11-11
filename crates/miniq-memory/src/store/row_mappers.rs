@@ -224,6 +224,7 @@ pub(super) fn row_to_message(row: &Row<'_>) -> rusqlite::Result<Message> {
             .get::<_, Option<String>>(7)?
             .map(|value| match value.as_str() {
                 "commentary" => Ok(miniq_protocol::AssistantMessageKind::Commentary),
+                "interim" => Ok(miniq_protocol::AssistantMessageKind::Interim),
                 "final" => Ok(miniq_protocol::AssistantMessageKind::Final),
                 "interrupted" => Ok(miniq_protocol::AssistantMessageKind::Interrupted),
                 other => Err(invalid_text(format!("assistant message kind {other}"))),

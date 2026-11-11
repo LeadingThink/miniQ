@@ -220,6 +220,10 @@ impl<'a> ImageHistoryExecutor<'a> {
 
 #[async_trait]
 impl ToolExecutor for ImageHistoryExecutor<'_> {
+    fn should_verify_completion(&self) -> bool {
+        self.inner.should_verify_completion()
+    }
+
     fn specs(&self) -> Vec<ToolSpec> {
         self.specs_for(&crate::TurnToolCtx { step: 0 })
     }

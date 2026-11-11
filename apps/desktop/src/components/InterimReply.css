@@ -1,0 +1,8 @@
+.interim-reply { min-width: 0; color: var(--text-dim); font-size: var(--font-footnote); }
+.interim-reply-toggle { display: flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
+.interim-reply-toggle:hover { color: var(--text-mid); }
+.interim-reply-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.interim-reply-toggle svg { flex: none; }
+.interim-reply-chevron { transition: transform 0.15s ease; }
+.interim-reply-toggle[aria-expanded="true"] .interim-reply-chevron { transform: rotate(90deg); }
+.interim-reply-body { margin: 8px 0; padding-left: 16px; border-left: 1px solid var(--border); color: var(--text-mid); font-size: var(--font-body); }

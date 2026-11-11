@@ -61,6 +61,17 @@ describe("SessionMenu", () => {
     expect(props.onFork).toHaveBeenCalledWith("a2");
   });
 
+  it("excludes interim and ordinary commentary from persisted fork candidates", () => {
+    renderMenu({ messages: [...messages,
+      { ...messages[1], id: "interim", assistantKind: "interim", content: "未完成的中间结论" },
+      { ...messages[1], id: "commentary", assistantKind: "commentary", content: "继续检查中" },
+    ] });
+    fireEvent.click(screen.getByText("分叉"));
+    expect(screen.queryByRole("menuitem", { name: "未完成的中间结论" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "继续检查中" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "补了重试逻辑" })).toBeTruthy();
+  });
+
   it("opens session search from the session actions menu", () => {
     const props = renderMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: /搜索和筛选会话/ }));

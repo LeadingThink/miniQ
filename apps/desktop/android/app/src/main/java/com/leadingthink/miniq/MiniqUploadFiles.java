@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.security.MessageDigest;
@@ -21,9 +22,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/** Owns only private upload snapshots. No URI, local path, or bytes reach JavaScript. */
+/** Owns private upload snapshots; only metadata and explicitly bounded chunks reach JavaScript. */
 final class MiniqUploadFiles implements AutoCloseable {
     static final long MAX_BYTES = 200L * 1024 * 1024;
+    static final int MAX_CHUNK_BYTES = 262144;
+    static final long MAX_SAFE_INTEGER = 9007199254740991L;
     private static final int BUFFER_BYTES = 64 * 1024;
     private static final Set<String> LIVE_DIRECTORIES = new HashSet<>();
     private final File root;
@@ -187,6 +190,43 @@ final class MiniqUploadFiles implements AutoCloseable {
         operation.uri = uri;
         file.readers++;
         return operation;
+    }
+
+    static long chunkInteger(Object value, long maximum) throws IOException {
+        if (!(value instanceof Number)) throw new IOException("上传缓存分块参数无效");
+        double number = ((Number) value).doubleValue();
+        if (!Double.isFinite(number) || number < 0 || number > maximum || number != Math.floor(number))
+            throw new IOException("上传缓存分块参数无效");
+        return (long) number;
+    }
+
+    byte[] readUploadChunk(String fileId, long offset, int length) throws IOException {
+        if (offset < 0 || offset > MAX_SAFE_INTEGER || length < 1 || length > MAX_CHUNK_BYTES)
+            throw new IOException("上传缓存分块参数无效");
+        CachedFile file;
+        synchronized (this) {
+            file = files.get(fileId);
+            if (closed || !isId(fileId) || file == null || file.released)
+                throw new IOException("上传缓存不存在或已释放");
+            if (offset > file.size || length > file.size - offset)
+                throw new IOException("上传缓存分块超出文件范围");
+            file.readers++;
+        }
+        try (RandomAccessFile input = new RandomAccessFile(file.path, "r")) {
+            if (!file.path.getCanonicalFile().equals(file.path.getAbsoluteFile()) || input.length() != file.size)
+                throw new IOException("上传缓存完整性校验失败");
+            byte[] bytes = new byte[length];
+            input.seek(offset);
+            input.readFully(bytes);
+            return bytes;
+        } catch (IOException ignored) {
+            throw new IOException("无法读取上传缓存分块");
+        } finally {
+            synchronized (this) {
+                file.readers--;
+                if (file.released) deleteReleased(file);
+            }
+        }
     }
 
     String upload(Operation operation, Progress progress) throws IOException {

@@ -14,6 +14,7 @@ fn phases_and_reasoning_survive_reopen_pagination_search_and_fork() {
         .unwrap();
     for (id, kind) in [
         ("note", AssistantMessageKind::Commentary),
+        ("interim", AssistantMessageKind::Interim),
         ("partial", AssistantMessageKind::Interrupted),
         ("final", AssistantMessageKind::Final),
     ] {
@@ -44,6 +45,7 @@ fn phases_and_reasoning_survive_reopen_pagination_search_and_fork() {
         vec![
             None,
             Some(AssistantMessageKind::Commentary),
+            Some(AssistantMessageKind::Interim),
             Some(AssistantMessageKind::Interrupted),
             Some(AssistantMessageKind::Final)
         ]
@@ -62,10 +64,33 @@ fn phases_and_reasoning_survive_reopen_pagination_search_and_fork() {
             ..input
         })
         .unwrap();
-    assert_eq!(older.messages[1].reasoning, "thinking-note");
+    assert_eq!(older.messages[1].reasoning, "thinking-interim");
     assert_eq!(
         older.messages[1].assistant_kind,
-        Some(AssistantMessageKind::Commentary)
+        Some(AssistantMessageKind::Interim)
+    );
+    let visible = store
+        .history_page(
+            &serde_json::from_value(json!({"sessionId":session.id,"view":"visible"})).unwrap(),
+        )
+        .unwrap();
+    assert!(visible
+        .messages
+        .iter()
+        .any(|message| message.assistant_kind == Some(AssistantMessageKind::Interim)));
+    let process = store
+        .process_records_page(
+            &serde_json::from_value(json!({"sessionId":session.id,"turnId":messages[0].id}))
+                .unwrap(),
+        )
+        .unwrap();
+    assert!(process
+        .messages
+        .iter()
+        .all(|message| message.assistant_kind != Some(AssistantMessageKind::Interim)));
+    assert_eq!(
+        store.search_messages("phase-interim", 10).unwrap()[0].assistant_kind,
+        Some(AssistantMessageKind::Interim)
     );
     assert_eq!(
         store.search_messages("phase-note", 10).unwrap()[0].assistant_kind,

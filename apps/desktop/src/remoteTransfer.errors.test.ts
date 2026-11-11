@@ -23,10 +23,13 @@ it.each([
   { label: "unknown upload prepare", error: new RpcResponseError("file.upload.prepare", {
     code: -32601, message: "unknown method: file.upload.prepare",
   }) },
-])("explains the device update needed for $label without extra RPCs", async ({ error }) => {
+  { label: "SSH forwarded unknown upload prepare", error: new RpcResponseError("host.call", {
+    code: -32601, message: "unknown method: file.upload.prepare",
+  }) },
+])("identifies the receiving daemon missing upload support for $label without extra RPCs", async ({ error }) => {
   const call = vi.fn().mockRejectedValue(error);
   await expect(uploadRemoteFile({ call }, { workspaceId: "ubuntu" }, source)).rejects.toMatchObject({
-    message: "当前连接的 miniQ 后台暂不支持手机文件上传。请在该电脑或服务器运行 miniq doctor 检查 daemon 版本，完成更新后重试；如有任务正在运行，请先等待任务结束。",
+    message: "当前目标 miniQ 后台未提供文件上传接口。请在接收文件的电脑或 SSH 主机上运行 miniq doctor 检查后台版本。更新后重试；如有任务正在运行，请先等待任务结束。",
     cause: error,
   });
   expect(call).toHaveBeenCalledExactlyOnceWith("file.upload.prepare", {

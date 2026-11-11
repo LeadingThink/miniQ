@@ -2,6 +2,7 @@ import { Sha256 } from "./incrementalSha256";
 import { throwIfAborted } from "./abortSignal";
 import type { RpcClient } from "./rpc";
 import { RpcResponseError } from "./rpcError";
+import { writeConnectionUpload, type ConnectionUpload } from "./connectionUpload";
 import { cachedDownloadTicket, invalidateDownloadTicket } from "./remoteDownloadTickets";
 import { MAX_REMOTE_FILE_BYTES, releaseUploadSources, stageBrowserUploadSources, validateUploadSize, type RemoteUploadSource } from "./remoteUploadSource";
 export { MAX_REMOTE_FILE_BYTES } from "./remoteUploadSource";
@@ -15,6 +16,7 @@ export interface SignedDownload {
     revision: string;
 }
 export interface SignedUpload {
+    transport?: never;
     transferId: string;
     putUrl: string;
     expiresAt: number;
@@ -195,8 +197,10 @@ function uploadPrepareError(cause: unknown): unknown {
         "code" in data && data.code === "REMOTE_FORBIDDEN" &&
         "reason" in data && data.reason === "undeclared" &&
         "host_command" in data && data.host_command === "file.upload.prepare";
-    if (undeclaredUpload || (cause.code === -32601 && cause.method === "file.upload.prepare")) {
-        return new Error("当前连接的 miniQ 后台暂不支持手机文件上传。请在该电脑或服务器运行 miniq doctor 检查 daemon 版本，完成更新后重试；如有任务正在运行，请先等待任务结束。", { cause });
+    const missingUpload = cause.code === -32601 && (cause.method === "file.upload.prepare" ||
+        (cause.method === "host.call" && cause.message === "unknown method: file.upload.prepare (code -32601)"));
+    if (undeclaredUpload || missingUpload) {
+        return new Error("当前目标 miniQ 后台未提供文件上传接口。请在接收文件的电脑或 SSH 主机上运行 miniq doctor 检查后台版本。更新后重试；如有任务正在运行，请先等待任务结束。", { cause });
     }
     return cause;
 }
@@ -205,9 +209,9 @@ async function uploadPreparedFile(client: Pick<RpcClient, "call">, scope: Remote
     if (!/^[a-f0-9]{64}$/.test(sha256)) throw new Error("本机文件校验信息无效，请重新选择");
     for (let attempt = 0; attempt < 2; attempt++) {
         throwIfAborted(signal);
-        let prepared: SignedUpload;
+        let prepared: SignedUpload | ConnectionUpload;
         try {
-            prepared = await client.call<SignedUpload>("file.upload.prepare", { ...scope, name: file.name, size: file.size, sha256 }, { timeoutMs: 600000 });
+            prepared = await client.call<SignedUpload | ConnectionUpload>("file.upload.prepare", { ...scope, name: file.name, size: file.size, sha256 }, { timeoutMs: 600000 });
         } catch (cause) {
             throw uploadPrepareError(cause);
         }
@@ -230,12 +234,16 @@ async function uploadPreparedFile(client: Pick<RpcClient, "call">, scope: Remote
             throwIfAborted(signal);
             if (prepared.expiresAt <= Date.now())
                 throw new Error("上传链接已过期 (403)");
-            const url = validateSignedStorageUrl(prepared.putUrl);
-            if (file.kind === "native") {
-                const { putNativeUploadFile } = await import("./nativeFileTransfer");
-                await putNativeUploadFile(file.id, url, signal, onProgress);
+            if (prepared.transport === "connection") {
+                await writeConnectionUpload(client, scope, prepared, file, signal, onProgress);
+            } else {
+                const url = validateSignedStorageUrl(prepared.putUrl);
+                if (file.kind === "native") {
+                    const { putNativeUploadFile } = await import("./nativeFileTransfer");
+                    await putNativeUploadFile(file.id, url, signal, onProgress);
+                }
+                else await putFile(url, file.file, signal, onProgress);
             }
-            else await putFile(url, file.file, signal, onProgress);
             throwIfAborted(signal);
             const result = await Promise.race([client.call<{
                     status: "completed";

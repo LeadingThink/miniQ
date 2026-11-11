@@ -233,16 +233,15 @@ fn merge_capabilities(
 
 /// Keep the local compaction policy below the effective OneAPI Grok boundary.
 /// The gateway advertises 500k tokens, but logs show the upstream rejecting
-/// Responses requests at roughly 220k input tokens. A 320k reported window,
-/// after reserving output and safety margin, gives local compaction an input
-/// budget below the provider's 200k long-context routing threshold.
+/// Responses requests at roughly 220k input tokens. Cap the effective window
+/// at 220k so the 90% local compaction threshold stays below 200k.
 fn cap_model_context(model: &str, mut capabilities: ModelCapabilities) -> ModelCapabilities {
     if model.to_ascii_lowercase().starts_with("grok-") {
         capabilities.max_context_tokens = Some(
             capabilities
                 .max_context_tokens
-                .unwrap_or(320_000)
-                .min(320_000),
+                .unwrap_or(220_000)
+                .min(220_000),
         );
     }
     capabilities
@@ -411,7 +410,7 @@ mod tests {
     fn grok_context_window_is_capped_to_the_observed_gateway_input_limit() {
         let payload = json!({"data": {"max_tokens": 500_000}});
         let capabilities = cap_model_context("grok-4.7", extract_capabilities(&payload));
-        assert_eq!(capabilities.max_context_tokens, Some(320_000));
+        assert_eq!(capabilities.max_context_tokens, Some(220_000));
     }
 
     #[test]

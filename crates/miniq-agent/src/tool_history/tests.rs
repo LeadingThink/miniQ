@@ -3,6 +3,10 @@ use super::*;
 struct Tools;
 #[async_trait]
 impl ToolExecutor for Tools {
+    fn should_verify_completion(&self) -> bool {
+        true
+    }
+
     fn specs(&self) -> Vec<ToolSpec> {
         vec![ToolSpec {
             name: "read".into(),
@@ -13,6 +17,14 @@ impl ToolExecutor for Tools {
     async fn execute(&self, _: &ToolCallRequest) -> Result<Value, AgentError> {
         Ok(json!({"ok":true}))
     }
+}
+
+#[test]
+fn history_wrappers_forward_task_completion_policy() {
+    let images = crate::image_history_tool::ImageHistoryExecutor::new(&Tools, &history());
+    let history = ToolHistoryExecutor::new(&images, true);
+    assert!(images.should_verify_completion());
+    assert!(history.should_verify_completion());
 }
 
 fn history() -> Vec<ChatMessage> {

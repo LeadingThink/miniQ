@@ -3,6 +3,35 @@ use miniq_protocol::{Role, ToolCallStatus};
 use serde_json::json;
 
 #[test]
+fn redo_compares_named_cells_after_column_reordering() {
+    let store = Store::open_in_memory().unwrap();
+    let workspace = store.create_workspace("/tmp/reorder", "reorder").unwrap();
+    let session = store.create_session(&workspace.id, "reorder").unwrap();
+    store
+        .append_message(&session.id, Role::User, "original")
+        .unwrap();
+    let conn = store.conn.lock().unwrap();
+    let mut snapshot = capture(&conn, &session.id).unwrap();
+    let messages = snapshot
+        .0
+        .iter_mut()
+        .find(|table| table.name == "messages")
+        .unwrap();
+    messages.columns.reverse();
+    for row in &mut messages.rows {
+        row.reverse();
+    }
+    let expected = serde_json::to_string(&snapshot).unwrap();
+    verify(&conn, &session.id, &expected).unwrap();
+    conn.execute(
+        "UPDATE messages SET content='new work' WHERE session_id=?1",
+        [&session.id],
+    )
+    .unwrap();
+    assert!(verify(&conn, &session.id, &expected).is_err());
+}
+
+#[test]
 fn redo_restores_complete_records_after_database_reopen() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("redo.sqlite");

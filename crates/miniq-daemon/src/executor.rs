@@ -20,6 +20,7 @@ pub(crate) mod approval;
 mod background_gate;
 pub(crate) mod checkpoint;
 mod effective_set;
+mod execution;
 mod hooks;
 mod image_history;
 mod interaction;
@@ -470,6 +471,26 @@ impl SessionToolExecutor {
 
 #[async_trait]
 impl ToolExecutor for SessionToolExecutor {
+    fn should_verify_completion(&self) -> bool {
+        let has_review_plan = self
+            .review_plan
+            .lock()
+            .expect("plan review mutex poisoned")
+            .is_some();
+        has_review_plan
+            && self
+                .state
+                .store
+                .session_plan(&self.session_id)
+                .map(|plan| {
+                    !plan.is_empty()
+                        && plan
+                            .iter()
+                            .any(|task| task.status != miniq_protocol::PlanTaskStatus::Completed)
+                })
+                .unwrap_or(false)
+    }
+
     fn specs(&self) -> Vec<ToolSpec> {
         self.effective_set().specs
     }
@@ -505,13 +526,7 @@ impl ToolExecutor for SessionToolExecutor {
         let resolved = self.resolve_registered_call(call);
         let call = resolved.as_ref().unwrap_or(call);
         let name = miniq_tools::canonical_native_tool_name(&call.name).unwrap_or(&call.name);
-        match name {
-            "file_read" | "file_list" | "file_glob" | "file_grep" | "git_status" | "git_diff"
-            | "doc_read" | "skill_read" | "memory_search" | "agent_result" => {
-                ToolExecutionMode::Parallel
-            }
-            _ => ToolExecutionMode::Sequential,
-        }
+        execution::mode(name, &call.arguments, self.router.origin(name))
     }
 
     fn call_fingerprint(&self, call: &ToolCallRequest) -> String {

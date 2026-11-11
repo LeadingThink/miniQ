@@ -14,6 +14,7 @@ pub(super) fn plan_mode_allows(call: &ToolCallRequest, risk: RiskLevel) -> bool 
         | "view_image"
         | "view_pdf"
         | "skill_read"
+        | "skill_search"
         | "memory_search"
         | "memory_read"
         | "memory_project_read"

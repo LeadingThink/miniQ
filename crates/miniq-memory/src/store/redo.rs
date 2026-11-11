@@ -192,7 +192,29 @@ impl Store {
 }
 
 fn verify(conn: &Connection, session: &str, expected: &str) -> Result<()> {
-    if capture(conn, session)? != serde_json::from_str::<Snapshot>(expected)? {
+    let actual = capture(conn, session)?;
+    let expected: Snapshot = serde_json::from_str(expected)?;
+    // Replacing a constrained column can move its physical position. Compare
+    // named cells so an unchanged conversation can still redo after migration.
+    let same = actual.0.len() == expected.0.len()
+        && actual.0.iter().zip(&expected.0).all(|(a, b)| {
+            a.name == b.name
+                && a.columns.len() == b.columns.len()
+                && a.rows.len() == b.rows.len()
+                && a.columns.iter().enumerate().all(|(index, name)| {
+                    b.columns
+                        .iter()
+                        .position(|column| column == name)
+                        .is_some_and(|other| {
+                            a.rows.iter().zip(&b.rows).all(|(left, right)| {
+                                left.len() == a.columns.len()
+                                    && right.len() == b.columns.len()
+                                    && left[index] == right[other]
+                            })
+                        })
+                })
+        });
+    if !same {
         return Err(MemoryError::InvalidData(
             "conversation changed after undo; redo would overwrite new work".into(),
         ));

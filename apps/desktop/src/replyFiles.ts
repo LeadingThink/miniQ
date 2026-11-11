@@ -1,7 +1,7 @@
 import { deliverableFileType } from "./fileTypes";
 import { resolveWorkspacePath } from "./localFiles";
 import { markdownFileLinks } from "./markdownFileLinks";
-import type { Artifact } from "./types";
+import type { Artifact, Message } from "./types";
 
 /** Most cards one reply shows, so a long file list does not bury the conversation. */
 export const MAX_REPLY_FILES = 6;
@@ -16,10 +16,11 @@ function fileName(path: string): string {
  * Source code is left to the turn changes card.
  */
 export function replyFileArtifacts(
-  message: { id: string; sessionId: string; content: string; createdAt: string },
+  message: Pick<Message, "id" | "sessionId" | "content" | "createdAt" | "assistantKind">,
   workspacePath: string | null | undefined,
   knownPaths: ReadonlySet<string> = new Set(),
 ): Artifact[] {
+  if (message.assistantKind === "interim") return [];
   const seen = new Set<string>();
   const files: Artifact[] = [];
   for (const href of markdownFileLinks(message.content)) {

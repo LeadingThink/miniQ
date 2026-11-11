@@ -27,6 +27,11 @@ fn host_tunnel_checks_the_final_mobile_method() {
         "approval.resolve",
         "file.read",
         "file.describe",
+        "file.upload.prepare",
+        "file.upload.write",
+        "file.upload.commit",
+        "file.transfer.status",
+        "file.transfer.cancel",
         "tool.detail",
     ] {
         let request: RpcRequest = serde_json::from_value(json!({

@@ -9,6 +9,10 @@ const message = (content: string) => ({
 });
 
 describe("replyFileArtifacts", () => {
+  it("never creates delivery cards from an interim reply", () => {
+    expect(replyFileArtifacts({ ...message("[草稿](/w/draft.pdf)"), assistantKind: "interim" }, "/w")).toEqual([]);
+  });
+
   it("turns a linked PDF written by a shell script into a file card", () => {
     const files = replyFileArtifacts(
       message(

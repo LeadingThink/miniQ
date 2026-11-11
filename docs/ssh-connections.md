@@ -22,6 +22,19 @@ SSH 的文件准备接口由远端 daemon 提供，不依赖该服务器加入 r
 
 应用前端与 SSH 服务器上的 daemon 都需要包含这些接口。仅重启旧版程序不会增加方法；普通 relay 会话继续使用原有签名对象存储协议。
 
+## SSH 文件上传
+
+桌面和手机通过同一 `host.call` 上传到所选 SSH 主机。上传不要求该主机连接 relay 或配置对象存储。
+
+- `file.upload.prepare {sessionId|workspaceId,name,size,sha256}` 返回 `{transport:"connection",transferId,expiresAt,chunkBytes:262144}`。上传范围必须恰好包含一个 `sessionId` 或 `workspaceId`。
+- `file.upload.write {sessionId|workspaceId,transferId,offset,dataBase64}` 顺序写入一个数据块，返回 `{nextOffset}`。每块最多 262144 字节。客户端核对回执后才发送下一块。
+- `file.upload.commit {sessionId|workspaceId,transferId}` 核对总字节数和 SHA-256，然后原子发布文件。成功回执为 `{status:"completed",path,size,sha256}`。
+- `file.transfer.status` 和 `file.transfer.cancel` 使用相同范围及 `transferId`。上传句柄绑定调用来源和上传范围。取消与提交竞争时，客户端以后台确认的终态为准。
+- 上传文件保存在目标会话工作目录或项目根目录的 `inbox/`。未完成文件使用 `.partial` 暂存。后台复用现有文件名、目录身份和禁止覆盖校验。
+- 手机 App 每次从原生私有缓存读取一个有界数据块。它不重新读取系统选择器中的原件，也不把整份文件载入 WebView。
+
+`0.1.188` 的 SSH 文件修复只包含下载接口。缺少上传接口的后台会返回 `unknown method: file.upload.prepare`，即使它已包含下载修复。应用前端与 SSH 主机后台都需要包含上传接口。
+
 ## 首次连接
 
 ### 1. 在桌面电脑上准备 SSH

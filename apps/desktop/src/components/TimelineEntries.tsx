@@ -34,6 +34,7 @@ import { resolveWorkspacePath } from "../localFiles";
 import { turnHasFileWrites } from "../turnChanges";
 import { ConfirmDialog } from "./ui/Dialog";
 import { SessionReviewPanel } from "./SessionReviewDialog";
+import { InterimReply } from "./InterimReply";
 
 /** An edit or regenerate that waits for the user to confirm stopping the run. */
 interface PendingRewrite {
@@ -121,7 +122,7 @@ export function TimelineEntries(props: {
   const runningTurnMessageIds = useMemo(() => {
     if (!props.busy) return null;
     let start = props.messages.length - 1;
-    while (start >= 0 && props.messages[start].role !== "user") start -= 1;
+    while (start >= 0 && (props.messages[start].role !== "user" || props.messages[start].steered)) start -= 1;
     return new Set(start < 0 ? [] : props.messages.slice(start).map((message) => message.id));
   }, [props.busy, props.messages]);
   const goalMessageId = useMemo(
@@ -421,6 +422,9 @@ export function TimelineEntries(props: {
                 {item.message.content}
               </Md>
             </div>
+          ) : item.message.assistantKind === "interim" ? (
+            <InterimReply message={item.message} running={Boolean(runningTurnMessageIds?.has(item.message.id))}
+              workspacePath={props.workspacePath} onOpenFile={bridge.openFile} onOpenUrl={bridge.openUrl} />
           ) : (
             <div
               key={item.message.id}

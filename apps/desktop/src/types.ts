@@ -215,7 +215,7 @@ export interface Message {
   createdAt: string;
   turnTiming?: TurnTiming;
   /** Explicit lifecycle for assistant output; absent on legacy/imported messages. */
-  assistantKind?: "commentary" | "final" | "interrupted";
+  assistantKind?: "commentary" | "interim" | "final" | "interrupted";
   reasoning?: string;
   /** A user message steered into a running turn; rendered inline in it. */
   steered?: boolean;

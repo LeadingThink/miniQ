@@ -10,6 +10,8 @@ scripts/
 !/scripts/
 /scripts/*
 !/scripts/install-cli.node-test.mjs
+!/scripts/pi-prompt.mjs
+!/scripts/pi-prompt.node-test.mjs
 !/scripts/test-install-cli.ps1
 !/scripts/install-cli.sh
 !/scripts/install-cli.ps1
@@ -27,6 +29,7 @@ apps/desktop/scripts/*
 !apps/desktop/scripts/ios_testflight.node-test.mjs
 !apps/desktop/scripts/macos_privacy.mjs
 !apps/desktop/scripts/macos_privacy.node-test.mjs
+!apps/desktop/scripts/interim-migration.node-test.mjs
 !apps/desktop/scripts/prepare-daemon-sidecar.mjs
 !apps/desktop/scripts/linux-terminal.mjs
 !apps/desktop/scripts/linux-terminal.node-test.mjs

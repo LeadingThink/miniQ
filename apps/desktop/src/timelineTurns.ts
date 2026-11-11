@@ -56,7 +56,7 @@ export function turnProcessKey(turn: TimelineTurn, index: number): string | unde
   return turn.userMessageId ? processKey(turn.userMessageId) : index === 0 ? processKey() : undefined;
 }
 
-/** Partition settled output without moving the final answer into the process.
+/** Partition settled output without moving final answers or interim history markers into the process.
  * Legacy messages lack a phase: only a trailing assistant is treated as final. */
 export function completedTurnContent(turn: TimelineTurn): { process: TimelineGroup[]; output: TimelineGroup[] } {
   const body = turn.groups.slice(turn.userMessageId ? 1 : 0);
@@ -70,7 +70,8 @@ export function completedTurnContent(turn: TimelineTurn): { process: TimelineGro
   const output: TimelineGroup[] = [];
   for (const group of body) {
     const visible = group.kind === "artifact" || group === legacyFinal || (group.kind === "message"
-      && (group.message.assistantKind === "final" || group.message.assistantKind === "interrupted"));
+      && (group.message.assistantKind === "final" || group.message.assistantKind === "interrupted"
+        || group.message.assistantKind === "interim"));
     (visible ? output : process).push(group);
   }
   return { process, output };

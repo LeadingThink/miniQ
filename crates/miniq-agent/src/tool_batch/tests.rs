@@ -32,7 +32,7 @@ impl ToolExecutor for Fixture {
         Vec::new()
     }
     fn execution_mode(&self, call: &ToolCallRequest) -> ToolExecutionMode {
-        if call.name == "read" {
+        if matches!(call.name.as_str(), "read" | "shell_run" | "web_search") {
             ToolExecutionMode::Parallel
         } else {
             ToolExecutionMode::Sequential
@@ -43,7 +43,7 @@ impl ToolExecutor for Fixture {
         let version = self.version.load(Ordering::SeqCst);
         let count = self.active.fetch_add(1, Ordering::SeqCst) + 1;
         self.peak.fetch_max(count, Ordering::SeqCst);
-        if call.name != "read" {
+        if self.execution_mode(call) == ToolExecutionMode::Sequential {
             assert_eq!(count, 1, "serial operation overlapped another call");
             self.version.fetch_add(1, Ordering::SeqCst);
         }
@@ -82,6 +82,23 @@ async fn run_batch(
     };
     let result = execute(executor, calls, &mut state, &limits, &executor.cancel).await;
     (state, saved, result)
+}
+
+#[tokio::test(start_paused = true)]
+async fn independent_shell_and_web_calls_overlap() {
+    let executor = Fixture::default();
+    let calls = [
+        call("shell", "shell_run", 30),
+        call("web", "web_search", 50),
+    ];
+    let start = tokio::time::Instant::now();
+    let (state, _, result) = run_batch(&executor, &calls).await;
+    result.unwrap();
+    assert_eq!(start.elapsed(), Duration::from_millis(50));
+    assert_eq!(executor.peak.load(Ordering::SeqCst), 2);
+    assert_eq!(state.appended.len(), 2);
+    assert_eq!(state.appended[0].tool_call_id.as_deref(), Some("shell"));
+    assert_eq!(state.appended[1].tool_call_id.as_deref(), Some("web"));
 }
 
 #[tokio::test(start_paused = true)]

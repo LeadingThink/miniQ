@@ -15,6 +15,7 @@ interface NativeFilesPlugin {
   cancel(options: { id: string }): Promise<void>;
   pickUpload(options: { id: string; kind: "files" | "photos"; limit: number }): Promise<{ files: NativeUploadFile[] }>;
   upload(options: { id: string; fileId: string; url: string }): Promise<{ status: "uploaded" | "cancelled" }>;
+  readUploadChunk(options: { fileId: string; offset: number; length: number }): Promise<{ dataBase64: string }>;
   releaseUpload(options: { ids: string[] }): Promise<void>;
   addListener(event: "progress", callback: (event: { id: string; received: number; total: number }) => void): Promise<PluginListenerHandle>;
 }
@@ -68,6 +69,23 @@ export async function putNativeUploadFile(fileId: string, url: string, signal?: 
 
 export async function releaseNativeUploadFiles(ids: string[]): Promise<void> {
   if (ids.length) await nativeFiles.releaseUpload({ ids });
+}
+
+/** Reads one exact bounded range from the plugin's private upload snapshot. */
+export async function readNativeUploadChunk(fileId: string, offset: number, length: number, signal?: AbortSignal): Promise<string> {
+  throwIfAborted(signal);
+  if (typeof fileId !== "string" || !fileId || !Number.isSafeInteger(offset) || offset < 0
+    || !Number.isSafeInteger(length) || length < 1 || length > 262144) {
+    throw new Error("上传缓存分块参数无效");
+  }
+  try {
+    const { dataBase64 } = await nativeFiles.readUploadChunk({ fileId, offset, length });
+    throwIfAborted(signal);
+    return dataBase64;
+  } catch (cause) {
+    throwIfAborted(signal);
+    throw cause;
+  }
 }
 
 /** Streams signed object bytes to native temporary storage, verifies them, then

@@ -1,8 +1,9 @@
+import CoreFoundation
 import CryptoKit
 import Foundation
 
 enum MiniqUploadError: LocalizedError {
-    case cancelled, invalidName, tooLarge, unreadable, cacheUnavailable, missingFile
+    case cancelled, invalidName, tooLarge, unreadable, cacheUnavailable, missingFile, invalidChunk
 
     var errorDescription: String? {
         switch self {
@@ -12,6 +13,7 @@ enum MiniqUploadError: LocalizedError {
         case .unreadable: return "无法读取所选文件的原始内容，请重试"
         case .cacheUnavailable: return "无法创建文件上传缓存"
         case .missingFile: return "上传缓存已释放或不可用，请重新选择文件"
+        case .invalidChunk: return "上传缓存分块参数无效或超出文件范围"
         }
     }
 }
@@ -55,6 +57,14 @@ final class MiniqUploadCancellation {
 }
 
 enum MiniqUploadValidation {
+    static func chunkInteger(_ value: Any?, maximum: Int64) -> Int64? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let value = number.doubleValue
+        guard value.isFinite, value >= 0, value <= Double(maximum), value.rounded(.down) == value
+        else { return nil }
+        return Int64(value)
+    }
+
     static func identifier(_ value: String?) -> String? {
         guard let value, value.count == 36, let uuid = UUID(uuidString: value),
             uuid.uuidString.caseInsensitiveCompare(value) == .orderedSame
@@ -112,6 +122,8 @@ struct MiniqCachedUpload {
 /// Only opaque IDs in this instance's registry can acquire or delete a cached file.
 final class MiniqUploadCache {
     static let maximumBytes: Int64 = 200 * 1024 * 1024
+    static let maximumChunkBytes = 262144
+    static let maximumSafeInteger: Int64 = 9007199254740991
     private static let processDirectory = UUID().uuidString.lowercased()
     private struct Entry {
         let file: MiniqCachedUpload
@@ -218,6 +230,28 @@ final class MiniqUploadCache {
         entry.readers -= 1
         entries[id] = entry
         removeIfUnused(id)
+    }
+
+    func readUploadChunk(_ id: String, offset: Int64, length: Int) throws -> Data {
+        guard offset >= 0, offset <= Self.maximumSafeInteger, (1...Self.maximumChunkBytes).contains(length)
+        else { throw MiniqUploadError.invalidChunk }
+        let file = try acquire(id)
+        defer { endRead(id) }
+        guard offset <= file.size, Int64(length) <= file.size - offset else { throw MiniqUploadError.invalidChunk }
+        do {
+            let input = try FileHandle(forReadingFrom: file.url)
+            defer { try? input.close() }
+            guard try input.seekToEnd() == UInt64(file.size) else { throw MiniqUploadError.missingFile }
+            try input.seek(toOffset: UInt64(offset))
+            var bytes = Data()
+            bytes.reserveCapacity(length)
+            while bytes.count < length {
+                guard let chunk = try input.read(upToCount: length - bytes.count), !chunk.isEmpty
+                else { throw MiniqUploadError.unreadable }
+                bytes.append(chunk)
+            }
+            return bytes
+        } catch { throw MiniqUploadError.unreadable }
     }
 
     func release(_ ids: [String]) {

@@ -322,6 +322,7 @@ impl Role {
 #[serde(rename_all = "snake_case")]
 pub enum AssistantMessageKind {
     Commentary,
+    Interim,
     Final,
     Interrupted,
 }
@@ -330,6 +331,7 @@ impl AssistantMessageKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Commentary => "commentary",
+            Self::Interim => "interim",
             Self::Final => "final",
             Self::Interrupted => "interrupted",
         }

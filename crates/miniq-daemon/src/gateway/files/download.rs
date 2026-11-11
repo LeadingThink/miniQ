@@ -102,6 +102,17 @@ pub(crate) async fn dispatch(
             .map_err(invalid)?
             .map_err(invalid);
     }
+    if matches!(method, "file.transfer.status" | "file.transfer.cancel")
+        && raw
+            .as_ref()
+            .and_then(|value| value["transferId"].as_str())
+            .is_some_and(|transfer_id| state.file_uploads.owns(transfer_id))
+    {
+        return state
+            .file_uploads
+            .status_or_cancel(raw, actor, method == "file.transfer.cancel")
+            .await;
+    }
     let input: TransferInput = params(raw)?;
     let entry = state
         .file_downloads

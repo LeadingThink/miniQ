@@ -28,6 +28,8 @@ public final class MiniqUploadFilesTest {
         base = new File(args[0]);
         check(base.isDirectory() || base.mkdirs(), "test directory");
         snapshotsPreserveBytes();
+        chunkReadsAreBoundedAndOwned();
+        chunkCleanupRaces();
         selectionFailuresCleanEverything();
         sizeBoundaryStreams();
         cancellationStopsOnlyItsPick();
@@ -61,6 +63,79 @@ public final class MiniqUploadFilesTest {
             check(!first.path.exists() && result.get(1).path.exists() && secondPick.path.exists(), "release scope and idempotence");
         }
         check(blobCount(cache) == 0, "close cleans unclaimed snapshots");
+    }
+
+    private static void chunkReadsAreBoundedAndOwned() throws Exception {
+        File cache = cache();
+        byte[] bytes = fixture(524_301);
+        try (MiniqUploadFiles store = new MiniqUploadFiles(cache);
+             MiniqUploadFiles foreign = new MiniqUploadFiles(cache)) {
+            MiniqUploadFiles.Operation operation = store.beginPick(id());
+            int[] opens = { 0 };
+            MiniqUploadFiles.Source original = new MiniqUploadFiles.Source() {
+                @Override public String name(MiniqUploadFiles.Operation op) { return "snapshot"; }
+                @Override public InputStream open(MiniqUploadFiles.Operation op) {
+                    if (++opens[0] != 1) throw new AssertionError("original must never be reopened");
+                    return new ByteArrayInputStream(bytes);
+                }
+            };
+            store.prepare(operation, Collections.singletonList(original), 1);
+            MiniqUploadFiles.CachedFile file = operation.prepared.get(0);
+            expectFailure(() -> store.readUploadChunk(file.id, 0, 1));
+            store.finishPick(operation, true);
+            for (int[] range : new int[][] { { 0, 1 }, { 65_535, 262_144 }, { bytes.length - 17, 17 } }) {
+                byte[] chunk = store.readUploadChunk(file.id, range[0], range[1]);
+                check(Arrays.equals(chunk, Arrays.copyOfRange(bytes, range[0], range[0] + range[1])), "exact chunk bytes");
+                check(file.readers == 0 && file.path.length() == bytes.length, "chunk closes reader without truncation");
+            }
+            check(opens[0] == 1, "all chunks use private snapshot without reopening original");
+            for (long offset : new long[] { -1, MiniqUploadFiles.MAX_SAFE_INTEGER + 1, Long.MAX_VALUE, bytes.length, bytes.length + 1 })
+                expectFailure(() -> store.readUploadChunk(file.id, offset, 1));
+            for (int length : new int[] { -1, 0, 262_145, Integer.MAX_VALUE })
+                expectFailure(() -> store.readUploadChunk(file.id, 0, length));
+            expectFailure(() -> store.readUploadChunk(file.id, bytes.length - 1, 2));
+            expectFailure(() -> foreign.readUploadChunk(file.id, 0, 1));
+            for (String bad : Arrays.asList(id(), file.path.getPath(), "../outside", null))
+                expectFailure(() -> store.readUploadChunk(bad, 0, 1));
+            for (Object bad : Arrays.asList(null, "1", true, -1, 0.5, Double.NaN, Double.POSITIVE_INFINITY,
+                    MiniqUploadFiles.MAX_SAFE_INTEGER + 1))
+                expectFailure(() -> MiniqUploadFiles.chunkInteger(bad, MiniqUploadFiles.MAX_SAFE_INTEGER));
+            check(MiniqUploadFiles.chunkInteger(0, MiniqUploadFiles.MAX_SAFE_INTEGER) == 0
+                && MiniqUploadFiles.chunkInteger(MiniqUploadFiles.MAX_SAFE_INTEGER, MiniqUploadFiles.MAX_SAFE_INTEGER)
+                    == MiniqUploadFiles.MAX_SAFE_INTEGER, "safe integer endpoints accepted");
+            expectFailure(() -> MiniqUploadFiles.chunkInteger(262145, MiniqUploadFiles.MAX_CHUNK_BYTES));
+            MiniqUploadFiles.CachedFile empty = pick(store, "empty", new byte[0]);
+            expectFailure(() -> store.readUploadChunk(empty.id, 0, 1));
+            try (java.io.RandomAccessFile changed = new java.io.RandomAccessFile(file.path, "rw")) { changed.setLength(1); }
+            expectFailure(() -> store.readUploadChunk(file.id, 0, 1));
+            check(file.readers == 0, "failed chunk releases reader");
+            store.release(Collections.singletonList(file.id));
+            expectFailure(() -> store.readUploadChunk(file.id, 0, 1));
+            MiniqUploadFiles.CachedFile missing = pick(store, "purged", fixture(3));
+            Files.delete(missing.path.toPath());
+            expectFailure(() -> store.readUploadChunk(missing.id, 0, 1));
+            check(missing.readers == 0, "purged snapshot failure releases reader");
+        }
+    }
+
+    private static void chunkCleanupRaces() throws Exception {
+        File cache = cache();
+        byte[] bytes = fixture(262_144);
+        for (int iteration = 0; iteration < 20; iteration++) {
+            MiniqUploadFiles store = new MiniqUploadFiles(cache);
+            MiniqUploadFiles.CachedFile file = pick(store, "race", bytes);
+            FutureTask<byte[]> pending = run(() -> {
+                try { return store.readUploadChunk(file.id, 0, bytes.length); }
+                catch (IOException expected) { return null; }
+            });
+            if (iteration % 2 == 0) store.release(Collections.singletonList(file.id));
+            else store.close();
+            byte[] chunk = pending.get(5, TimeUnit.SECONDS);
+            check(chunk == null || Arrays.equals(chunk, bytes), "cleanup races return full chunk or rejection");
+            check(file.readers == 0 && !file.path.exists(), "cleanup waits for chunk reader and leaves no reservation");
+            expectFailure(() -> store.readUploadChunk(file.id, 0, 1));
+            store.close();
+        }
     }
 
     private static void selectionFailuresCleanEverything() throws Exception {
@@ -98,6 +173,10 @@ public final class MiniqUploadFilesTest {
             store.prepare(exact, Collections.singletonList(source("large.raw", generated(MiniqUploadFiles.MAX_BYTES))), 1);
             MiniqUploadFiles.CachedFile file = store.finishPick(exact, true).get(0);
             check(file.size == MiniqUploadFiles.MAX_BYTES, "200 MiB accepted under 32 MiB Java heap");
+            byte[] lastChunk = store.readUploadChunk(file.id, file.size - MiniqUploadFiles.MAX_CHUNK_BYTES, MiniqUploadFiles.MAX_CHUNK_BYTES);
+            byte[] expectedChunk = new byte[MiniqUploadFiles.MAX_CHUNK_BYTES];
+            Arrays.fill(expectedChunk, (byte) 0x5a);
+            check(Arrays.equals(lastChunk, expectedChunk), "200 MiB snapshot chunk stays bounded under 32 MiB heap");
             MiniqUploadFiles.Operation upload = store.beginUpload(id(), file.id, URL);
             check(store.upload(upload, (received, total) -> { }).equals("uploaded"), "200 MiB upload under 32 MiB Java heap");
             check(response.count == file.size && hex(response.digest.digest()).equals(file.sha256), "large upload preserves hash");

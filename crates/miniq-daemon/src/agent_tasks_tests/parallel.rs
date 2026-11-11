@@ -39,11 +39,8 @@ async fn background_cohort_exceeds_old_count_limits_and_preserves_each_result() 
             message.role == miniq_models::ChatRole::System
                 && message
                     .content
-                    .starts_with(crate::parallel_policy::PARALLEL_POLICY)
-                && message.content.contains("there is no target worker count")
-                && message
-                    .content
-                    .contains("configured maximum active subagent count")
+                    .starts_with("You are a coding assistant running inside miniQ,")
+                && !message.content.contains("miniQ execution policy")
         })
     }));
     provider.gate.add_permits(COUNT);

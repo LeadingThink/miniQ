@@ -97,6 +97,28 @@ function Harness({ server, client, messages = visible, summaries = { u1: summary
 const fold = () => document.querySelector("details.completed-process") as HTMLDetailsElement;
 const open = () => fireEvent.click(fold().querySelector("summary")!);
 
+it("keeps an interim reply loaded from persisted process history lazy and searchable", async () => {
+  const interim = message("interim-history", "assistant", "未完成的历史候选 [草稿](/w/draft.pdf)", 2,
+    { assistantKind: "interim" });
+  const server = vi.fn<Server>(async () => ({ messages: [interim], toolCalls: [], nextCursor: null }));
+  const summaries = { u1: { ...summary, recordCount: 1, toolCallCount: 0, messageCount: 1, statusCounts: {} } };
+  render(<Harness server={server} summaries={summaries} />);
+  expect(server).not.toHaveBeenCalled();
+  open();
+  const toggle = await screen.findByRole("button", { name: "中间结果（已继续执行）" });
+  const marker = toggle.closest('[data-history-anchor="message:interim-history"]')!;
+  expect(marker.querySelector(".markdown, .message-footer, .artifact-card")).toBeNull();
+  expect(screen.queryByText(/未完成的历史候选/)).toBeNull();
+  fireEvent.change(screen.getByRole("searchbox", { name: "搜索当前会话" }), { target: { value: "未完成的历史候选" } });
+  expect(screen.getByText("1 / 1")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "查看上下文" }));
+  await waitFor(() => expect(document.querySelector('[data-history-anchor="message:interim-history"][data-search-located]')).toBeTruthy());
+  expect(screen.queryByText(/未完成的历史候选/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "中间结果（已继续执行）" }));
+  expect(screen.getByText(/未完成的历史候选/)).toBeTruthy();
+  expect(document.querySelector('[data-history-anchor="message:interim-history"] .artifact-card')).toBeNull();
+});
+
 it("renders a folded turn from its summary and fetches nothing until it is opened", () => {
   const server = vi.fn<Server>(async (_turn, before) => serverPage(before));
   render(<Harness server={server} />);

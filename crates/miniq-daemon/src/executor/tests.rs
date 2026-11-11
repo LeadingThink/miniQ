@@ -480,7 +480,7 @@ fn native_visual_results_resolve_the_same_tool_as_execution() {
 }
 
 #[test]
-fn parallel_execution_keeps_native_and_canonical_mutations_as_barriers() {
+fn independent_tools_overlap_while_mutations_and_shared_targets_are_barriers() {
     let state = AppState::new(
         miniq_memory::Store::open_in_memory().unwrap(),
         "fixture".into(),
@@ -502,6 +502,17 @@ fn parallel_execution_keeps_native_and_canonical_mutations_as_barriers() {
         "file_grep",
         "Grep",
         "git_diff",
+        "Bash",
+        "shell_run",
+        "shell_batch",
+        "web_search",
+        "WebSearch",
+        "web_fetch",
+        "http_request",
+        "memory_read",
+        "tool_search",
+        "agent_run",
+        "Task",
     ] {
         assert_eq!(
             executor.execution_mode(&ToolCallRequest {
@@ -517,14 +528,12 @@ fn parallel_execution_keeps_native_and_canonical_mutations_as_barriers() {
         "file_write",
         "Write",
         "Edit",
-        "Bash",
-        "shell_batch",
         "browser_automation",
         "app_automation",
         "computer_use",
         "ask_user",
-        "agent_run",
-        "Task",
+        "task_update",
+        "process_output",
         "mcp_call",
         "unknown",
     ] {

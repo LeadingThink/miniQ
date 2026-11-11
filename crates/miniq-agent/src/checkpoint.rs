@@ -3,6 +3,12 @@ use miniq_models::ChatMessage;
 
 use crate::{AgentError, RunLimits};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InterimKind {
+    Commentary,
+    Continuation,
+}
+
 #[derive(Clone, Debug)]
 pub struct TurnCheckpoint {
     pub history: Vec<ChatMessage>,
@@ -16,9 +22,13 @@ pub struct TurnCheckpoint {
 pub trait CheckpointStore: Send + Sync + std::fmt::Debug {
     async fn save(&self, checkpoint: TurnCheckpoint) -> Result<(), AgentError>;
 
-    /// Persist a completed commentary segment before subsequent tools can run.
+    /// Persist a segment and its purpose before subsequent work can run.
     /// Hosts with no separate visible transcript retain it in provider history.
-    async fn commit_interim(&self, _checkpoint: TurnCheckpoint) -> Result<(), AgentError> {
+    async fn commit_interim(
+        &self,
+        _checkpoint: TurnCheckpoint,
+        _kind: InterimKind,
+    ) -> Result<(), AgentError> {
         Ok(())
     }
 }
@@ -46,15 +56,19 @@ impl RunState {
         &mut self,
         limits: &RunLimits,
         events: &tokio::sync::mpsc::Sender<crate::AgentEvent>,
+        kind: InterimKind,
     ) -> Result<(), AgentError> {
         if let Some(store) = &limits.checkpoint {
             store
-                .commit_interim(TurnCheckpoint {
-                    history: self.history.clone(),
-                    display_text: self.streamed_text.clone(),
-                    reasoning: self.reasoning.clone(),
-                    stopped: false,
-                })
+                .commit_interim(
+                    TurnCheckpoint {
+                        history: self.history.clone(),
+                        display_text: self.streamed_text.clone(),
+                        reasoning: self.reasoning.clone(),
+                        stopped: false,
+                    },
+                    kind,
+                )
                 .await?;
         }
         let has_text = !self.streamed_text.is_empty() || !self.reasoning.is_empty();

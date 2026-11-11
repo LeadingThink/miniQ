@@ -100,7 +100,6 @@ impl DaemonAgentBridge {
             &self.session_id,
             memory_generation,
         ));
-        crate::parallel_policy::refresh_child_policy(&mut history);
         history.push(ChatMessage::user(request.prompt.clone()));
         loop {
             let turn_id = miniq_memory::new_id("turn");
@@ -406,7 +405,6 @@ impl DaemonAgentBridge {
                 .map(|config| config.model);
         }
         let cancel = self.cancel.child_token();
-        let resuming = request.resume.is_some();
         let max_subagents = self
             .state
             .settings
@@ -453,9 +451,8 @@ impl DaemonAgentBridge {
                 return Err(error);
             }
         };
-        let history = if resuming {
-            resumed_history
-        } else {
+        let mut history = resumed_history;
+        {
             let roots = self
                 .child_roots(&workspace, worktree.is_some())
                 .into_iter()
@@ -490,9 +487,16 @@ impl DaemonAgentBridge {
                     side: false,
                 },
             );
-            context.set(miniq_agent::SectionId::Core, role);
-            vec![ChatMessage::system(context.render())]
-        };
+            let runtime = context
+                .get(miniq_agent::SectionId::Runtime)
+                .expect("child runtime context")
+                .body();
+            context.set(
+                miniq_agent::SectionId::Runtime,
+                format!("{runtime}\n{role}"),
+            );
+            crate::system_prompt::refresh_child_context(&mut history, context.render());
+        }
         let running = self.state.agent_tasks.snapshot(&id, &record).await;
         let bridge = self.clone();
         let background = request.run_in_background;

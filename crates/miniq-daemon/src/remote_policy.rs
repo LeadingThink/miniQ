@@ -177,6 +177,7 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "skill.refine.list" => ReadOnly,
         "host.connect"
         | "file.upload.prepare"
+        | "file.upload.write"
         | "file.upload.commit"
         | "file.transfer.cancel"
         | "host.disconnect"

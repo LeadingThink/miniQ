@@ -249,6 +249,7 @@ pub struct AppState {
     /// Pending mobile confirmations and pinned identities for exact file grants.
     pub(crate) file_access: Arc<Mutex<crate::gateway::files::access::FileAccess>>,
     pub(crate) file_downloads: Arc<crate::gateway::files::download::Downloads>,
+    pub(crate) file_uploads: Arc<crate::gateway::files::upload::Uploads>,
     /// Pending ask_user questions (question id -> answer waker).
     pub pending_questions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
     /// Browser requests waiting for the active miniQ client WebView driver.
@@ -371,6 +372,7 @@ impl AppState {
             session_allowlist: Arc::new(Mutex::new(HashMap::new())),
             file_access: Arc::default(),
             file_downloads: Arc::default(),
+            file_uploads: Arc::default(),
             pending_questions: Arc::new(Mutex::new(HashMap::new())),
             pending_browser_requests: Arc::new(Mutex::new(HashMap::new())),
             pending_question_details: Arc::new(Mutex::new(HashMap::new())),

@@ -2,8 +2,8 @@
 //!
 //! A turn is the non-steered user message that opened it plus every row up to the
 //! next such message. Its visible rows are the opening message, final or
-//! interrupted replies and, for legacy rows without a phase, a trailing reply.
-//! Everything else (tool calls, commentary, steering, tool transcripts) is the
+//! interrupted replies, folded interim markers and, for legacy rows without a
+//! phase, a trailing reply. Everything else (tools, commentary, steering) is the
 //! turn's folded process: counted here, fetched page by page on demand.
 
 use std::collections::BTreeMap;
@@ -22,7 +22,7 @@ const FILE_WRITE_TOOLS: &str =
 /// Messages a turn shows outside its fold. `:legacy` is the trailing reply of a
 /// turn recorded before replies carried a phase.
 const VISIBLE_MESSAGE: &str = "((role = 'user' AND steered = 0) \
-     OR (role = 'assistant' AND coalesce(assistant_kind, '') IN ('final', 'interrupted')) \
+     OR (role = 'assistant' AND coalesce(assistant_kind, '') IN ('final', 'interrupted', 'interim')) \
      OR id IS :legacy)";
 
 /// Rows of one turn in `(created_at, id)` order: `start` inclusive, `end` exclusive.

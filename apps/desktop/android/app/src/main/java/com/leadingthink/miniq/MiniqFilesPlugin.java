@@ -8,6 +8,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.CancellationSignal;
 import android.provider.OpenableColumns;
+import android.util.Base64;
 import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -30,7 +31,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** No file bytes cross the JavaScript bridge. URLs and network errors are never logged. */
+/** Only explicit bounded upload chunks cross the bridge. URLs and network errors are never logged. */
 @CapacitorPlugin(name = "MiniqFiles")
 public class MiniqFilesPlugin extends Plugin {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -188,6 +189,25 @@ public class MiniqFilesPlugin extends Plugin {
                 String status = uploads.upload(operation, (received, total) -> notifyListeners("progress",
                     new JSObject().put("id", operation.id).put("received", received).put("total", total)));
                 call.resolve(new JSObject().put("status", status));
+            } catch (IOException error) { call.reject(error.getMessage()); }
+        });
+    }
+
+    @PluginMethod
+    public synchronized void readUploadChunk(PluginCall call) {
+        if (destroyed || uploads == null) { call.reject("文件上传缓存不可用"); return; }
+        String fileId = call.getString("fileId");
+        long offset;
+        int length;
+        try {
+            offset = MiniqUploadFiles.chunkInteger(call.getData().opt("offset"), MiniqUploadFiles.MAX_SAFE_INTEGER);
+            length = (int) MiniqUploadFiles.chunkInteger(call.getData().opt("length"), MiniqUploadFiles.MAX_CHUNK_BYTES);
+            if (!MiniqUploadFiles.isId(fileId) || length < 1) throw new IOException("上传缓存分块参数无效");
+        } catch (IOException error) { call.reject(error.getMessage()); return; }
+        uploadWorker.execute(() -> {
+            try {
+                byte[] bytes = uploads.readUploadChunk(fileId, offset, length);
+                call.resolve(new JSObject().put("dataBase64", Base64.encodeToString(bytes, Base64.NO_WRAP)));
             } catch (IOException error) { call.reject(error.getMessage()); }
         });
     }

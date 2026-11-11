@@ -102,7 +102,7 @@ pub use router::{
 pub use scheduled_task_memory::ScheduledTaskMemoryWriteTool;
 pub use search::{FileGlobTool, FileGrepTool};
 pub use shell::{ShellBatchTool, ShellRunTool};
-pub use skill::SkillReadTool;
+pub use skill::{SkillReadTool, SkillSearchTool};
 pub use tasks::{TaskCreateTool, TaskGetTool, TaskItemUpdateTool, TaskListTool, TaskManager};
 pub use visual::ViewImageTool;
 pub use web::WebFetchTool;
@@ -130,6 +130,7 @@ pub fn default_router() -> ToolRouter {
         std::sync::Arc::new(GitDiffTool),
         std::sync::Arc::new(WebFetchTool),
         std::sync::Arc::new(WebSearchTool),
+        std::sync::Arc::new(SkillSearchTool),
         std::sync::Arc::new(SkillReadTool),
         std::sync::Arc::new(DocReadTool),
         std::sync::Arc::new(DocWriteTool),

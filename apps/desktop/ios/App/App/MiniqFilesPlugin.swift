@@ -105,6 +105,7 @@ public class MiniqFilesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "pickUpload", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "upload", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readUploadChunk", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "releaseUpload", returnType: CAPPluginReturnPromise),
     ]
     private var active: FileDownload?
@@ -177,6 +178,23 @@ public class MiniqFilesPlugin: CAPPlugin, CAPBridgedPlugin {
         })
         uploads[id] = upload
         upload.start(url: url)
+    }
+
+    @objc func readUploadChunk(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let fileID = MiniqUploadValidation.identifier(call.getString("fileId")),
+                let offset = MiniqUploadValidation.chunkInteger(call.options["offset"], maximum: MiniqUploadCache.maximumSafeInteger),
+                let length = MiniqUploadValidation.chunkInteger(call.options["length"], maximum: Int64(MiniqUploadCache.maximumChunkBytes)),
+                length >= 1
+            else { call.reject("上传缓存分块参数无效"); return }
+            guard let cache = self.uploadCache else { call.reject("上传缓存不可用，请重新选择文件"); return }
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let bytes = try cache.readUploadChunk(fileID, offset: offset, length: Int(length))
+                    call.resolve(["dataBase64": bytes.base64EncodedString()])
+                } catch { call.reject("无法读取上传缓存分块，缓存已释放或分块超出文件范围") }
+            }
+        }
     }
 
     @objc func releaseUpload(_ call: CAPPluginCall) {

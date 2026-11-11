@@ -40,10 +40,9 @@ pub fn build(state: &AppState, input: TurnContextInput<'_>) -> ContextState {
     let settings = instruction_settings(state);
     let mut context = ContextState::new();
 
-    context.set(SectionId::Core, crate::turn::SYSTEM_PROMPT);
     context.set(
-        SectionId::ExecutionPolicy,
-        crate::parallel_policy::PARALLEL_POLICY,
+        SectionId::Core,
+        crate::system_prompt::build(input.workspace_path, &state.router.specs()),
     );
     context.set(
         SectionId::Runtime,
@@ -274,6 +273,20 @@ mod tests {
         let roots = vec![temp.path().to_string_lossy().into_owned()];
         let context = build(&state, input(temp.path(), &roots));
         assert!(!context.contains(SectionId::ProjectInstructions));
+    }
+
+    #[test]
+    fn base_prompt_is_miniq_without_the_retired_execution_policy() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = state();
+        let roots = vec![temp.path().to_string_lossy().into_owned()];
+        let context = build(&state, input(temp.path(), &roots));
+        assert!(context
+            .get(SectionId::Core)
+            .unwrap()
+            .body()
+            .starts_with("You are a coding assistant running inside miniQ,"));
+        assert!(!context.contains(SectionId::ExecutionPolicy));
     }
 
     #[test]

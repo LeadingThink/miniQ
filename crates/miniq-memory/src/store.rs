@@ -198,6 +198,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0034_scheduled_task_model",
         include_str!("../../../migrations/0034_scheduled_task_model.sql"),
     ),
+    (
+        "0035_interim_messages",
+        include_str!("../../../migrations/0035_interim_messages.sql"),
+    ),
 ];
 
 #[cfg(test)]

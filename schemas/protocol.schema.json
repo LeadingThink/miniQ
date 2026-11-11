@@ -537,6 +537,7 @@
       "AssistantMessageKind": {
         "enum": [
           "commentary",
+          "interim",
           "final",
           "interrupted"
         ],
@@ -3278,6 +3279,7 @@
       "AssistantMessageKind": {
         "enum": [
           "commentary",
+          "interim",
           "final",
           "interrupted"
         ],

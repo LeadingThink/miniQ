@@ -177,6 +177,10 @@ impl<'a> ToolHistoryExecutor<'a> {
 
 #[async_trait]
 impl ToolExecutor for ToolHistoryExecutor<'_> {
+    fn should_verify_completion(&self) -> bool {
+        self.inner.should_verify_completion()
+    }
+
     fn specs(&self) -> Vec<ToolSpec> {
         self.specs_for(&TurnToolCtx { step: 0 })
     }

@@ -23,7 +23,7 @@ mod tool_batch;
 mod tool_history;
 mod visual_history;
 
-pub use checkpoint::{CheckpointStore, TurnCheckpoint};
+pub use checkpoint::{CheckpointStore, InterimKind, TurnCheckpoint};
 
 pub use context::{
     compact_history, estimate_request_tokens, estimate_text_tokens, estimate_tokens,
@@ -163,6 +163,12 @@ pub trait ToolExecutor: Send + Sync {
         self.specs()
     }
 
+    /// Enable semantic completion review only for an explicit task owner.
+    /// Ordinary tool conversations finish when the model stops calling tools.
+    fn should_verify_completion(&self) -> bool {
+        false
+    }
+
     /// Parallel calls can overlap adjacent parallel calls. Sequential calls
     /// are barriers: all preceding calls finish before one starts, and later
     /// calls start only after it finishes. Unknown/mutating tools stay serial.
@@ -274,21 +280,20 @@ pub fn effective_context_policy(
 ) -> ContextPolicy {
     let mut policy = configured.clone();
     if let Some(context_window) = capabilities.max_context_tokens {
-        let output_reserve = capabilities.max_output_tokens.unwrap_or(16_384);
-        let safety_margin = (context_window / 20).max(1_024);
-        let provider_input_limit = context_window
-            .saturating_sub(output_reserve)
-            .saturating_sub(safety_margin) as usize;
-        if provider_input_limit > 0 {
+        // Match Codex's model-derived default: compact at 90% of the raw
+        // context window. The advertised output limit is a maximum completion
+        // ceiling, not an input reservation; subtracting it here can trigger
+        // compaction around 50% for models with large output limits.
+        let provider_compaction_limit =
+            usize::try_from(u64::from(context_window).saturating_mul(9) / 10).unwrap_or(usize::MAX);
+        if provider_compaction_limit > 0 {
             // The built-in 64k value is a fallback for providers that do not
-            // report a window. Once a provider reports a verified capacity,
-            // use it instead of forcing every model through the fallback
-            // compaction path. An explicit fixed policy remains a
+            // report a window. An explicit fixed policy remains a
             // caller-owned ceiling.
             policy.soft_limit_tokens = if configured.auto_limit {
-                provider_input_limit
+                provider_compaction_limit
             } else {
-                policy.soft_limit_tokens.min(provider_input_limit)
+                policy.soft_limit_tokens.min(provider_compaction_limit)
             };
         }
     }
@@ -467,7 +472,8 @@ async fn run_turn_inner(
                         )
                     }))
                 .then_some(
-                    (context_policy.soft_limit_tokens.saturating_mul(4) / 5)
+                    context_policy
+                        .soft_limit_tokens
                         .min(u32::MAX as usize)
                         .max(1) as u32,
                 ),
@@ -725,6 +731,7 @@ async fn run_turn_inner(
                 && limits.verify_completion
                 && limits.purpose == miniq_models::ModelCallPurpose::Task
                 && completion_check.tools_executed
+                && executor.should_verify_completion()
             {
                 instruction = completion_check
                     .instruction(
@@ -756,7 +763,9 @@ async fn run_turn_inner(
                 let instruction = ChatMessage::user(instruction);
                 state.history.push(instruction.clone());
                 state.appended.push(instruction);
-                state.commit_interim(limits, &events).await?;
+                state
+                    .commit_interim(limits, &events, InterimKind::Continuation)
+                    .await?;
                 state.save(limits, false).await?;
                 continue;
             }
@@ -808,7 +817,9 @@ async fn run_turn_inner(
                 .collect();
             state.history.extend(warnings.iter().cloned());
             state.appended.extend(warnings);
-            state.commit_interim(limits, &events).await?;
+            state
+                .commit_interim(limits, &events, InterimKind::Commentary)
+                .await?;
             state.save(limits, false).await?;
             continue;
         }
@@ -827,7 +838,9 @@ async fn run_turn_inner(
                 .iter()
                 .map(|call| tool_batch::unfinished(call, false)),
         );
-        state.commit_interim(limits, &events).await?;
+        state
+            .commit_interim(limits, &events, InterimKind::Commentary)
+            .await?;
         state.history.truncate(base);
         tool_batch::execute(executor, &tool_calls, state, limits, &cancel).await?;
         completion_check.tools_executed = true;
@@ -1355,7 +1368,16 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(provider.requests.lock().unwrap()[0].max_output_tokens, None);
+        let requests = provider.requests.lock().unwrap();
+        assert_eq!(requests[0].max_output_tokens, None);
+        let expected_threshold = 28_800usize.saturating_sub(response_language::token_overhead(
+            &[ChatMessage::user("work")],
+            miniq_models::ModelCallPurpose::Task,
+        ));
+        assert_eq!(
+            requests[0].context_compact_threshold,
+            Some(expected_threshold as u32)
+        );
     }
 
     #[test]
@@ -1367,7 +1389,7 @@ mod tests {
         };
         assert_eq!(
             effective_context_policy(&ContextPolicy::default(), &capabilities).soft_limit_tokens,
-            822_000
+            900_000
         );
         let configured = ContextPolicy {
             auto_limit: false,

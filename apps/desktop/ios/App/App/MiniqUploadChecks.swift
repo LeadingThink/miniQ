@@ -26,6 +26,8 @@ enum MiniqUploadChecks {
         defer { try? FileManager.default.removeItem(at: root) }
         try validation()
         try cacheOwnership(root)
+        try chunkReads(root)
+        try chunkCleanupRaces(root)
         try byteLimitsAndCancellation(root)
         try staleCleanup(root)
         try uploadResponses(root)
@@ -110,6 +112,82 @@ enum MiniqUploadChecks {
         cache.release([emptyFile.id])
     }
 
+    private static func chunkReads(_ root: URL) throws {
+        let source = root.appendingPathComponent("chunk-original")
+        let bytes = Data((0..<524_301).map { UInt8(truncatingIfNeeded: $0 &* 31) })
+        try bytes.write(to: source)
+        let cache = try MiniqUploadCache(baseDirectory: root)
+        let file = try cache.copy(source: source, name: "chunk", cancellation: MiniqUploadCancellation())
+        try FileManager.default.removeItem(at: source)
+        for (offset, length) in [(0, 1), (65_535, 262_144), (bytes.count - 17, 17)] {
+            let chunk = try cache.readUploadChunk(file.id, offset: Int64(offset), length: length)
+            try expect(chunk == bytes.subdata(in: offset..<(offset + length)), "exact bounded snapshot bytes without original")
+            try expect(try Data(contentsOf: file.url) == bytes, "chunk does not truncate private snapshot")
+        }
+        for offset in [Int64(-1), MiniqUploadCache.maximumSafeInteger + 1, Int64.max, Int64(bytes.count), Int64(bytes.count + 1)] {
+            try fails({ _ = try cache.readUploadChunk(file.id, offset: offset, length: 1) }, "invalid offset or EOF rejects")
+        }
+        for length in [-1, 0, 262_145, Int.max] {
+            try fails({ _ = try cache.readUploadChunk(file.id, offset: 0, length: length) }, "invalid chunk length rejects")
+        }
+        try fails({ _ = try cache.readUploadChunk(file.id, offset: Int64(bytes.count - 1), length: 2) }, "no short EOF chunk")
+        let foreign = try MiniqUploadCache(baseDirectory: root)
+        try fails({ _ = try foreign.readUploadChunk(file.id, offset: 0, length: 1) }, "foreign cache cannot read chunk")
+        for id in [UUID().uuidString.lowercased(), file.url.path, "../outside"] {
+            try fails({ _ = try cache.readUploadChunk(id, offset: 0, length: 1) }, "only registered opaque IDs can read")
+        }
+        for value in [true, "1", -1, 0.5, Double.nan, Double.infinity, Double(MiniqUploadCache.maximumSafeInteger + 1)] as [Any] {
+            try expect(MiniqUploadValidation.chunkInteger(value, maximum: MiniqUploadCache.maximumSafeInteger) == nil,
+                "bridge rejects coercion and unsafe integers")
+        }
+        try expect(MiniqUploadValidation.chunkInteger(nil, maximum: MiniqUploadCache.maximumSafeInteger) == nil, "missing offset rejects")
+        for value in [Int64(0), MiniqUploadCache.maximumSafeInteger] {
+            try expect(MiniqUploadValidation.chunkInteger(NSNumber(value: value), maximum: MiniqUploadCache.maximumSafeInteger) == value,
+                "safe integer endpoints accepted")
+        }
+        try expect(MiniqUploadValidation.chunkInteger(262_145, maximum: Int64(MiniqUploadCache.maximumChunkBytes)) == nil,
+            "oversize bridge length rejects")
+        try Data().write(to: source)
+        let empty = try cache.copy(source: source, name: "empty", cancellation: MiniqUploadCancellation())
+        try fails({ _ = try cache.readUploadChunk(empty.id, offset: 0, length: 1) }, "empty file has no readable chunk")
+        cache.release([empty.id])
+        let writer = try FileHandle(forWritingTo: file.url)
+        try writer.truncate(atOffset: 1)
+        try writer.close()
+        try fails({ _ = try cache.readUploadChunk(file.id, offset: 0, length: 1) }, "changed cache length rejects")
+        cache.release([file.id])
+        try expect(!FileManager.default.fileExists(atPath: file.url.path), "all failed range readers are released")
+        try fails({ _ = try cache.readUploadChunk(file.id, offset: 0, length: 1) }, "released cache rejects chunk")
+    }
+
+    private final class ChunkOutcome {
+        let lock = NSLock()
+        var bytes: Data?
+    }
+
+    private static func chunkCleanupRaces(_ root: URL) throws {
+        let source = root.appendingPathComponent("chunk-race-original")
+        let bytes = Data(repeating: 0xa5, count: MiniqUploadCache.maximumChunkBytes)
+        try bytes.write(to: source)
+        let cache = try MiniqUploadCache(baseDirectory: root)
+        for _ in 0..<20 {
+            let file = try cache.copy(source: source, name: "race", cancellation: MiniqUploadCancellation())
+            let outcome = ChunkOutcome()
+            let done = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = try? cache.readUploadChunk(file.id, offset: 0, length: bytes.count)
+                outcome.lock.lock(); outcome.bytes = result; outcome.lock.unlock()
+                done.signal()
+            }
+            cache.release([file.id])
+            try expect(done.wait(timeout: .now() + 5) == .success, "chunk release race completes")
+            outcome.lock.lock(); let result = outcome.bytes; outcome.lock.unlock()
+            try expect(result == nil || result == bytes, "release race returns full chunk or rejection")
+            try expect(!FileManager.default.fileExists(atPath: file.url.path), "release waits for chunk reader")
+            try fails({ _ = try cache.readUploadChunk(file.id, offset: 0, length: 1) }, "release rejects subsequent readers")
+        }
+    }
+
     private static func byteLimitsAndCancellation(_ root: URL) throws {
         let source = root.appendingPathComponent("200MiB-synthetic")
         _ = FileManager.default.createFile(atPath: source.path, contents: nil)
@@ -119,6 +197,10 @@ enum MiniqUploadChecks {
         let cache = try MiniqUploadCache(baseDirectory: root)
         let file = try cache.copy(source: source, name: "200MiB.bin", cancellation: MiniqUploadCancellation())
         try expect(file.size == MiniqUploadCache.maximumBytes, "exact 200MiB accepted")
+        let lastChunk = try cache.readUploadChunk(file.id,
+            offset: file.size - Int64(MiniqUploadCache.maximumChunkBytes), length: MiniqUploadCache.maximumChunkBytes)
+        try expect(lastChunk.count == MiniqUploadCache.maximumChunkBytes && lastChunk.allSatisfy { $0 == 0 },
+            "large snapshot only reads requested bounded chunk")
         let reader = try FileHandle(forReadingFrom: file.url)
         var read: Int64 = 0
         var hash = SHA256()

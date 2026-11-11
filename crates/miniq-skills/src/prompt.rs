@@ -200,7 +200,7 @@ pub fn shortlist_block(shortlist: &[Skill], enabled_total: usize) -> String {
             end,
             &format!(
                 "\n{shortlist}/{enabled} skills match this request; call `skill_read` with an exact \
-                 name. Other skills exist and can be found via the skill center.",
+                 name. Use `skill_search` to find other skills.",
                 shortlist = shortlist.len(),
                 enabled = enabled_total
             )
