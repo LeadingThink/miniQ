@@ -1,1 +1,4 @@
 * text=auto eol=lf
+
+# Preserve the complete copied behavioral text, including upstream trailing spaces.
+crates/miniq-daemon/prompts/system-prompt.md whitespace=-blank-at-eol

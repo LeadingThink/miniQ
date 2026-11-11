@@ -10,8 +10,7 @@ scripts/
 !/scripts/
 /scripts/*
 !/scripts/install-cli.node-test.mjs
-!/scripts/pi-prompt.mjs
-!/scripts/pi-prompt.node-test.mjs
+!/scripts/system-prompt.node-test.mjs
 !/scripts/test-install-cli.ps1
 !/scripts/install-cli.sh
 !/scripts/install-cli.ps1

@@ -1,34 +1,10 @@
-//! PI's upstream prompt, with runtime tool bindings and working directory.
-//! See ../prompts/pi/README.md for provenance and generation.
+//! miniQ's complete, standalone base prompt.
+//! See ../prompts/README.md for provenance and verification.
 
-use std::path::Path;
+use miniq_models::{ChatMessage, ChatRole};
 
-use miniq_models::{ChatMessage, ChatRole, ToolSpec};
-
-const TEMPLATE: &str = include_str!("../prompts/pi/system-prompt.txt");
-const TOOL_SLOT: &str = "- __MINIQ_TOOL_NAME__: __MINIQ_TOOL_DESCRIPTION__";
-const CORE_TOOLS: [&str; 4] = ["file_read", "shell_run", "file_edit", "file_write"];
+pub(crate) const SYSTEM_PROMPT: &str = include_str!("../prompts/system-prompt.md");
 const RETIRED_POLICY_HEADER: &str = "miniQ execution policy: independent work first";
-
-pub(crate) fn build(workspace: &Path, tools: &[ToolSpec]) -> String {
-    let lines = CORE_TOOLS
-        .iter()
-        .filter_map(|name| tools.iter().find(|tool| tool.name == *name))
-        .map(|tool| format!("- {}: {}", tool.name, tool.description))
-        .collect::<Vec<_>>()
-        .join("\n");
-    TEMPLATE
-        .replacen(
-            TOOL_SLOT,
-            if lines.is_empty() { "(none)" } else { &lines },
-            1,
-        )
-        .replacen(
-            "__MINIQ_CWD__",
-            &workspace.to_string_lossy().replace('\\', "/"),
-            1,
-        )
-}
 
 /// A resumed child receives the current prompt without losing its task evidence.
 pub(crate) fn refresh_child_context(history: &mut Vec<ChatMessage>, current: String) {
@@ -46,21 +22,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn runtime_bindings_keep_miniq_wording_and_normalize_only_the_directory() {
-        let tools = vec![ToolSpec {
-            name: "file_read".into(),
-            description: "Read files".into(),
-            parameters: serde_json::json!({"type":"object"}),
-        }];
-        let prompt = build(Path::new("D:\\a $& directory\\project"), &tools);
-        assert!(prompt.starts_with("You are an AI coworker running inside miniQ,"));
-        assert!(prompt.contains(
-            "<tools>\n- file_read: Read files\n\nAdditional tools may be available.\n</tools>"
-        ));
-        assert!(prompt.contains("<cwd>\nD:/a $& directory/project\n</cwd>"));
-        assert!(!prompt.contains("__MINIQ_"));
-        assert!(!prompt.contains("Pi documentation"));
-        assert!(!prompt.contains("miniQ execution policy"));
+    fn embedded_prompt_already_contains_miniq_identity_and_runtime_bindings() {
+        assert!(SYSTEM_PROMPT.starts_with("You are miniQ,"));
+        assert!(SYSTEM_PROMPT.contains("# Autonomy and persistence"));
+        assert_eq!(SYSTEM_PROMPT.matches("<miniq_runtime_bindings>").count(), 1);
+        assert!(SYSTEM_PROMPT.contains("Use shell_run for shell commands"));
+        assert!(!SYSTEM_PROMPT.contains("You are Codex"));
+        assert!(!SYSTEM_PROMPT.contains("an agent based on GPT-6"));
     }
 
     #[test]
@@ -72,7 +40,7 @@ mod tests {
             ChatMessage::user("Review all files"),
             ChatMessage::tool_result("read-1", "Complete file evidence"),
         ];
-        let current = build(Path::new("/workspace"), &[]);
+        let current = SYSTEM_PROMPT.to_string();
         refresh_child_context(&mut history, current.clone());
         refresh_child_context(&mut history, current.clone());
         assert_eq!(history.len(), 4);

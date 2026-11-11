@@ -37,9 +37,9 @@ async fn background_cohort_exceeds_old_count_limits_and_preserves_each_result() 
     assert!(provider.requests.lock().await.iter().all(|request| {
         request.messages.iter().any(|message| {
             message.role == miniq_models::ChatRole::System
-                && message
-                    .content
-                    .starts_with("You are an AI coworker running inside miniQ,")
+                && message.content.starts_with("You are miniQ,")
+                && message.content.contains("# Autonomy and persistence")
+                && message.content.contains("<miniq_runtime_bindings>")
                 && !message.content.contains("miniQ execution policy")
         })
     }));

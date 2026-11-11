@@ -55,7 +55,7 @@ jobs:
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Test agent prompt template
-        run: node --test scripts/pi-prompt.node-test.mjs
+        run: node --test scripts/system-prompt.node-test.mjs
       - name: Install frontend dependencies
         working-directory: apps/desktop
         run: npm ci

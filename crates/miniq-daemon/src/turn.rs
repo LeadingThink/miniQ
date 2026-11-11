@@ -822,10 +822,12 @@ mod tests {
     }
 
     #[test]
-    fn base_prompt_uses_upstream_pi_wording() {
-        let prompt = crate::system_prompt::build(Path::new("/workspace"), &[]);
-        assert!(prompt.starts_with("You are an AI coworker running inside miniQ,"));
-        assert!(prompt.contains("- Be concise in your responses"));
+    fn base_prompt_uses_complete_miniq_instructions() {
+        let prompt = crate::system_prompt::SYSTEM_PROMPT;
+        assert!(prompt.starts_with("You are miniQ,"));
+        assert!(prompt.contains("# When to ask the user for permission"));
+        assert!(prompt.contains("# Autonomy and persistence"));
+        assert!(prompt.contains("## How to use plugins"));
         assert!(!prompt.contains("miniQ execution policy"));
     }
 

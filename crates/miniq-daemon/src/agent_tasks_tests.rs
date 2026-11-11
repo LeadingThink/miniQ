@@ -241,15 +241,14 @@ async fn foreground_agent_completes_and_resumes_with_preserved_history() {
                 .iter()
                 .filter(|message| {
                     message.role == miniq_models::ChatRole::System
-                        && message
-                            .content
-                            .starts_with("You are an AI coworker running inside miniQ,")
+                        && message.content.starts_with("You are miniQ,")
                 })
                 .count(),
             1
         );
         let policy = &request.messages[0].content;
-        assert!(policy.contains("- Be concise in your responses"));
+        assert!(policy.contains("# Autonomy and persistence"));
+        assert_eq!(policy.matches("<miniq_runtime_bindings>").count(), 1);
         assert!(!policy.contains("miniQ execution policy"));
     }
     assert!(requests[1]

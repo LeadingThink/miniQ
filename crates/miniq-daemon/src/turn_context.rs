@@ -40,10 +40,7 @@ pub fn build(state: &AppState, input: TurnContextInput<'_>) -> ContextState {
     let settings = instruction_settings(state);
     let mut context = ContextState::new();
 
-    context.set(
-        SectionId::Core,
-        crate::system_prompt::build(input.workspace_path, &state.router.specs()),
-    );
+    context.set(SectionId::Core, crate::system_prompt::SYSTEM_PROMPT);
     context.set(
         SectionId::Runtime,
         crate::turn::runtime_context(input.workspace_path),
@@ -276,16 +273,16 @@ mod tests {
     }
 
     #[test]
-    fn base_prompt_is_miniq_without_the_retired_execution_policy() {
+    fn base_prompt_uses_the_complete_standalone_miniq_file() {
         let temp = tempfile::tempdir().unwrap();
         let state = state();
         let roots = vec![temp.path().to_string_lossy().into_owned()];
         let context = build(&state, input(temp.path(), &roots));
-        assert!(context
-            .get(SectionId::Core)
-            .unwrap()
-            .body()
-            .starts_with("You are an AI coworker running inside miniQ,"));
+        let core = context.get(SectionId::Core).unwrap().body();
+        assert_eq!(core, crate::system_prompt::SYSTEM_PROMPT);
+        assert!(core.starts_with("You are miniQ,"));
+        assert!(core.contains("# Autonomy and persistence"));
+        assert!(core.contains("<miniq_runtime_bindings>"));
         assert!(!context.contains(SectionId::ExecutionPolicy));
     }
 
@@ -417,6 +414,11 @@ mod tests {
         let history = history(&context, None, &[], None);
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].role, ChatRole::System);
+        let prompt = &history[0].content;
+        assert_eq!(prompt.matches("# Autonomy and persistence").count(), 1);
+        assert_eq!(prompt.matches("<miniq_runtime_bindings>").count(), 1);
+        assert!(prompt.contains("Runtime environment:"));
+        assert!(prompt.contains("Host app file references:"));
     }
 
     #[test]
