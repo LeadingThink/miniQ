@@ -34,7 +34,10 @@ vm.runInContext(script('system-prompt.ts'), context, {
 
 function rebrandPrompt(prompt) {
   return prompt
-    .replace('You are a coding assistant running inside pi,', 'You are a coding assistant running inside miniQ,')
+    .replace(
+      'You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.',
+      'You are an AI coworker running inside miniQ, a local agent harness. Help users with files, commands, code, web, desktop, media, memory, and delegated work.',
+    )
     .replace('Pi documentation', 'miniQ documentation')
     .replaceAll('When reading pi docs or examples', 'When reading miniQ docs or examples')
     .replaceAll('__PI_TOOL_NAME__', '__MINIQ_TOOL_NAME__')
@@ -42,7 +45,7 @@ function rebrandPrompt(prompt) {
     .replaceAll('__PI_CWD__', '__MINIQ_CWD__')
     .replace(
       '- Show file paths clearly when working with files',
-      '- Show file paths clearly when working with files\n- Use tool_search for missing tools and skill_search for missing skills',
+      '- Show file paths clearly when working with files\n- Other tools cover web, browser, desktop, media, memory, agents, and tasks; use them when the request needs them\n- Use tool_search for missing tools and skill_search for missing skills',
     );
 }
 

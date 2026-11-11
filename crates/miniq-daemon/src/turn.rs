@@ -824,7 +824,7 @@ mod tests {
     #[test]
     fn base_prompt_uses_upstream_pi_wording() {
         let prompt = crate::system_prompt::build(Path::new("/workspace"), &[]);
-        assert!(prompt.starts_with("You are a coding assistant running inside miniQ,"));
+        assert!(prompt.starts_with("You are an AI coworker running inside miniQ,"));
         assert!(prompt.contains("- Be concise in your responses"));
         assert!(!prompt.contains("miniQ execution policy"));
     }

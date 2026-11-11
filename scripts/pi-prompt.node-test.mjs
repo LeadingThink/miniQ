@@ -7,7 +7,8 @@ const template = readFileSync(new URL('system-prompt.txt', piDirectory), 'utf8')
 
 test('the embedded template keeps PI structure with miniQ branding', () => {
   assert.equal(template, miniqTemplate());
-  assert.match(template, /You are a coding assistant running inside miniQ,/);
+  assert.match(template, /You are an AI coworker running inside miniQ,/);
+  assert.match(template, /Other tools cover web, browser, desktop, media, memory, agents, and tasks/);
   assert.match(template, /Use tool_search for missing tools and skill_search for missing skills/);
   assert.doesNotMatch(template, /\bPi documentation\b|\brunning inside pi\b|github\.com\/.*\/pi\b/i);
 });

@@ -285,7 +285,7 @@ mod tests {
             .get(SectionId::Core)
             .unwrap()
             .body()
-            .starts_with("You are a coding assistant running inside miniQ,"));
+            .starts_with("You are an AI coworker running inside miniQ,"));
         assert!(!context.contains(SectionId::ExecutionPolicy));
     }
 

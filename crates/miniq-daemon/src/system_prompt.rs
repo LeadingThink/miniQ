@@ -53,7 +53,7 @@ mod tests {
             parameters: serde_json::json!({"type":"object"}),
         }];
         let prompt = build(Path::new("D:\\a $& directory\\project"), &tools);
-        assert!(prompt.starts_with("You are a coding assistant running inside miniQ,"));
+        assert!(prompt.starts_with("You are an AI coworker running inside miniQ,"));
         assert!(prompt.contains(
             "<tools>\n- file_read: Read files\n\nAdditional tools may be available.\n</tools>"
         ));

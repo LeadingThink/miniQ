@@ -110,10 +110,9 @@ const DISTILLED: &str = "---\nname: inventory-report\ndescription: 盘点目录�
 async fn full_learning_loop() {
     // Scripted provider turns, in order:
     // 1-2: the original task (glob -> final text)
-    // 3:   completion review -> finished
-    // 4:   distillation -> SKILL.md
-    // 5:   second session turn (must see the skill advertised)
-    // 6:   refinement -> updated SKILL.md v2
+    // 3:   distillation -> SKILL.md
+    // 4:   second session turn (must see the skill advertised)
+    // 5:   refinement -> updated SKILL.md v2
     let updated = DISTILLED.replace("version: 1", "version: 2");
     let provider = Arc::new(MockProvider::new(vec![
         vec![ChatDelta::ToolCall(ToolCallRequest {
@@ -122,11 +121,6 @@ async fn full_learning_loop() {
             arguments: json!({"pattern": "**/*"}),
         })],
         vec![ChatDelta::Text("盘点完成".into())],
-        vec![ChatDelta::ToolCall(ToolCallRequest {
-            id: "completion-review".into(),
-            name: "report_turn_completion".into(),
-            arguments: json!({"status":"finished","reason":"Inventory complete."}),
-        })],
         vec![ChatDelta::Text(DISTILLED.into())],
         vec![ChatDelta::Text("ok".into())],
         vec![ChatDelta::Text(updated.clone())],
@@ -169,9 +163,9 @@ async fn full_learning_loop() {
         let requests = provider.requests.lock().unwrap();
         assert_eq!(
             requests[2].trace.purpose,
-            miniq_models::ModelCallPurpose::CompletionReview
+            miniq_models::ModelCallPurpose::SkillLearning
         );
-        let distill_user = &requests[3].messages[1].content;
+        let distill_user = &requests[2].messages[1].content;
         assert!(distill_user.contains("file_glob"));
         assert!(distill_user.contains("盘点这个目录"));
     }
@@ -212,7 +206,7 @@ async fn full_learning_loop() {
     next_event_of(&mut ws, "turn_completed").await;
     {
         let requests = provider.requests.lock().unwrap();
-        let system = &requests[4].messages[0].content;
+        let system = &requests[3].messages[0].content;
         assert!(
             system.contains("inventory-report"),
             "learned skill must be advertised"
