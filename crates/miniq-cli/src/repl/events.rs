@@ -14,7 +14,7 @@ impl Repl {
                 self.phase = "Responding".into();
             }
             "message_created" if event["message"]["role"] == "assistant" => {
-                if event["message"]["assistantKind"] != "commentary" {
+                if crate::output::is_answer(&event["message"]) {
                     self.last_answer = event["message"]["content"]
                         .as_str()
                         .unwrap_or("")

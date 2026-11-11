@@ -3,6 +3,21 @@ use crate::client::test_fixture::{Fixture, Reply};
 use picker::Purpose;
 
 #[test]
+fn interim_events_and_snapshots_do_not_replace_the_final_answer() {
+    let mut repl = Repl::new("s", &Default::default());
+    repl.event(&json!({"type":"message_created","message":{
+        "role":"assistant","assistantKind":"interim","content":"still working"
+    }}));
+    assert!(repl.last_answer.is_empty());
+    repl.restore(&json!({"session":{"status":"idle"},"messages":[
+        {"role":"assistant","assistantKind":"final","content":"old answer"},
+        {"role":"user","content":"new question"},
+        {"role":"assistant","assistantKind":"interim","content":"still working"}
+    ]}));
+    assert!(repl.last_answer.is_empty());
+}
+
+#[test]
 fn mentions_attach_existing_files_only() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.rs"), "").unwrap();

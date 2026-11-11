@@ -236,7 +236,8 @@ impl Repl {
             .as_array()
             .into_iter()
             .flatten()
-            .rfind(|message| message["role"] == "assistant");
+            .rfind(|message| crate::output::is_answer(message) || message["role"] == "user")
+            .filter(|message| crate::output::is_answer(message));
         self.last_answer = last
             .and_then(|message| message["content"].as_str())
             .unwrap_or("")

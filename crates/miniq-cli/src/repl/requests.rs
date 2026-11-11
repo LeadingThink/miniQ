@@ -140,7 +140,7 @@ impl Request {
             Self::Fork { anchor, title } => {
                 let anchor = match anchor {
                     Some(anchor) => anchor,
-                    None => last_assistant(client, session).await?,
+                    None => crate::subcommands::latest_assistant(client, session).await?,
                 };
                 let mut params = json!({"sessionId":session,"anchorMessageId":anchor});
                 if !title.is_empty() {
@@ -175,27 +175,6 @@ pub async fn snapshot(client: &mut Client, session: &str) -> Result<Value> {
         .call("session.approval.get", json!({"sessionId":session}))
         .await?;
     Ok(snapshot)
-}
-
-async fn last_assistant(client: &mut Client, session: &str) -> Result<String> {
-    let mut params = json!({"sessionId":session,"limit":100});
-    loop {
-        let page = client.call("session.history", params.clone()).await?;
-        if let Some(id) = page["messages"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .rev()
-            .find(|message| message["role"] == "assistant")
-            .and_then(|message| message["id"].as_str())
-        {
-            return Ok(id.into());
-        }
-        let Some(cursor) = page.get("nextCursor").filter(|cursor| !cursor.is_null()) else {
-            bail!("nothing to fork yet: no assistant reply in this session");
-        };
-        params["before"] = cursor.clone();
-    }
 }
 
 async fn picker(

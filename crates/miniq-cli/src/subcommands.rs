@@ -632,22 +632,28 @@ pub async fn fork(
     Ok(0)
 }
 
-async fn latest_assistant(client: &mut Client, session: &str) -> Result<String> {
-    let history = client
-        .call("session.history", json!({"sessionId":session,"limit":100}))
-        .await
-        .context("read session history")?;
-    history["messages"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .rev()
-        .find(|message| message["role"] == "assistant")
-        .and_then(|message| message["id"].as_str())
-        .map(str::to_owned)
-        .ok_or_else(|| {
-            anyhow!("session has no assistant message to fork from; pass --at MESSAGE_ID")
-        })
+pub(crate) async fn latest_assistant(client: &mut Client, session: &str) -> Result<String> {
+    let mut params = json!({"sessionId":session,"limit":100});
+    loop {
+        let history = client
+            .call("session.history", params.clone())
+            .await
+            .context("read session history")?;
+        if let Some(id) = history["messages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .rev()
+            .find(|message| crate::output::is_answer(message))
+            .and_then(|message| message["id"].as_str())
+        {
+            return Ok(id.to_owned());
+        }
+        let Some(cursor) = history.get("nextCursor").filter(|cursor| !cursor.is_null()) else {
+            bail!("session has no assistant answer to fork from; pass --at MESSAGE_ID");
+        };
+        params["before"] = cursor.clone();
+    }
 }
 
 pub async fn rename(client: &mut Client, session: &str, title: &str, json: bool) -> Result<u8> {
@@ -668,6 +674,35 @@ pub async fn rename(client: &mut Client, session: &str, title: &str, json: bool)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn default_fork_skips_intermediate_messages_and_reads_older_pages() {
+        use crate::client::test_fixture::{Fixture, Reply};
+
+        let cursor = json!({"at":"2","id":"interim"});
+        let mut fixture = Fixture::new(vec![
+            (
+                "session.history",
+                Reply::Result(json!({"messages":[
+                {"id":"interim","role":"assistant","assistantKind":"interim"},
+                {"id":"commentary","role":"assistant","assistantKind":"commentary"}
+            ],"nextCursor":cursor})),
+            ),
+            (
+                "session.history",
+                Reply::Result(json!({"messages":[
+                {"id":"answer","role":"assistant","assistantKind":"final"}
+            ],"nextCursor":null})),
+            ),
+        ])
+        .await;
+        assert_eq!(
+            latest_assistant(&mut fixture.client, "s").await.unwrap(),
+            "answer"
+        );
+        let requests = fixture.finish().await;
+        assert_eq!(requests[1]["params"]["before"], cursor);
+    }
 
     #[test]
     fn unified_diff_marks_changes_and_colors_only_on_request() {

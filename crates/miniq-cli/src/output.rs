@@ -8,6 +8,14 @@ pub struct Output {
     pub error: Option<String>,
 }
 
+pub(crate) fn is_answer(message: &Value) -> bool {
+    message["role"] == "assistant"
+        && !matches!(
+            message["assistantKind"].as_str(),
+            Some("commentary" | "interim")
+        )
+}
+
 /// Untrusted model/file text must not inject terminal escape sequences.
 pub fn terminal_text(text: &str) -> String {
     text.chars()
@@ -36,10 +44,7 @@ impl Output {
         if kind == "turn_failed" {
             self.error = Some(event["error"].as_str().unwrap_or("task failed").to_owned());
         }
-        if kind == "message_created"
-            && event["message"]["role"] == "assistant"
-            && event["message"]["assistantKind"] != "commentary"
-        {
+        if kind == "message_created" && is_answer(&event["message"]) {
             self.final_text = event["message"]["content"]
                 .as_str()
                 .unwrap_or("")
@@ -170,5 +175,24 @@ mod tests {
             )
             .unwrap();
         assert_eq!(output.final_text, "final");
+    }
+
+    #[test]
+    fn intermediate_messages_never_become_final_output() {
+        let mut output = Output::new(false);
+        for kind in ["commentary", "interim"] {
+            output
+                .event(&json!({"type":"message_created","message":{
+                    "role":"assistant","assistantKind":kind,"content":"still working"
+                }}))
+                .unwrap();
+            assert!(output.final_text.is_empty());
+        }
+        output
+            .event(&json!({"type":"message_created","message":{
+                "role":"assistant","assistantKind":"final","content":"answer"
+            }}))
+            .unwrap();
+        assert_eq!(output.final_text, "answer");
     }
 }

@@ -112,10 +112,12 @@ async fn restore(
         .as_array()
         .into_iter()
         .flatten()
-        .rfind(|message| message["role"] == "assistant" || message["role"] == "user");
-    if let Some(message) = last.filter(|message| message["role"] == "assistant") {
-        output.final_text = message["content"].as_str().unwrap_or("").to_owned();
-    }
+        .rfind(|message| crate::output::is_answer(message) || message["role"] == "user");
+    output.final_text = last
+        .filter(|message| crate::output::is_answer(message))
+        .and_then(|message| message["content"].as_str())
+        .unwrap_or("")
+        .to_owned();
     let status = snapshot["session"]["status"]
         .as_str()
         .context("session status missing")?;
@@ -417,6 +419,27 @@ async fn choose_effort(client: &mut Client, state: &Value) -> Result<Option<Stri
 mod tests {
     use super::*;
     use crate::client::test_fixture::{Fixture, Reply};
+
+    #[tokio::test]
+    async fn restoring_a_paused_interim_does_not_publish_it_as_an_answer() {
+        let mut fixture = Fixture::new(Vec::new()).await;
+        let mut output = Output::new(false);
+        output.final_text = "stale answer".into();
+        restore(
+            &mut fixture.client,
+            "s",
+            false,
+            &mut output,
+            json!({"session":{"status":"idle"},"messages":[
+                {"role":"user","content":"question"},
+                {"role":"assistant","assistantKind":"interim","content":"partial"}
+            ]}),
+        )
+        .await
+        .unwrap();
+        assert!(output.final_text.is_empty());
+        fixture.finish().await;
+    }
 
     #[tokio::test]
     async fn models_command_changes_only_the_current_session() {
