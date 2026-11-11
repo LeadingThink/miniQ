@@ -54,6 +54,28 @@ export function verifyVersion(output) {
   if (!expected.test(output)) throw new Error("Prepared ripgrep executable has an unexpected version");
 }
 
+function extractArchive(archive, temporary, members, zipArchive) {
+  if (process.platform === "win32" && zipArchive) {
+    execFileSync("powershell.exe", [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+      "$ErrorActionPreference = 'Stop'; Expand-Archive -LiteralPath $env:MINIQ_RIPGREP_ARCHIVE " +
+        "-DestinationPath $env:MINIQ_RIPGREP_DEST -Force",
+    ], {
+      cwd: temporary,
+      env: {
+        ...process.env,
+        MINIQ_RIPGREP_ARCHIVE: archive,
+        MINIQ_RIPGREP_DEST: temporary,
+      },
+    });
+    return;
+  }
+  // Git for Windows treats an absolute `C:\\...` archive argument as a
+  // remote tar URL. Run from the temporary directory and pass a relative
+  // archive name so the same command works on every runner.
+  execFileSync("tar", ["-xf", basename(archive), "-C", ".", ...members], { cwd: temporary });
+}
+
 async function downloadArchive(url) {
   const temporary = mkdtempSync(join(tmpdir(), "miniq-ripgrep-download-"));
   const destination = join(temporary, "archive");
@@ -90,11 +112,8 @@ export function stageRipgrep({ bytes, release, tauriDirectory }) {
     const archive = join(temporary, release.archive);
     writeFileSync(archive, bytes);
     const members = [release.executable, ...licenseFiles];
-    // Git for Windows treats an absolute `C:\\...` archive argument as a
-    // remote tar URL. Run from the temporary directory and pass a relative
-    // archive name so the same command works on every runner.
-    execFileSync("tar", ["-xf", basename(archive), "-C", ".",
-      ...members.map(name => `${release.directory}/${name}`)], { cwd: temporary });
+    const zipArchive = bytes[0] === 0x50 && bytes[1] === 0x4b;
+    extractArchive(archive, temporary, members.map(name => `${release.directory}/${name}`), zipArchive);
     const binaryDirectory = join(tauriDirectory, "binaries");
     const licenseDirectory = join(tauriDirectory, "resources", "ripgrep");
     mkdirSync(binaryDirectory, { recursive: true });
