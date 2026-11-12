@@ -149,5 +149,7 @@ it.each([
   fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
   await screen.findByRole("textbox", { name: "模型 ID" });
   expect(document.querySelector("dialog.session-model-dialog") !== null).toBe(dialog);
-  expect(document.querySelector(".session-model-popover")?.closest(".session-model-controls") !== null).toBe(!dialog);
+  const panel = document.querySelector(".session-model-popover");
+  expect(panel?.closest(dialog ? ".session-model-dialog" : ".session-model-surface-portal")).toBeTruthy();
+  expect(panel?.closest(".session-model-controls")).toBeNull();
 });

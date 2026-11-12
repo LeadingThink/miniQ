@@ -13,6 +13,7 @@ afterEach(cleanup);
 it("limits hover interaction to the content grid and highlights the selected row", () => {
   const experienceCss = readFileSync("src/styles/experience.css", "utf8");
   const modelPopoverRule = experienceCss.match(/\.session-model-popover\s*\{[^}]+\}/)?.[0];
+  const modelSubmenuRule = experienceCss.match(/\.model-picker-submenu\s*\{[^}]+\}/)?.[0];
   const modelBodyRule = experienceCss.match(/\.model-picker-body\s*\{[^}]+\}/)?.[0];
   const modelResultsRule = experienceCss.match(/\.model-picker-results\s*\{[^}]+\}/)?.[0];
   const modelListRule = experienceCss.match(/\.model-picker-list\s*\{[^}]+\}/)?.[0];
@@ -24,6 +25,8 @@ it("limits hover interaction to the content grid and highlights the selected row
   const favoriteRule = experienceCss.match(/\.model-picker-favorite\s*\{[^}]+\}/)?.[0];
   const performanceRule = experienceCss.match(/\.model-performance\s*\{[^}]+\}/)?.[0];
   expect(modelPopoverRule).toContain("width: min(540px, calc(100vw - 32px));");
+  expect(modelPopoverRule).toContain("z-index: 1300;");
+  expect(modelSubmenuRule).toContain("z-index: 1300;");
   expect(modelBodyRule).toContain("grid-template-columns: 168px minmax(0, 1fr);");
   expect(modelBodyRule).toContain("height: min(336px, 46vh);");
   expect(modelBodyRule).not.toContain("min-height:");
@@ -86,6 +89,9 @@ it("opens the catalog at the current model and switches on click", async () => {
   expect((select as HTMLInputElement).value).toBe("");
 
   const list = screen.getByRole("listbox", { name: "会话模型列表" });
+  const panel = document.querySelector(".session-model-popover");
+  expect(panel?.closest(".session-model-surface-portal")).toBeTruthy();
+  expect(panel?.closest(".session-model-controls")).toBeNull();
   await waitFor(() => expect(screen.getByRole("option", { name: "gpt-5.6-sol" })).toBeTruthy());
   expect(list.className).toContain("model-picker-list");
   expect(

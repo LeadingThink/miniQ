@@ -206,6 +206,9 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
     new URL("./components/SessionModelSurface.css", import.meta.url),
     "utf8",
   );
+  expect(modelSurfaceCss).toContain(".session-model-dialog");
+  expect(modelSurfaceCss).toContain("position: fixed;");
+  expect(modelSurfaceCss).toContain(".session-model-dialog::backdrop");
   expect(modelSurfaceCss).toMatch(
     /\.session-model-dialog \.session-model-popover \.model-picker-row > button\s*\{[^}]*display:\s*flex;/,
   );

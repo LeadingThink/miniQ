@@ -427,7 +427,7 @@ export function SessionModelControls({
       </button>
       {!open && modelError}
       {open && (
-        <SessionModelSurface mobile={mobile} trigger={triggerRef} onClose={() => setOpen(false)}>
+        <SessionModelSurface mobile={mobile} trigger={triggerRef} placement={placement} onClose={() => setOpen(false)}>
           <div
             ref={panelRef}
             className="session-model-popover"

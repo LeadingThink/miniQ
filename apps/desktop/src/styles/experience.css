@@ -53,7 +53,7 @@
   position: absolute;
   bottom: calc(100% + 10px);
   left: 0;
-  z-index: 70;
+  z-index: 1300;
   width: min(540px, calc(100vw - 32px));
   box-sizing: border-box;
   max-height: calc(100dvh - 32px);
@@ -75,6 +75,15 @@
 .session-model-controls.popover-below .session-model-popover {
   top: calc(100% + 10px);
   bottom: auto;
+}
+.session-model-surface-portal {
+  position: fixed;
+  z-index: 1300;
+  pointer-events: none;
+}
+.session-model-surface-portal > .session-model-popover {
+  position: static;
+  pointer-events: auto;
 }
 .session-model-popover header,
 .session-model-popover footer {
@@ -315,7 +324,7 @@
   max-height: calc(100dvh - 16px);
   overflow-y: auto;
   position: fixed;
-  z-index: 90;
+  z-index: 1300;
   width: 164px;
   padding: 6px;
   border: 1px solid var(--border-strong);
