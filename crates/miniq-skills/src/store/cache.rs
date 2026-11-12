@@ -163,8 +163,14 @@ impl SkillCache {
     pub fn load(&mut self, dir: &Path) -> Option<Arc<ParsedSkill>> {
         let path = dir.join("SKILL.md");
         // Preserve the store's prohibition on symlinked skill directories.
-        let directory = std::fs::symlink_metadata(dir).ok();
-        if !directory.is_some_and(|metadata| metadata.is_dir()) {
+        // Check the actual spelling before cache lookup: on case-insensitive
+        // filesystems a case-only directory rename leaves SKILL.md unchanged.
+        let valid_directory = std::fs::symlink_metadata(dir)
+            .ok()
+            .filter(Metadata::is_dir)
+            .and_then(|_| std::fs::canonicalize(dir).ok())
+            .is_some_and(|canonical| canonical.file_name() == dir.file_name());
+        if !valid_directory {
             self.files.remove(&path);
             return None;
         }

@@ -47,6 +47,43 @@ fn exact_read_does_not_scan_or_load_unrelated_skills() {
 }
 
 #[test]
+fn exact_reads_reject_disk_name_case_mismatches() {
+    let data = tempfile::tempdir().unwrap();
+    let root = data.path().join("skills");
+    write_skill(&root, "alpha", "First skill", "first body");
+    std::fs::rename(root.join("alpha"), root.join("Alpha")).unwrap();
+    // Case-sensitive filesystems already reject the lowercase candidate.
+    if !root.join("alpha").is_dir() {
+        return;
+    }
+    let store = SkillStore::new(data.path(), Vec::new());
+    assert!(store.read(None, "alpha").is_err());
+    assert_eq!(counts(&store), (0, 0));
+    assert!(store.discover(None).is_empty());
+}
+
+#[test]
+fn case_only_directory_renames_invalidate_warm_exact_reads() {
+    let data = tempfile::tempdir().unwrap();
+    let root = data.path().join("skills");
+    write_skill(&root, "alpha", "First skill", "first body");
+    if !root.join("Alpha").is_dir() {
+        return;
+    }
+    let store = SkillStore::new(data.path(), Vec::new());
+    assert_eq!(store.read(None, "alpha").unwrap().body, "first body");
+    assert_eq!(store.discover(None).len(), 1);
+    let before = counts(&store);
+    std::fs::rename(root.join("alpha"), root.join("Alpha")).unwrap();
+    assert!(store.read(None, "alpha").is_err());
+    assert_eq!(counts(&store), before);
+    assert!(store.discover(None).is_empty());
+    std::fs::rename(root.join("Alpha"), root.join("alpha")).unwrap();
+    assert_eq!(store.read(None, "alpha").unwrap().body, "first body");
+    assert_eq!(store.discover(None).len(), 1);
+}
+
+#[test]
 fn workspace_indexes_preserve_shadowing_and_do_not_leak_between_projects() {
     let data = tempfile::tempdir().unwrap();
     let first = tempfile::tempdir().unwrap();
