@@ -116,7 +116,7 @@ impl DaemonAgentBridge {
             );
             self.state
                 .agent_tasks
-                .save_history(&record, &history)
+                .save_history(&record, history.clone())
                 .await?;
             let executor = SessionToolExecutor {
                 state: self.state.clone(),

@@ -197,7 +197,7 @@ async fn interrupted_agent_retains_checkpoint_and_holds_unsent_messages_without_
     manager
         .save_history(
             &record,
-            &[
+            vec![
                 ChatMessage::system("agent"),
                 ChatMessage::assistant("already verified"),
             ],

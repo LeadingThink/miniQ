@@ -24,6 +24,7 @@ pub mod memory;
 mod model_resolution;
 mod observed_provider;
 mod prompt_submissions;
+mod provider_cache;
 mod provider_media;
 pub mod remote;
 pub mod remote_policy;

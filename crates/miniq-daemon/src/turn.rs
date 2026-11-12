@@ -721,14 +721,6 @@ async fn execute_turn(
         Err(e) => return Err(TurnError::Fatal(e.to_string())),
     };
 
-    let reconcile_started = Instant::now();
-    executor
-        .reconcile_plan(&provider, &outcome, context_policy())
-        .await;
-    tracing::info!(
-        elapsed_ms = reconcile_started.elapsed().as_millis() as u64,
-        "turn plan reconciliation finished"
-    );
     let persistence_started = Instant::now();
 
     let message = Message {

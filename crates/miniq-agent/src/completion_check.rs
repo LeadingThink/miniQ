@@ -4,14 +4,14 @@
 use futures_util::StreamExt;
 use miniq_models::{
     ChatDelta, ChatMessage, ChatRole, CompletionRequest, ModelCallPurpose, ModelCallTrace,
-    ModelProvider, ProviderContext, ProviderError, ToolSpec,
+    ModelProvider, ProviderContext, ProviderError, ToolCallRequest, ToolSpec,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-use crate::AgentError;
+use crate::{AgentError, CompletionReview, ToolExecutor};
 
 const TOOL: &str = "report_turn_completion";
 const MAX_CONTINUATIONS: usize = 4;
@@ -42,6 +42,11 @@ struct Decision {
     reason: String,
 }
 
+struct ReviewedAnswer {
+    decision: Decision,
+    updates: Vec<ToolCallRequest>,
+}
+
 #[derive(Default)]
 pub(super) struct CompletionCheck {
     pub tools_executed: bool,
@@ -60,23 +65,50 @@ impl CompletionCheck {
         Ok(())
     }
 
-    /// Review failures preserve the existing answer. Observed providers record
-    /// the failed review separately, and no review can dispatch real tools.
+    /// Review failures preserve the answer. Bookkeeping runs only after a
+    /// complete response containing one valid decision, through a restricted executor.
     pub async fn instruction(
         &mut self,
         provider: &dyn ModelProvider,
+        executor: &dyn ToolExecutor,
         history: &[ChatMessage],
         text: &str,
         context: &Option<ProviderContext>,
         step: usize,
         cancel: &CancellationToken,
     ) -> Result<Option<String>, AgentError> {
-        let review = review(provider, history, text, context, step);
+        let bookkeeping = executor.completion_review();
+        // Bound the entire review, including audited plan updates and their
+        // lifecycle hooks. Neither bookkeeping nor a stalled model may keep a
+        // completed task running beyond this deadline or ignore cancellation.
+        let review = async {
+            let reviewed =
+                review(provider, history, text, context, step, bookkeeping.as_ref()).await?;
+            if let Some(bookkeeping) = &bookkeeping {
+                for call in &reviewed.updates {
+                    if cancel.is_cancelled() {
+                        return Err(AgentError::Cancelled);
+                    }
+                    match bookkeeping.executor.execute(call).await {
+                        Err(AgentError::Cancelled) => return Err(AgentError::Cancelled),
+                        Err(_) => {
+                            tracing::warn!("completion plan update failed; preserving progress")
+                        }
+                        Ok(output) if output.get("error").is_some() => {
+                            tracing::warn!("completion plan update rejected; preserving progress");
+                        }
+                        Ok(_) => {}
+                    }
+                }
+            }
+            Ok::<_, AgentError>(reviewed.decision)
+        };
         let decision = tokio::select! {
             biased;
             _ = cancel.cancelled() => return Err(AgentError::Cancelled),
             result = tokio::time::timeout(REVIEW_TIMEOUT, review) => match result {
                 Ok(Ok(decision)) => decision,
+                Ok(Err(AgentError::Cancelled)) => return Err(AgentError::Cancelled),
                 _ => {
                     tracing::warn!("turn completion review unavailable; preserving answer");
                     return Ok(None);
@@ -109,7 +141,8 @@ async fn review(
     text: &str,
     context: &Option<ProviderContext>,
     step: usize,
-) -> Result<Decision, ProviderError> {
+    bookkeeping: Option<&CompletionReview<'_>>,
+) -> Result<ReviewedAnswer, ProviderError> {
     let mut messages = history.to_vec();
     let mut answer = ChatMessage::assistant(text);
     answer.provider_context = context.clone();
@@ -121,19 +154,29 @@ async fn review(
         }
         _ => messages.insert(0, ChatMessage::system(POLICY)),
     }
-    messages.push(ChatMessage::user(
-        "Review the proposed final answer above. Report whether this turn can end now.",
-    ));
+    let mut instruction =
+        "Review the proposed final answer above. Report whether this turn can end now.".to_owned();
+    if let Some(bookkeeping) = bookkeeping {
+        instruction.push_str("\n\n");
+        instruction.push_str(&bookkeeping.instructions);
+    }
+    messages.push(ChatMessage::user(instruction));
+    let mut tools = bookkeeping.map_or_else(Vec::new, |review| review.executor.specs());
+    let update_names = tools
+        .iter()
+        .map(|tool| tool.name.clone())
+        .collect::<Vec<_>>();
+    tools.push(ToolSpec {
+        name: TOOL.into(),
+        description: "Report the completion decision. This tool cannot execute task actions."
+            .into(),
+        parameters: miniq_models::compatible_tool_schema(
+            &serde_json::to_value(schemars::schema_for!(Decision)).expect("completion schema"),
+        ),
+    });
     let request = CompletionRequest {
         messages,
-        tools: vec![ToolSpec {
-            name: TOOL.into(),
-            description: "Report the completion decision. This tool cannot execute task actions."
-                .into(),
-            parameters: miniq_models::compatible_tool_schema(
-                &serde_json::to_value(schemars::schema_for!(Decision)).expect("completion schema"),
-            ),
-        }],
+        tools,
         trace: ModelCallTrace {
             purpose: ModelCallPurpose::CompletionReview,
             step: Some(step),
@@ -145,11 +188,16 @@ async fn review(
     };
     let mut stream = provider.stream_complete(request).await?;
     let mut decision = None;
+    let mut updates = Vec::new();
     let mut finished = false;
     while let Some(delta) = stream.next().await {
         match delta? {
             ChatDelta::Finished => finished = true,
             ChatDelta::ToolCall(call) => {
+                if call.name != TOOL && update_names.contains(&call.name) {
+                    updates.push(call);
+                    continue;
+                }
                 if call.name != TOOL || decision.is_some() {
                     return Err(ProviderError::InvalidResponse(
                         "completion review must report exactly one decision".into(),
@@ -165,9 +213,11 @@ async fn review(
     if !finished {
         return Err(ProviderError::IncompleteStream);
     }
-    decision.ok_or_else(|| {
-        ProviderError::InvalidResponse("completion review did not report a decision".into())
-    })
+    decision
+        .map(|decision| ReviewedAnswer { decision, updates })
+        .ok_or_else(|| {
+            ProviderError::InvalidResponse("completion review did not report a decision".into())
+        })
 }
 
 #[cfg(test)]

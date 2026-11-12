@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use serde_json::Value;
+use std::time::{Duration, Instant};
 use tokio::sync::OnceCell;
 
 use crate::{
@@ -16,8 +17,17 @@ pub struct ConfiguredProvider {
     anthropic: AnthropicProvider,
     resolved: OnceCell<ApiProtocol>,
     fallback: OnceCell<ApiProtocol>,
-    capabilities: OnceCell<ModelCapabilities>,
+    capabilities: OnceCell<CapabilitySnapshot>,
     metadata_client: reqwest::Client,
+}
+
+const METADATA_TTL: Duration = Duration::from_secs(300);
+const INCOMPLETE_METADATA_TTL: Duration = Duration::from_secs(30);
+
+struct CapabilitySnapshot {
+    value: ModelCapabilities,
+    fetched_at: Instant,
+    ttl: Duration,
 }
 
 impl ConfiguredProvider {
@@ -36,6 +46,14 @@ impl ConfiguredProvider {
                 .build()
                 .expect("valid metadata HTTP client configuration"),
         }
+    }
+
+    /// Reuse only at turn boundaries. Existing holders retain their negotiated
+    /// protocol and metadata for the whole task, including after expiration.
+    pub fn is_cache_fresh(&self) -> bool {
+        self.capabilities
+            .get()
+            .is_none_or(|snapshot| snapshot.fetched_at.elapsed() < snapshot.ttl)
     }
 
     pub async fn protocol(&self) -> Result<ApiProtocol, ProviderError> {
@@ -64,6 +82,7 @@ impl ConfiguredProvider {
         self.capabilities
             .get_or_init(|| async { self.fetch_model_capabilities().await })
             .await
+            .value
             .clone()
     }
 
@@ -117,26 +136,37 @@ impl ConfiguredProvider {
     /// `/models/details` catalog, and their per-model route may be missing --
     /// or unreachable for namespaced IDs such as `hy/deepseek-v4.1-flash-1017`,
     /// which the detail URL encodes as one path segment.
-    async fn fetch_model_capabilities(&self) -> ModelCapabilities {
+    async fn fetch_model_capabilities(&self) -> CapabilitySnapshot {
         let detail = self.fetch_model_detail().await;
-        let capabilities = if detail.reasoning_efforts.is_some() {
-            detail
-        } else {
-            self.fetch_catalog_row()
-                .await
-                .map(|row| merge_capabilities(detail.clone(), extract_capabilities(&row)))
-                .unwrap_or(detail)
+        let (capabilities, complete) = match detail {
+            Some(detail) if detail.reasoning_efforts.is_some() => (detail, true),
+            detail => match self.fetch_catalog_row().await {
+                Some(row) => (
+                    merge_capabilities(detail.unwrap_or_default(), extract_capabilities(&row)),
+                    true,
+                ),
+                None => (detail.unwrap_or_default(), false),
+            },
         };
-        cap_model_context(&self.config.model, capabilities)
+        let ttl = if complete && capabilities != ModelCapabilities::default() {
+            METADATA_TTL
+        } else {
+            INCOMPLETE_METADATA_TTL
+        };
+        CapabilitySnapshot {
+            value: cap_model_context(&self.config.model, capabilities),
+            fetched_at: Instant::now(),
+            ttl,
+        }
     }
 
-    async fn fetch_model_detail(&self) -> ModelCapabilities {
+    async fn fetch_model_detail(&self) -> Option<ModelCapabilities> {
         let Ok(mut url) = reqwest::Url::parse(&self.config.base_url) else {
-            return ModelCapabilities::default();
+            return None;
         };
         {
             let Ok(mut segments) = url.path_segments_mut() else {
-                return ModelCapabilities::default();
+                return None;
             };
             segments.pop_if_empty();
             segments.push("models");
@@ -148,13 +178,13 @@ impl ConfiguredProvider {
         }
         let response = match request.send().await {
             Ok(response) if response.status().is_success() => response,
-            _ => return ModelCapabilities::default(),
+            _ => return None,
         };
         let payload: Value = match response.json().await {
             Ok(payload) => payload,
-            Err(_) => return ModelCapabilities::default(),
+            Err(_) => return None,
         };
-        extract_capabilities(&payload)
+        Some(extract_capabilities(&payload))
     }
 
     async fn fetch_catalog_row(&self) -> Option<Value> {
@@ -387,181 +417,7 @@ impl ModelProvider for ConfiguredProvider {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::{routing::get, Json, Router};
-    use serde_json::json;
+mod tests;
 
-    #[test]
-    fn infers_native_protocols_for_well_known_model_families() {
-        assert_eq!(
-            infer_protocol("claude-sonnet-4.6"),
-            ApiProtocol::AnthropicMessages
-        );
-        assert_eq!(infer_protocol("gpt-5.6-sol"), ApiProtocol::Responses);
-        assert_eq!(infer_protocol("o4-mini"), ApiProtocol::Responses);
-        assert_eq!(
-            infer_protocol("gemini-3.1-pro"),
-            ApiProtocol::ChatCompletions
-        );
-    }
-
-    #[test]
-    fn grok_context_window_is_capped_to_the_observed_gateway_input_limit() {
-        let payload = json!({"data": {"max_tokens": 500_000}});
-        let capabilities = cap_model_context("grok-4.7", extract_capabilities(&payload));
-        assert_eq!(capabilities.max_context_tokens, Some(220_000));
-    }
-
-    #[test]
-    fn model_metadata_overrides_name_inference() {
-        let payload = json!({"data":{"preferred_api_protocol":"chat_completions"}});
-        assert_eq!(
-            extract_protocol(&payload),
-            Some(ApiProtocol::ChatCompletions)
-        );
-    }
-
-    #[test]
-    fn extracts_oneapi_model_limits() {
-        let payload = json!({
-            "data": {
-                "preferred_api_protocol": "responses",
-                "supported_api_protocols": ["responses", "chat_completions"],
-                "max_tokens": 1_000_000,
-                "max_output": "128000"
-            }
-        });
-
-        assert_eq!(
-            extract_capabilities(&payload),
-            ModelCapabilities {
-                preferred_api_protocol: Some(ApiProtocol::Responses),
-                supported_api_protocols: Some(vec![
-                    ApiProtocol::Responses,
-                    ApiProtocol::ChatCompletions,
-                ]),
-                max_output_tokens: Some(128_000),
-                max_context_tokens: Some(1_000_000),
-                reasoning_efforts: None,
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn auto_protocol_reads_provider_metadata() {
-        let app = Router::new().route(
-            "/v1/models/{model}",
-            get(|headers: axum::http::HeaderMap| async move {
-                let authenticated = headers
-                    .get(axum::http::header::AUTHORIZATION)
-                    .and_then(|value| value.to_str().ok())
-                    == Some("Bearer metadata-secret");
-                Json(json!({
-                    "data": {
-                        "preferred_api_protocol": if authenticated { "anthropic_messages" } else { "chat_completions" },
-                        "max_tokens": 1_000_000,
-                        "max_output": 128_000
-                    }
-                }))
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let provider = ConfiguredProvider::new(ProviderConfig {
-            base_url: format!("http://{address}/v1"),
-            api_key: "metadata-secret".into(),
-            model: "custom-model".into(),
-            api_protocol: ApiProtocol::Auto,
-            reasoning_effort: None,
-        });
-
-        assert_eq!(
-            provider.protocol().await.unwrap(),
-            ApiProtocol::AnthropicMessages
-        );
-        assert_eq!(
-            provider.capabilities().await,
-            ModelCapabilities {
-                preferred_api_protocol: Some(ApiProtocol::AnthropicMessages),
-                supported_api_protocols: None,
-                max_output_tokens: Some(128_000),
-                max_context_tokens: Some(1_000_000),
-                reasoning_efforts: None,
-            }
-        );
-        assert_eq!(
-            provider
-                .execution_info(None)
-                .await
-                .unwrap()
-                .unwrap()
-                .max_output_tokens,
-            Some(128_000)
-        );
-    }
-
-    /// The gateway in the report answered `/models/{model}` with an empty body
-    /// and published `supported_reasoning_efforts` only in the paginated
-    /// catalog. Namespaced IDs also break the single-segment detail route.
-    #[tokio::test]
-    async fn catalog_details_supply_reasoning_efforts_for_namespaced_models() {
-        use crate::provider::ReasoningEffort;
-
-        let app = Router::new()
-            .route(
-                "/v1/models/details",
-                get(|| async {
-                    Json(json!({
-                        "code": "0",
-                        "msg": "ok",
-                        "data": {
-                            "models": [
-                                {
-                                    "model_id": "hy/deepseek-v4.1-flash-1017",
-                                    "max_tokens": 300_144,
-                                    "max_output": 128_000,
-                                    "supported_reasoning_efforts": ["none", "low", "high", "max"]
-                                },
-                                {"model_id": "unrelated-model"}
-                            ],
-                            "total": 2
-                        }
-                    }))
-                }),
-            )
-            .route(
-                "/v1/models/{model}",
-                get(|| async {
-                    (
-                        axum::http::StatusCode::NOT_FOUND,
-                        Json(json!({"error": "not found"})),
-                    )
-                }),
-            );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let provider = ConfiguredProvider::new(ProviderConfig {
-            base_url: format!("http://{address}/v1"),
-            api_key: "catalog-secret".into(),
-            model: "hy/deepseek-v4.1-flash-1017".into(),
-            api_protocol: ApiProtocol::Auto,
-            reasoning_effort: None,
-        });
-
-        let capabilities = provider.capabilities().await;
-        assert_eq!(
-            capabilities.reasoning_efforts,
-            Some(vec![
-                ReasoningEffort::None,
-                ReasoningEffort::Low,
-                ReasoningEffort::High,
-                ReasoningEffort::Max,
-            ])
-        );
-        assert_eq!(capabilities.max_context_tokens, Some(300_144));
-        assert_eq!(capabilities.max_output_tokens, Some(128_000));
-    }
-}
+#[cfg(test)]
+mod cache_tests;

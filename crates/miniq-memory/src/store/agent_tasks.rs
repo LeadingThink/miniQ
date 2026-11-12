@@ -170,6 +170,8 @@ impl Store {
         history: Option<&Value>,
         result: Option<Option<&str>>,
     ) -> Result<()> {
+        let state_json = serde_json::to_string(state)?;
+        let history_json = history.map(serde_json::to_string).transpose()?;
         let changed = self.conn.lock().unwrap().execute(
             "UPDATE agent_tasks SET state_json = ?3,
              history_json = CASE WHEN ?4 IS NULL THEN history_json ELSE ?4 END,
@@ -179,8 +181,8 @@ impl Store {
             params![
                 session_id,
                 id,
-                serde_json::to_string(state)?,
-                history.map(serde_json::to_string).transpose()?,
+                state_json,
+                history_json,
                 result.is_some(),
                 result.flatten()
             ],

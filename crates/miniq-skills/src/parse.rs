@@ -105,7 +105,7 @@ pub struct SkillRequires {
     pub bins: Vec<String>,
 }
 
-fn valid_name(name: &str) -> bool {
+pub(crate) fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
         && name

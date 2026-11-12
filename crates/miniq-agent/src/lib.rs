@@ -149,6 +149,13 @@ pub struct TurnToolCtx {
     pub step: usize,
 }
 
+/// Host-owned bookkeeping offered in the existing completion review request.
+/// The executor must restrict changes to the captured plan and reject task actions.
+pub struct CompletionReview<'a> {
+    pub instructions: String,
+    pub executor: Box<dyn ToolExecutor + 'a>,
+}
+
 /// Executes tool calls on behalf of the agent. Implementations own risk
 /// evaluation, approval, persistence and audit.
 #[async_trait]
@@ -167,6 +174,10 @@ pub trait ToolExecutor: Send + Sync {
     /// Ordinary tool conversations finish when the model stops calling tools.
     fn should_verify_completion(&self) -> bool {
         false
+    }
+
+    fn completion_review(&self) -> Option<CompletionReview<'_>> {
+        None
     }
 
     /// Parallel calls can overlap adjacent parallel calls. Sequential calls
@@ -736,6 +747,7 @@ async fn run_turn_inner(
                 instruction = completion_check
                     .instruction(
                         provider,
+                        executor,
                         &image_executor.messages(&state.history),
                         &text,
                         &provider_context,

@@ -30,6 +30,46 @@ impl std::fmt::Debug for SessionCheckpoint {
     }
 }
 
+impl SessionCheckpoint {
+    async fn persist(
+        &self,
+        history: Vec<ChatMessage>,
+        message: Option<Message>,
+    ) -> Result<(String, Option<Message>), AgentError> {
+        let store = self.store.clone();
+        let session_id = self.session_id.clone();
+        let model_identity = self.model_identity.clone();
+        let memory_generation = self.memory_generation;
+        let anchor = message
+            .as_ref()
+            .map(|message| message.id.clone())
+            .unwrap_or_else(|| self.anchor_id.lock().unwrap().clone());
+        // Serialization, redaction and SQLite are blocking work. Await the
+        // durable transaction before allowing the runner's next side effect.
+        tokio::task::spawn_blocking(move || {
+            let mut history = history.into_iter().skip(1).collect::<Vec<_>>();
+            history.push(ChatMessage::system(UNFINISHED_TURN));
+            crate::security::redact_provider_history(&mut history);
+            miniq_models::strip_memory_payloads(&mut history);
+            let history = serde_json::to_value(history)
+                .map_err(|error| AgentError::Checkpoint(error.to_string()))?;
+            store
+                .save_guarded_context_with_message(
+                    &session_id,
+                    &anchor,
+                    &history,
+                    model_identity.as_deref(),
+                    message.as_ref(),
+                    memory_generation,
+                )
+                .map_err(|error| AgentError::Checkpoint(error.to_string()))?;
+            Ok((anchor, message))
+        })
+        .await
+        .map_err(|error| AgentError::Checkpoint(error.to_string()))?
+    }
+}
+
 #[async_trait]
 impl CheckpointStore for SessionCheckpoint {
     async fn commit_interim(
@@ -47,12 +87,6 @@ impl CheckpointStore for SessionCheckpoint {
         drained
             .await
             .map_err(|_| AgentError::Checkpoint("event forwarder closed".into()))?;
-        let mut history = checkpoint.history.into_iter().skip(1).collect::<Vec<_>>();
-        history.push(ChatMessage::system(UNFINISHED_TURN));
-        crate::security::redact_provider_history(&mut history);
-        miniq_models::strip_memory_payloads(&mut history);
-        let history =
-            serde_json::to_value(history).map_err(|e| AgentError::Checkpoint(e.to_string()))?;
         let message = (!checkpoint.display_text.trim().is_empty()
             || !checkpoint.reasoning.is_empty())
         .then(|| Message {
@@ -70,20 +104,7 @@ impl CheckpointStore for SessionCheckpoint {
             steered: false,
             reasoning: checkpoint.reasoning,
         });
-        let anchor = message
-            .as_ref()
-            .map(|m| m.id.clone())
-            .unwrap_or_else(|| self.anchor_id.lock().unwrap().clone());
-        self.store
-            .save_guarded_context_with_message(
-                &self.session_id,
-                &anchor,
-                &history,
-                self.model_identity.as_deref(),
-                message.as_ref(),
-                self.memory_generation,
-            )
-            .map_err(|e| AgentError::Checkpoint(e.to_string()))?;
+        let (anchor, message) = self.persist(checkpoint.history, message).await?;
         *self.anchor_id.lock().unwrap() = anchor;
         if let Some(message) = message {
             self.state.emit(miniq_protocol::Event::MessageCreated {
@@ -98,10 +119,6 @@ impl CheckpointStore for SessionCheckpoint {
     }
 
     async fn save(&self, checkpoint: TurnCheckpoint) -> Result<(), AgentError> {
-        let mut history = checkpoint.history.into_iter().skip(1).collect::<Vec<_>>();
-        history.push(ChatMessage::system(UNFINISHED_TURN));
-        crate::security::redact_provider_history(&mut history);
-        miniq_models::strip_memory_payloads(&mut history);
         let message = (checkpoint.stopped
             && (!checkpoint.display_text.trim().is_empty() || !checkpoint.reasoning.is_empty()))
         .then(|| Message {
@@ -116,22 +133,7 @@ impl CheckpointStore for SessionCheckpoint {
             steered: false,
             reasoning: checkpoint.reasoning,
         });
-        let anchor = message
-            .as_ref()
-            .map(|message| message.id.clone())
-            .unwrap_or_else(|| self.anchor_id.lock().unwrap().clone());
-        let history = serde_json::to_value(history)
-            .map_err(|error| AgentError::Checkpoint(error.to_string()))?;
-        self.store
-            .save_guarded_context_with_message(
-                &self.session_id,
-                &anchor,
-                &history,
-                self.model_identity.as_deref(),
-                message.as_ref(),
-                self.memory_generation,
-            )
-            .map_err(|error| AgentError::Checkpoint(error.to_string()))?;
+        let (_, message) = self.persist(checkpoint.history, message).await?;
         if message.is_some() {
             *self.partial_message.lock().unwrap() = message;
         }
@@ -159,8 +161,12 @@ impl CheckpointStore for AgentCheckpoint {
             .history
             .push(ChatMessage::system(UNFINISHED_TURN));
         self.manager
-            .save_history(&self.record, &checkpoint.history)
+            .save_history(&self.record, checkpoint.history)
             .await
             .map_err(|error| AgentError::Checkpoint(error.to_string()))
     }
 }
+
+#[cfg(test)]
+#[path = "turn_checkpoint_persistence_tests.rs"]
+mod persistence_tests;
