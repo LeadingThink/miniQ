@@ -123,7 +123,9 @@ async fn fallback_server(
                     let (status, body) = if recovered.load(Ordering::SeqCst) {
                         (StatusCode::OK, "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n")
                     } else {
-                        (StatusCode::NOT_FOUND, "{\"error\":{\"type\":\"bad_response_status_code\",\"code\":\"bad_response_status_code\"}}")
+                        // Only this observed OneAPI wrapper permits fallback;
+                        // an ordinary 404 must remain a permanent error.
+                        (StatusCode::NOT_FOUND, "{\"error\":{\"message\":\"openai_error\",\"type\":\"bad_response_status_code\",\"code\":\"bad_response_status_code\"}}")
                     };
                     Response::builder()
                         .status(status)
