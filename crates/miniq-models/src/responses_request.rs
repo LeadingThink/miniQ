@@ -189,6 +189,9 @@ mod deepseek {
         for key in ["summary", "encrypted_content", "quality", "size", "role"] {
             object.remove(key);
         }
+        // The content is now a new plaintext item. Reusing its provider ID
+        // makes the relay reject it with `invalid reasoning content`.
+        object.remove("id");
     }
 
     pub(super) fn normalize_reasoning(input: &mut Vec<Value>) {

@@ -193,7 +193,7 @@ fn deepseek_replays_reasoning_as_plain_text_instead_of_a_summary() {
     .unwrap();
     assert_eq!(input[0]["type"], "reasoning");
     assert_eq!(input[0]["content"], "Call the tool first.");
-    for removed in ["summary", "quality", "size", "role"] {
+    for removed in ["id", "summary", "quality", "size", "role"] {
         assert!(
             input[0].get(removed).is_none(),
             "{removed} must not be replayed"
@@ -201,6 +201,39 @@ fn deepseek_replays_reasoning_as_plain_text_instead_of_a_summary() {
     }
     assert_eq!(input[1]["type"], "function_call");
     assert_eq!(input[2]["type"], "function_call_output");
+}
+
+#[test]
+fn deepseek_rewritten_reasoning_has_no_stale_item_id_and_preserves_stored_context() {
+    for reasoning in [
+        json!({"type":"reasoning","id":"item_tai_test","status":"completed",
+            "summary":[{"type":"summary_text","text":"Inspect the public key."}]}),
+        json!({"type":"reasoning","id":"rs_test","content":"Inspect the public key."}),
+        json!({"type":"reasoning","id":"rs_test","encrypted_content":"opaque",
+            "content":[{"type":"reasoning_text","text":"Inspect the public key."}]}),
+    ] {
+        let call = json!({"type":"function_call","id":"fc_test","call_id":"call-1",
+            "name":"file_read","arguments":"{}"});
+        let messages = [
+            ChatMessage::user("Inspect the public key."),
+            assistant(vec![reasoning.clone(), call.clone()]),
+            ChatMessage::tool_result("call-1", "Synthetic public key."),
+        ];
+        // Exercise the persistence boundary without copying user history into fixtures.
+        let messages: Vec<ChatMessage> =
+            serde_json::from_value(serde_json::to_value(&messages).unwrap()).unwrap();
+        let input = build_input_for_model(&messages, "oneapi.hy/deepseek-flash").unwrap();
+        assert!(input[1].get("id").is_none());
+        assert!(input[1].get("encrypted_content").is_none());
+        assert_eq!(input[1]["content"], "Inspect the public key.");
+        assert_eq!(input[2], call);
+        assert_eq!(input[3]["call_id"], "call-1");
+        assert_eq!(input[3]["output"], "Synthetic public key.");
+        assert_eq!(
+            messages[1].provider_context.as_ref().unwrap().data[0],
+            reasoning
+        );
+    }
 }
 
 #[test]
