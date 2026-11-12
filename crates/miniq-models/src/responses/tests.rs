@@ -46,6 +46,52 @@ fn reasoning_summary_is_requested_without_overwriting_effort() {
 }
 
 #[test]
+fn deepseek_streamed_reasoning_survives_parallel_tool_replay() {
+    for done_only in [false, true] {
+        let mut decoder = ResponsesDecoder::default();
+        let reasoning = if done_only {
+            json!({"type":"response.reasoning_text.done","output_index":0,"content_index":0,"text":"Read both files."})
+        } else {
+            json!({"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"Read both files."})
+        };
+        decode(&mut decoder, reasoning);
+        let output = json!([
+            {"type":"reasoning","id":"rs_1","content":null,"summary":[]},
+            {"type":"function_call","call_id":"a","name":"file_read","arguments":"{}"},
+            {"type":"function_call","call_id":"b","name":"file_read","arguments":"{}"}
+        ]);
+        let completed = decode(
+            &mut decoder,
+            json!({"type":"response.completed","response":{"output":output}}),
+        );
+        let mut assistant = ChatMessage::assistant("");
+        for delta in completed.items {
+            match delta.unwrap() {
+                ChatDelta::Context(context) => assistant.provider_context = Some(context),
+                ChatDelta::ToolCall(call) => assistant.tool_calls.push(call),
+                _ => {}
+            }
+        }
+        // Exercise the same serialization boundary as persisted model history.
+        let assistant: ChatMessage =
+            serde_json::from_value(serde_json::to_value(assistant).unwrap()).unwrap();
+        let body = provider_for("deepseek-flash").build_body(&request(vec![
+            assistant,
+            ChatMessage::tool_result("a", "first file"),
+            ChatMessage::tool_result("b", "second file"),
+        ]));
+        assert_eq!(
+            body["input"][0]["content"], "Read both files.",
+            "done_only={done_only}"
+        );
+        assert_eq!(body["input"][1]["call_id"], "a");
+        assert_eq!(body["input"][2]["call_id"], "b");
+        assert_eq!(body["input"][3]["call_id"], "a");
+        assert_eq!(body["input"][4]["call_id"], "b");
+    }
+}
+
+#[test]
 fn deepseek_reasoning_text_streams_as_reasoning_without_a_summary() {
     let mut decoder = ResponsesDecoder::default();
     let mut text = String::new();

@@ -144,6 +144,11 @@ mod deepseek {
             .is_some_and(|kind| CALL_ITEMS.contains(&kind))
     }
 
+    fn is_assistant_message(item: &Value) -> bool {
+        item.get("type").and_then(Value::as_str) == Some("message")
+            && item.get("role").and_then(Value::as_str) == Some("assistant")
+    }
+
     fn text(item: &Value) -> String {
         match item.get("content") {
             Some(Value::String(value)) if !value.is_empty() => return value.clone(),
@@ -198,7 +203,7 @@ mod deepseek {
         let mut index = 0;
         while index < input.len() {
             let reasoning = input[index].get("type").and_then(Value::as_str) == Some("reasoning");
-            if !reasoning && !is_call(&input[index]) {
+            if !reasoning && !is_call(&input[index]) && !is_assistant_message(&input[index]) {
                 index += 1;
                 continue;
             }
@@ -210,6 +215,7 @@ mod deepseek {
                 match item.get("type").and_then(Value::as_str) {
                     Some("reasoning") => has_reasoning = true,
                     _ if is_call(item) => has_call = true,
+                    _ if is_assistant_message(item) => {}
                     _ => break,
                 }
                 index += 1;

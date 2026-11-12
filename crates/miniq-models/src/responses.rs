@@ -12,6 +12,8 @@ use crate::provider::{
 use crate::responses_request::{build_input_for_model, response_tool};
 use crate::sse::{self, DecodedEvent, EventDecoder};
 
+mod reasoning;
+
 pub struct ResponsesProvider {
     config: ProviderConfig,
     client: reqwest::Client,
@@ -93,6 +95,7 @@ struct ResponsesDecoder {
     emitted_calls: HashSet<String>,
     computer_observation: Option<String>,
     reasoning_part: Option<(u8, usize, usize)>,
+    reasoning_text: reasoning::ReasoningText,
 }
 
 impl ResponsesDecoder {
@@ -206,6 +209,7 @@ impl ResponsesDecoder {
             .into_iter()
             .filter_map(|index| self.emit_call(index))
             .collect::<Vec<_>>();
+        self.reasoning_text.restore(&mut self.output_items);
         let context = self.output_items.values().cloned().collect::<Vec<_>>();
         if !context.is_empty() {
             items.push(Ok(ChatDelta::Context(ProviderContext {
@@ -312,6 +316,9 @@ impl EventDecoder for ResponsesDecoder {
             // thought. Both are shown as reasoning, keyed by their own index so
             // parts of each kind stay in separate paragraphs.
             "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
+                if event["type"] == "response.reasoning_text.delta" {
+                    self.reasoning_text.capture(&event);
+                }
                 let text = event.get("delta").and_then(Value::as_str).unwrap_or("");
                 let summary = event.get("type").and_then(Value::as_str)
                     == Some("response.reasoning_summary_text.delta");
@@ -339,6 +346,10 @@ impl EventDecoder for ResponsesDecoder {
                     items.push(Ok(ChatDelta::Reasoning(text.to_string())));
                 }
                 DecodedEvent::continue_with(items)
+            }
+            "response.reasoning_text.done" => {
+                self.reasoning_text.capture(&event);
+                DecodedEvent::continue_with(Vec::new())
             }
             "response.created" | "response.in_progress" => DecodedEvent::continue_with(
                 crate::response_info::response_info(event.get("response").unwrap_or(&event), None)

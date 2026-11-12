@@ -204,6 +204,30 @@ fn deepseek_replays_reasoning_as_plain_text_instead_of_a_summary() {
 }
 
 #[test]
+fn deepseek_reasoning_stays_with_commentary_and_parallel_calls() {
+    let message = assistant(vec![
+        json!({"type":"reasoning","content":"Inspect both files."}),
+        json!({"type":"message","role":"assistant","content":[{"type":"output_text","text":"Checking."}]}),
+        json!({"type":"function_call","call_id":"a","name":"file_read","arguments":"{}"}),
+        json!({"type":"function_call","call_id":"b","name":"file_read","arguments":"{}"}),
+    ]);
+    let input = build_input_for_model(
+        &[
+            message,
+            ChatMessage::tool_result("a", "a"),
+            ChatMessage::tool_result("b", "b"),
+        ],
+        "deepseek-flash",
+    )
+    .unwrap();
+    assert_eq!(input.len(), 6);
+    assert_eq!(input[0]["content"], "Inspect both files.");
+    assert_eq!(input[1]["type"], "message");
+    assert_eq!(input[2]["call_id"], "a");
+    assert_eq!(input[3]["call_id"], "b");
+}
+
+#[test]
 fn deepseek_tool_rounds_without_reasoning_get_an_empty_echo() {
     let mut assistant = ChatMessage::assistant("");
     assistant.tool_calls.push(ToolCallRequest {
