@@ -4,6 +4,18 @@ pub(super) fn storage_error(error: impl std::fmt::Display) -> ToolError {
     ToolError::ExecutionFailed(format!("agent persistence failed: {error}"))
 }
 
+fn metadata(state: &AgentRecordState) -> Result<Value, ToolError> {
+    let mut metadata = serde_json::to_value(state).map_err(storage_error)?;
+    metadata["elapsedMs"] = state.observed_elapsed_ms().into();
+    Ok(metadata)
+}
+
+fn history_value(mut history: Vec<ChatMessage>) -> Result<Value, ToolError> {
+    crate::security::redact_provider_history(&mut history);
+    miniq_models::strip_memory_payloads(&mut history);
+    serde_json::to_value(history).map_err(storage_error)
+}
+
 impl AgentRecordState {
     pub(super) fn observed_elapsed_ms(&self) -> u64 {
         self.elapsed_ms
@@ -73,17 +85,10 @@ impl AgentTaskManager {
         history: Option<&[ChatMessage]>,
         result: Option<Option<&str>>,
     ) -> Result<(), ToolError> {
-        let mut metadata = serde_json::to_value(state).map_err(storage_error)?;
-        metadata["elapsedMs"] = state.observed_elapsed_ms().into();
+        let metadata = metadata(state)?;
         let history = history
-            .map(|history| {
-                let mut history = history.to_vec();
-                crate::security::redact_provider_history(&mut history);
-                miniq_models::strip_memory_payloads(&mut history);
-                serde_json::to_value(history)
-            })
-            .transpose()
-            .map_err(storage_error)?;
+            .map(|history| history_value(history.to_vec()))
+            .transpose()?;
         self.store
             .save_agent_task(
                 &record.session_id,
@@ -97,11 +102,32 @@ impl AgentTaskManager {
 
     pub(crate) async fn save_history(
         &self,
-        record: &AgentRecord,
-        history: &[ChatMessage],
+        record: &Arc<AgentRecord>,
+        history: Vec<ChatMessage>,
     ) -> Result<(), ToolError> {
-        let mut state = record.state.lock().await;
-        state.has_history = true;
-        self.persist(record, &state, Some(history), None)
+        let store = self.store.clone();
+        let record = record.clone();
+        // Own this transaction and the record lock even if its caller is
+        // cancelled. A late save cannot overwrite a newer agent transition.
+        tokio::spawn(async move {
+            let mut guard = record.state.lock().await;
+            let mut state = guard.clone();
+            state.has_history = true;
+            let metadata = metadata(&state)?;
+            let session_id = record.session_id.clone();
+            let id = record.id.clone();
+            tokio::task::spawn_blocking(move || {
+                let history = history_value(history)?;
+                store
+                    .save_agent_task(&session_id, &id, &metadata, Some(&history), None)
+                    .map_err(storage_error)
+            })
+            .await
+            .map_err(storage_error)??;
+            *guard = state;
+            Ok(())
+        })
+        .await
+        .map_err(storage_error)?
     }
 }

@@ -181,6 +181,10 @@ impl ToolExecutor for ToolHistoryExecutor<'_> {
         self.inner.should_verify_completion()
     }
 
+    fn completion_review(&self) -> Option<crate::CompletionReview<'_>> {
+        self.inner.completion_review()
+    }
+
     fn specs(&self) -> Vec<ToolSpec> {
         self.specs_for(&TurnToolCtx { step: 0 })
     }

@@ -1,10 +1,246 @@
 use super::*;
 use crate::state::AppState;
-use miniq_models::{mock::MockProvider, ChatDelta, CompletionRequest, DeltaStream, ProviderError};
-use std::sync::Arc;
+use miniq_models::{
+    mock::MockProvider, ChatDelta, CompletionRequest, DeltaStream, ModelProvider, ProviderError,
+};
+use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 
+mod harness;
 mod validation;
+use harness::{decision, run_review};
+
+#[tokio::test]
+async fn completion_and_plan_updates_share_one_request_without_an_acknowledgement_turn() {
+    let (_dir, executor) = fixture();
+    let before = json!({"tasks":[task("research","completed"),task("video","in_progress")]});
+    executor
+        .execute(&call("task_update", before))
+        .await
+        .unwrap();
+    let after = json!({"tasks":[task("research","completed"),task("video","completed")]});
+    let provider = MockProvider::new(vec![vec![
+        ChatDelta::ToolCall(call("task_update", after.clone())),
+        decision("finished"),
+    ]]);
+    let mut events = executor.state.events.subscribe();
+    let result = run_review(&executor, &provider).await.unwrap();
+    assert_eq!(result.final_text, "The verified video is ready.");
+    assert_eq!(
+        json!(executor
+            .state
+            .store
+            .session_plan(&executor.session_id)
+            .unwrap()),
+        after["tasks"]
+    );
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].trace.purpose,
+        miniq_models::ModelCallPurpose::CompletionReview
+    );
+    assert_eq!(
+        requests[0]
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>(),
+        ["task_update", "report_turn_completion"]
+    );
+    assert!(requests[0]
+        .messages
+        .last()
+        .unwrap()
+        .content
+        .contains("never infer completion"));
+    assert!(result.provider_history.iter().all(|message| {
+        !message.content.contains("[miniQ completion review]")
+            && !message
+                .tool_calls
+                .iter()
+                .any(|call| call.name == "report_turn_completion" || call.name == "task_update")
+    }));
+    let mut updated = false;
+    while let Ok(event) = events.try_recv() {
+        if let miniq_protocol::Event::PlanUpdated {
+            session_id, tasks, ..
+        } = event
+        {
+            assert_eq!(session_id, executor.session_id);
+            updated = tasks
+                .iter()
+                .all(|task| task.status == PlanTaskStatus::Completed);
+        }
+    }
+    assert!(updated);
+}
+
+#[tokio::test]
+async fn completed_empty_and_cancelled_plans_need_no_review_requests() {
+    let (_dir, executor) = fixture();
+    let provider = MockProvider::new(vec![]);
+    run_review(&executor, &provider).await.unwrap();
+    for tasks in [json!([]), json!([task("done", "completed")])] {
+        executor
+            .execute(&call("task_update", json!({"tasks":tasks})))
+            .await
+            .unwrap();
+        run_review(&executor, &provider).await.unwrap();
+        assert!(executor.plan_completion_review().is_none());
+    }
+    executor
+        .execute(&call(
+            "task_update",
+            json!({"tasks":[task("pending","pending")]}),
+        ))
+        .await
+        .unwrap();
+    executor.cancel.cancel();
+    assert!(executor.plan_completion_review().is_none());
+    assert!(matches!(
+        run_review(&executor, &provider).await,
+        Err(AgentError::Cancelled)
+    ));
+    assert!(provider.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn failed_missing_or_invalid_decisions_preserve_the_answer_and_progress() {
+    let (_dir, executor) = fixture();
+    let original = json!({"tasks":[task("video","in_progress")]});
+    executor
+        .execute(&call("task_update", original.clone()))
+        .await
+        .unwrap();
+    let update = call("task_update", json!({"tasks":[task("video","completed")]}));
+    for provider in [
+        MockProvider::new(vec![]),
+        MockProvider::text("No change"),
+        MockProvider::new(vec![vec![decision("finished")]]),
+        MockProvider::new(vec![vec![ChatDelta::ToolCall(update.clone())]]),
+        MockProvider::new(vec![vec![
+            ChatDelta::ToolCall(update),
+            decision("finished"),
+            decision("finished"),
+        ]]),
+    ] {
+        let result = run_review(&executor, &provider).await.unwrap();
+        assert_eq!(result.final_text, "The verified video is ready.");
+        assert_eq!(
+            json!(executor
+                .state
+                .store
+                .session_plan(&executor.session_id)
+                .unwrap()),
+            original["tasks"]
+        );
+    }
+}
+
+struct WaitingProvider(tokio::sync::Notify);
+
+#[async_trait]
+impl ModelProvider for WaitingProvider {
+    async fn stream_complete(&self, _: CompletionRequest) -> Result<DeltaStream, ProviderError> {
+        self.0.notify_one();
+        std::future::pending().await
+    }
+    fn describe(&self) -> String {
+        "waiting-test".into()
+    }
+}
+
+#[tokio::test]
+async fn cancellation_interrupts_bookkeeping_without_inventing_progress() {
+    let (_dir, executor) = fixture();
+    executor
+        .execute(&call(
+            "task_update",
+            json!({"tasks":[task("video","in_progress")]}),
+        ))
+        .await
+        .unwrap();
+    let provider = WaitingProvider(tokio::sync::Notify::new());
+    let stop = async {
+        provider.0.notified().await;
+        executor.cancel.cancel();
+    };
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::join!(run_review(&executor, &provider), stop)
+    })
+    .await
+    .unwrap();
+    assert!(matches!(result, Err(AgentError::Cancelled)));
+    assert_eq!(
+        executor
+            .state
+            .store
+            .session_plan(&executor.session_id)
+            .unwrap()[0]
+            .status,
+        PlanTaskStatus::InProgress
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stalled_review_times_out_without_losing_the_answer() {
+    let (_dir, executor) = fixture();
+    executor
+        .execute(&call(
+            "task_update",
+            json!({"tasks":[task("video","pending")]}),
+        ))
+        .await
+        .unwrap();
+    let started = tokio::time::Instant::now();
+    let result = run_review(&executor, &WaitingProvider(tokio::sync::Notify::new()))
+        .await
+        .unwrap();
+    assert!(started.elapsed() >= Duration::from_secs(60));
+    assert_eq!(result.final_text, "The verified video is ready.");
+    assert_eq!(
+        executor
+            .state
+            .store
+            .session_plan(&executor.session_id)
+            .unwrap()[0]
+            .status,
+        PlanTaskStatus::Pending
+    );
+}
+
+#[tokio::test]
+async fn an_invalid_review_cannot_execute_task_actions_or_create_a_review_loop() {
+    let (dir, executor) = fixture();
+    executor
+        .execute(&call(
+            "task_update",
+            json!({"tasks":[task("video","pending")]}),
+        ))
+        .await
+        .unwrap();
+    let provider = MockProvider::new(vec![vec![
+        ChatDelta::ToolCall(call(
+            "file_write",
+            json!({"path":"unexpected.txt","content":"side effect"}),
+        )),
+        decision("finished"),
+    ]]);
+    let result = run_review(&executor, &provider).await.unwrap();
+    assert_eq!(provider.requests.lock().unwrap().len(), 1);
+    assert!(!dir.path().join("unexpected.txt").exists());
+    assert_eq!(result.final_text, "The verified video is ready.");
+    assert_eq!(
+        executor
+            .state
+            .store
+            .session_plan(&executor.session_id)
+            .unwrap()[0]
+            .status,
+        PlanTaskStatus::Pending
+    );
+}
 
 fn fixture() -> (tempfile::TempDir, SessionToolExecutor) {
     let dir = tempfile::tempdir().unwrap();
@@ -42,19 +278,6 @@ fn call(name: &str, arguments: Value) -> ToolCallRequest {
 
 fn task(content: &str, status: &str) -> Value {
     json!({"content":content, "status":status})
-}
-
-fn outcome() -> TurnOutcome {
-    TurnOutcome {
-        final_text: "The verified 60-second video is ready.".into(),
-        reasoning: String::new(),
-        appended: vec![],
-        provider_history: vec![
-            ChatMessage::system("Complete the requested work."),
-            ChatMessage::user("Create a video."),
-            ChatMessage::assistant("The verified 60-second video is ready."),
-        ],
-    }
 }
 
 fn reviewer(executor: &SessionToolExecutor) -> ReviewExecutor<'_> {
@@ -107,73 +330,6 @@ async fn image_history_review_preserves_reference_audit() {
 }
 
 #[tokio::test]
-async fn reconciles_two_of_five_and_preserves_the_delivered_answer() {
-    let (_dir, executor) = fixture();
-    let before = json!({"tasks":[task("inventory", "completed"), task("research", "completed"),
-        task("storyboard", "in_progress"), task("screenshots", "pending"), task("video", "pending")]});
-    executor
-        .execute(&call("task_update", before.clone()))
-        .await
-        .unwrap();
-    let after = json!({"tasks":[task("inventory", "completed"), task("research", "completed"),
-        task("storyboard", "completed"), task("screenshots", "completed"), task("video", "completed")]});
-    let provider = MockProvider::new(vec![
-        vec![ChatDelta::ToolCall(call("task_update", after.clone()))],
-        vec![ChatDelta::Text("Internal acknowledgement".into())],
-    ]);
-    let mut events = executor.state.events.subscribe();
-    let result = outcome();
-    executor
-        .reconcile_plan(&provider, &result, ContextPolicy::default())
-        .await;
-    assert_eq!(result.final_text, outcome().final_text);
-    assert_eq!(
-        json!(executor
-            .state
-            .store
-            .session_plan(&executor.session_id)
-            .unwrap()),
-        after["tasks"]
-    );
-    let requests = provider.requests.lock().unwrap();
-    assert_eq!(requests.len(), 2);
-    assert!(requests
-        .iter()
-        .all(|request| request.tools.len() == 1 && request.tools[0].name == "task_update"));
-    assert!(requests[0]
-        .messages
-        .last()
-        .unwrap()
-        .content
-        .contains("never infer completion"));
-    // The review transcript stays internal: nothing it said or called reaches
-    // the model-visible history, so a later turn cannot read its "the task has
-    // ended / do not perform more work" instruction.
-    assert_eq!(
-        result.provider_history.len(),
-        outcome().provider_history.len()
-    );
-    assert!(result
-        .provider_history
-        .iter()
-        .all(|message| message.tool_call_id.is_none() && message.tool_calls.is_empty()));
-    assert!(result.appended.is_empty());
-    let mut updated = false;
-    while let Ok(event) = events.try_recv() {
-        if let miniq_protocol::Event::PlanUpdated {
-            session_id, tasks, ..
-        } = event
-        {
-            assert_eq!(session_id, executor.session_id);
-            updated = tasks
-                .iter()
-                .all(|task| task.status == PlanTaskStatus::Completed);
-        }
-    }
-    assert!(updated);
-}
-
-#[tokio::test]
 async fn native_checklists_can_leave_unverified_work_pending() {
     let (_dir, executor) = fixture();
     executor
@@ -217,172 +373,6 @@ async fn native_checklists_can_leave_unverified_work_pending() {
         .unwrap()
         .get("error")
         .is_some());
-}
-
-#[tokio::test]
-async fn completed_empty_and_cancelled_plans_need_no_provider_requests() {
-    let (_dir, executor) = fixture();
-    let provider = MockProvider::new(vec![]);
-    executor
-        .reconcile_plan(&provider, &outcome(), ContextPolicy::default())
-        .await;
-    for tasks in [json!([]), json!([task("done", "completed")])] {
-        executor
-            .execute(&call("task_update", json!({"tasks":tasks})))
-            .await
-            .unwrap();
-        executor
-            .reconcile_plan(&provider, &outcome(), ContextPolicy::default())
-            .await;
-    }
-    executor
-        .execute(&call(
-            "task_update",
-            json!({"tasks":[task("pending","pending")]}),
-        ))
-        .await
-        .unwrap();
-    executor.cancel.cancel();
-    executor
-        .reconcile_plan(&provider, &outcome(), ContextPolicy::default())
-        .await;
-    assert!(provider.requests.lock().unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn provider_failure_or_missing_update_preserves_the_answer_and_real_progress() {
-    let (_dir, executor) = fixture();
-    let original = json!({"tasks":[task("video","in_progress")]});
-    executor
-        .execute(&call("task_update", original.clone()))
-        .await
-        .unwrap();
-    for provider in [MockProvider::new(vec![]), MockProvider::text("No change")] {
-        let result = outcome();
-        executor
-            .reconcile_plan(&provider, &result, ContextPolicy::default())
-            .await;
-        assert_eq!(result.final_text, outcome().final_text);
-        assert_eq!(
-            json!(executor
-                .state
-                .store
-                .session_plan(&executor.session_id)
-                .unwrap()),
-            original["tasks"]
-        );
-    }
-}
-
-struct WaitingProvider;
-
-#[async_trait]
-impl ModelProvider for WaitingProvider {
-    async fn stream_complete(&self, _: CompletionRequest) -> Result<DeltaStream, ProviderError> {
-        std::future::pending().await
-    }
-    fn describe(&self) -> String {
-        "waiting-test".into()
-    }
-}
-
-#[tokio::test]
-async fn cancelling_bookkeeping_is_prompt_and_does_not_discard_the_deliverable() {
-    let (_dir, executor) = fixture();
-    executor
-        .execute(&call(
-            "task_update",
-            json!({"tasks":[task("video","in_progress")]}),
-        ))
-        .await
-        .unwrap();
-    let cancel = executor.cancel.clone();
-    let result = outcome();
-    let review = executor.reconcile_plan(&WaitingProvider, &result, ContextPolicy::default());
-    let stop = async move {
-        tokio::task::yield_now().await;
-        cancel.cancel();
-    };
-    tokio::time::timeout(Duration::from_secs(1), async {
-        tokio::join!(review, stop);
-    })
-    .await
-    .unwrap();
-    assert_eq!(result.final_text, outcome().final_text);
-    assert_eq!(
-        executor
-            .state
-            .store
-            .session_plan(&executor.session_id)
-            .unwrap()[0]
-            .status,
-        PlanTaskStatus::InProgress
-    );
-}
-
-#[tokio::test(start_paused = true)]
-async fn a_stalled_review_times_out_without_losing_the_answer() {
-    let (_dir, executor) = fixture();
-    executor
-        .execute(&call(
-            "task_update",
-            json!({"tasks":[task("video","pending")]}),
-        ))
-        .await
-        .unwrap();
-    let started = tokio::time::Instant::now();
-    let result = outcome();
-    executor
-        .reconcile_plan(&WaitingProvider, &result, ContextPolicy::default())
-        .await;
-    assert!(started.elapsed() >= REVIEW_TIMEOUT);
-    assert_eq!(result.final_text, outcome().final_text);
-    assert_eq!(
-        executor
-            .state
-            .store
-            .session_plan(&executor.session_id)
-            .unwrap()[0]
-            .status,
-        PlanTaskStatus::Pending
-    );
-}
-
-#[tokio::test]
-async fn a_model_that_ignores_review_instructions_cannot_loop_forever() {
-    let (_dir, executor) = fixture();
-    executor
-        .execute(&call(
-            "task_update",
-            json!({"tasks":[task("video","pending")]}),
-        ))
-        .await
-        .unwrap();
-    let provider = MockProvider::new(
-        (0..3)
-            .map(|index| {
-                vec![ChatDelta::ToolCall(call(
-                    "shell_run",
-                    json!({"command":format!("echo {index}")}),
-                ))]
-            })
-            .collect(),
-    );
-    let result = outcome();
-    executor
-        .reconcile_plan(&provider, &result, ContextPolicy::default())
-        .await;
-    assert_eq!(provider.requests.lock().unwrap().len(), 3);
-    assert_eq!(
-        executor
-            .state
-            .store
-            .list_tool_calls(&executor.session_id)
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(result.final_text, outcome().final_text);
 }
 
 #[tokio::test]

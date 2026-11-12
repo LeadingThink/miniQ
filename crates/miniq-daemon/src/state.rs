@@ -192,9 +192,10 @@ pub enum ApprovalDecision {
 #[derive(Clone)]
 pub struct AppState {
     pub store: Arc<Store>,
-    /// Fixed provider used in tests; when `None` the provider is built from
-    /// `settings` on each turn (so settings changes apply immediately).
+    /// Fixed provider used in tests; when `None` each turn resolves current
+    /// settings through the bounded provider cache.
     pub provider_override: Option<Arc<dyn ModelProvider>>,
+    pub(crate) providers: Arc<crate::provider_cache::ProviderCache>,
     pub settings: Arc<Mutex<DaemonSettings>>,
     pub media_capabilities: Arc<miniq_tools::MediaCapabilityRegistry>,
     pub(crate) media_refresh_errors: Arc<Mutex<HashMap<String, String>>>,
@@ -330,6 +331,7 @@ impl AppState {
         Self {
             store,
             provider_override,
+            providers: Default::default(),
             settings: Arc::new(Mutex::new(settings)),
             media_capabilities: Arc::new(miniq_tools::MediaCapabilityRegistry::new(media_cache)),
             media_refresh_errors: Default::default(),

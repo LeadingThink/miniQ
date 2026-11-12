@@ -471,6 +471,10 @@ impl SessionToolExecutor {
 
 #[async_trait]
 impl ToolExecutor for SessionToolExecutor {
+    fn completion_review(&self) -> Option<miniq_agent::CompletionReview<'_>> {
+        self.plan_completion_review()
+    }
+
     fn should_verify_completion(&self) -> bool {
         let has_review_plan = self
             .review_plan

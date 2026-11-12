@@ -86,13 +86,21 @@ async fn batch(
 
 #[tokio::test]
 async fn cancellation_keeps_completed_results_and_unstarted_pairing() {
-    let (state, _, executed) = batch(&["first", "second"], false, true).await;
+    let (state, store, executed) = batch(&["first", "second"], false, true).await;
     assert_eq!(executed, ["first"]);
     assert!(state.history[2].content.contains("completed"));
     assert!(state.history[3].content.contains("not_started"));
     for (request, result) in state.history[1].tool_calls.iter().zip(&state.history[2..]) {
         assert_eq!(result.tool_call_id.as_deref(), Some(request.id.as_str()));
     }
+    let saved = store.0.lock().unwrap();
+    assert_eq!(saved.len(), 2);
+    assert!(saved.last().unwrap().history[2]
+        .content
+        .contains("completed"));
+    assert!(saved.last().unwrap().history[3]
+        .content
+        .contains("not_started"));
 }
 
 #[tokio::test]
@@ -112,10 +120,16 @@ async fn parallel_failure_retains_successful_siblings_and_checkpoints_each_resul
     assert!(state.history[3].content.contains("completed"));
     assert!(state.history[4].content.contains("completed"));
     let checkpoints = store.0.lock().unwrap();
-    assert_eq!(checkpoints.len(), 7);
-    // Dispatch states are persisted individually before each bounded call.
-    assert!(checkpoints[1].history[2].content.contains("unknown"));
-    assert!(checkpoints[1].history[3].content.contains("not_started"));
+    assert_eq!(checkpoints.len(), 3);
+    // One admission snapshot covers the bounded group before any call runs.
+    assert!(checkpoints[0].history[2..]
+        .iter()
+        .all(|message| message.content.contains("unknown")));
+    let saved = checkpoints.last().unwrap();
+    assert!(saved.history[2].content.contains("unknown"));
+    assert!(saved.history[3..]
+        .iter()
+        .all(|message| message.content.contains("completed")));
 }
 
 struct PartialProvider;

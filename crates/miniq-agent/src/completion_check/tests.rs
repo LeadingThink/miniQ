@@ -5,6 +5,7 @@ use miniq_models::{mock::MockProvider, ToolCallRequest};
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
+mod bookkeeping;
 mod interim;
 
 #[derive(Default)]
@@ -200,6 +201,7 @@ async fn reviews_preserve_native_context_and_do_not_modify_the_transcript() {
     assert!(check
         .instruction(
             &provider,
+            &Executor::default(),
             &history,
             "已完成",
             &context,
@@ -259,6 +261,7 @@ async fn unfinished_work_cannot_loop_past_the_continuation_budget() {
         assert!(check
             .instruction(
                 &provider,
+                &Executor::default(),
                 &[],
                 "现在处理",
                 &None,
@@ -286,7 +289,15 @@ async fn cancellation_prevents_a_review_request() {
     let mut check = CompletionCheck::default();
     assert!(matches!(
         check
-            .instruction(&provider, &[], "结果", &None, 1, &cancel)
+            .instruction(
+                &provider,
+                &Executor::default(),
+                &[],
+                "结果",
+                &None,
+                1,
+                &cancel
+            )
             .await,
         Err(AgentError::Cancelled)
     ));
@@ -315,6 +326,7 @@ async fn a_review_timeout_preserves_the_existing_answer() {
     assert!(check
         .instruction(
             &PendingProvider,
+            &Executor::default(),
             &[],
             "结果",
             &None,
@@ -521,7 +533,15 @@ async fn cancellation_interrupts_a_review_that_is_already_waiting() {
     let mut check = CompletionCheck::default();
     assert!(matches!(
         check
-            .instruction(&PendingProvider, &[], "结果", &None, 1, &cancel)
+            .instruction(
+                &PendingProvider,
+                &Executor::default(),
+                &[],
+                "结果",
+                &None,
+                1,
+                &cancel
+            )
             .await,
         Err(AgentError::Cancelled)
     ));

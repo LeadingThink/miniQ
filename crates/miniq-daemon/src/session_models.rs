@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use miniq_models::{ConfiguredProvider, ModelProvider, ProviderConfig};
+use miniq_models::{ModelProvider, ProviderConfig};
 use miniq_protocol::{ApiProtocol, SessionModelSettings};
 use sha2::{Digest, Sha256};
 
@@ -63,7 +63,7 @@ impl AppState {
             return provider.clone();
         }
         match config {
-            Some(config) => Arc::new(ConfiguredProvider::new(config)),
+            Some(config) => self.providers.get(config),
             None => Arc::new(crate::UnconfiguredProvider),
         }
     }

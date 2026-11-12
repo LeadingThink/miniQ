@@ -100,6 +100,9 @@ impl Store {
                 "checkpoint message does not match its session and anchor".into(),
             ));
         }
+        // Encode before taking the shared connection lock. Large histories
+        // must not block unrelated store readers during serialization.
+        let history_json = serde_json::to_string(history)?;
         let mut conn = self.conn.lock().unwrap();
         let transaction = conn.transaction()?;
         if let Some(message) = message {
@@ -131,7 +134,7 @@ impl Store {
             params![
                 session_id,
                 last_message_id,
-                serde_json::to_string(history)?,
+                history_json,
                 now_iso(),
                 model_identity
             ],

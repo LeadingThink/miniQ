@@ -3,19 +3,37 @@ use miniq_daemon::state::AppState;
 use miniq_daemon::{data_dir, generate_token, server, write_connection_info, ConnectionInfo};
 use miniq_memory::Store;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     if print_command_info(std::env::args().skip(1).collect())? {
         return Ok(());
     }
     let dir = data_dir();
     std::fs::create_dir_all(&dir)?;
-    let _instance = miniq_local::DaemonLock::acquire(&dir).with_context(|| {
+    let instance = miniq_local::DaemonLock::acquire(&dir).with_context(|| {
         format!(
             "cannot acquire miniQ daemon instance lock in {}",
             dir.display()
         )
     })?;
+    run_with_instance_lock(instance, run(dir))
+}
+
+fn run_with_instance_lock(
+    instance: miniq_local::DaemonLock,
+    daemon: impl std::future::Future<Output = anyhow::Result<()>>,
+) -> anyhow::Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let result = runtime.block_on(daemon);
+    // Runtime shutdown drains blocking checkpoint writes. Keep the instance
+    // locked until they finish so a replacement daemon cannot overtake them.
+    drop(runtime);
+    drop(instance);
+    result
+}
+
+async fn run(dir: std::path::PathBuf) -> anyhow::Result<()> {
     // Logs go to stdout (visible in dev terminals) and to a daily-rotated
     // file so installed builds, which run without a console, stay debuggable.
     let file_appender = tracing_appender::rolling::daily(dir.join("logs"), "daemon.log");
@@ -103,5 +121,51 @@ fn print_command_info(args: Vec<String>) -> anyhow::Result<bool> {
             Ok(true)
         }
         _ => anyhow::bail!("unknown daemon argument; use `miniq-daemon --help`"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_with_instance_lock;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn instance_lock_covers_runtime_blocking_write_drain() {
+        let directory = tempfile::tempdir().unwrap();
+        let instance = miniq_local::DaemonLock::acquire(directory.path()).unwrap();
+        let (started, blocking_started) = mpsc::channel();
+        let (returning, daemon_returning) = mpsc::channel();
+        let (release, wait) = mpsc::channel();
+        let daemon = std::thread::spawn(move || {
+            run_with_instance_lock(instance, async move {
+                tokio::task::spawn_blocking(move || {
+                    started.send(()).unwrap();
+                    let _ = wait.recv_timeout(Duration::from_secs(5));
+                });
+                returning.send(()).unwrap();
+                Ok(())
+            })
+        });
+        blocking_started
+            .recv_timeout(Duration::from_secs(3))
+            .unwrap();
+        daemon_returning
+            .recv_timeout(Duration::from_secs(3))
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_millis(100);
+        while Instant::now() < deadline {
+            let error = miniq_local::DaemonLock::acquire(directory.path())
+                .err()
+                .expect("replacement daemon must wait for old blocking writes");
+            assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+            assert!(!daemon.is_finished());
+            std::thread::sleep(Duration::from_millis(2));
+        }
+
+        release.send(()).unwrap();
+        daemon.join().unwrap().unwrap();
+        assert!(miniq_local::DaemonLock::acquire(directory.path()).is_ok());
     }
 }

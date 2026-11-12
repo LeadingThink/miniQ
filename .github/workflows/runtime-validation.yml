@@ -1,0 +1,46 @@
+name: Agent runtime validation
+
+on:
+  pull_request:
+    paths:
+      - 'crates/miniq-agent/**'
+      - 'crates/miniq-daemon/**'
+      - 'crates/miniq-memory/**'
+      - 'crates/miniq-models/**'
+      - 'crates/miniq-skills/**'
+      - 'crates/miniq-tools/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/runtime-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-runtime-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: agent-runtime-${{ matrix.os }}
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Test model, skill, agent and persistence contracts
+        run: cargo test --locked --no-default-features -p miniq-models -p miniq-skills -p miniq-agent -p miniq-memory --lib
+      - name: Test daemon orchestration and recovery
+        run: cargo test --locked --no-default-features -p miniq-daemon --lib --bins
+      - name: Test skill tools
+        run: cargo test --locked --no-default-features -p miniq-tools --lib skill::tests
+      - name: Check workspace types
+        run: cargo check --locked --no-default-features --workspace
