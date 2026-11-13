@@ -72,7 +72,7 @@ export function WorkspaceGroup(props: WorkspaceGroupProps) {
    *  dumps them all at once. */
   const shownCount = Math.min(props.sessions.length, Math.max(COLLAPSED_SESSION_COUNT, visibleCount));
   const remaining = Math.max(0, props.sessions.length - shownCount);
-  const canCollapse = shownCount > COLLAPSED_SESSION_COUNT;
+  const allShown = props.sessions.length > COLLAPSED_SESSION_COUNT && remaining === 0;
   /** The list owns the full data order so keyboard navigation can still reach
    *  every session, while rendering only the pages revealed so far. */
   const listing = open || props.filtering;
@@ -252,37 +252,25 @@ export function WorkspaceGroup(props: WorkspaceGroupProps) {
         onSetSessionArchived={props.onSetSessionArchived}
       />}
       {open && !props.filtering && props.sessions.length > COLLAPSED_SESSION_COUNT && (
-        <>
-          {remaining > 0 && !canCollapse && (
-            <button
-              type="button"
-              className="session-toggle"
-              onClick={() =>
-                setVisibleCount((current) =>
-                  Math.max(current, COLLAPSED_SESSION_COUNT) + SESSION_PAGE_SIZE,
-                )
-              }
-            >
-              <ChevronDown size={14} />
-              <span>
-                {remaining > SESSION_PAGE_SIZE
-                  ? `展开更多 ${SESSION_PAGE_SIZE} 条会话`
-                  : `展开剩余 ${remaining} 条会话`}
-              </span>
-            </button>
-          )}
-          {canCollapse && (
-            <button
-              type="button"
-              className="session-toggle"
-              aria-expanded={true}
-              onClick={() => setVisibleCount(COLLAPSED_SESSION_COUNT)}
-            >
-              <ChevronUp size={14} />
-              <span>收起</span>
-            </button>
-          )}
-        </>
+        <button
+          type="button"
+          className="session-toggle"
+          aria-expanded={allShown}
+          onClick={() =>
+            setVisibleCount((current) =>
+              allShown ? COLLAPSED_SESSION_COUNT : Math.max(current, COLLAPSED_SESSION_COUNT) + SESSION_PAGE_SIZE,
+            )
+          }
+        >
+          {allShown ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          <span>
+            {allShown
+              ? "收起"
+              : remaining > SESSION_PAGE_SIZE
+                ? `展开更多 ${SESSION_PAGE_SIZE} 条会话`
+                : `展开剩余 ${remaining} 条会话`}
+          </span>
+        </button>
       )}
       <ConfirmDialog
         open={confirmDelete}

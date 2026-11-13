@@ -284,67 +284,25 @@ describe("Sidebar navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "展开更多 10 条会话" }));
     expect(document.querySelectorAll(".session-select")).toHaveLength(13);
     expect(scroll.scrollTop).toBe(640);
-    expect(document.querySelector('[data-virtualized="true"]')).toBeNull();
-    expect(screen.getByRole("button", { name: "收起" })).not.toBeNull();
-    expect(screen.queryByRole("button", { name: /展开.*条会话/ })).toBeNull();
+    // The tenth page crosses the virtualization threshold; the list must not
+    // snap the shared scroller back to the top when it turns virtual.
+    for (let page = 0; page < 9; page += 1) {
+      fireEvent.click(screen.getByRole("button", { name: /展开更多 10 条会话|展开剩余 \d+ 条会话/ }));
+    }
+    expect(document.querySelector('[data-virtualized="true"]')).not.toBeNull();
+    expect(scroll.scrollTop).toBe(640);
+    expect(screen.getByRole("button", { name: /展开更多 10 条会话/ })).not.toBeNull();
   });
 
-  it("can collapse a partially expanded list without losing further pagination", () => {
+  it("collapses back to three sessions only after every page is shown", () => {
     const sessions = Array.from({ length: 15 }, (_, index) => ({ ...session, id: `s${index}`, title: `任务 ${index}` }));
     render(<Sidebar {...sidebarProps({ sessions })} />);
     expect(screen.getByRole("button", { name: "展开更多 10 条会话" })).not.toBeNull();
     expect(screen.queryByRole("button", { name: "收起" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "展开更多 10 条会话" }));
     expect(document.querySelectorAll(".session-select")).toHaveLength(13);
-    expect(screen.getByRole("button", { name: "收起" })).not.toBeNull();
-    expect(screen.queryByRole("button", { name: /展开.*条会话/ })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "收起" }));
-    expect(document.querySelectorAll(".session-select")).toHaveLength(3);
-    fireEvent.click(screen.getByRole("button", { name: "展开更多 10 条会话" }));
-    expect(document.querySelectorAll(".session-select")).toHaveLength(13);
-    expect(screen.getByRole("button", { name: "收起" })).not.toBeNull();
-    expect(screen.queryByRole("button", { name: /展开.*条会话/ })).toBeNull();
-  });
-
-  it.each([3, 4, 13, 14])("keeps pagination controls consistent for %i sessions", (count) => {
-    const sessions = Array.from({ length: count }, (_, index) => ({ ...session, id: `s${index}` }));
-    render(<Sidebar {...sidebarProps({ sessions })} />);
-    expect(screen.queryByRole("button", { name: "收起" })).toBeNull();
-    if (count === 3) {
-      expect(screen.queryByRole("button", { name: /展开.*条会话/ })).toBeNull();
-      return;
-    }
-    fireEvent.click(screen.getByRole("button", { name: /展开.*条会话/ }));
-    expect(document.querySelectorAll(".session-select")).toHaveLength(Math.min(count, 13));
-    expect(screen.queryByRole("button", { name: /展开.*条会话/ })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "收起" }));
-    expect(document.querySelectorAll(".session-select")).toHaveLength(3);
-  });
-
-  it("keeps collapse available when sessions arrive and respects collapse after auto-reveal", () => {
-    const sessions = Array.from({ length: 20 }, (_, index) => ({ ...session, id: `s${index}` }));
-    const props = sidebarProps({ sessions, currentSessionId: "s12" });
-    const view = render(<Sidebar {...props} />);
-    const updated = [...sessions, { ...session, id: "new-session" }];
-    view.rerender(<Sidebar {...props} sessions={updated} />);
-    expect(screen.getByRole("button", { name: "收起" })).not.toBeNull();
-    expect(screen.queryByRole("button", { name: /展开.*条会话/ })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "收起" }));
-    view.rerender(<Sidebar {...props} sessions={[...updated]} />);
-    expect(document.querySelectorAll(".session-select")).toHaveLength(3);
-  });
-
-  it.each([
-    ["Windows", "Win32", true], ["macOS", "MacIntel", true], ["Linux", "Linux x86_64", true],
-    ["iOS WebView", "iPhone", false], ["Android WebView", "Linux armv8l", false], ["Web", "Win32", false],
-  ])("supports partial expansion and collapse in the shared sidebar on %s", (_name, platform, tauri) => {
-    vi.spyOn(navigator, "platform", "get").mockReturnValue(platform as string);
-    if (tauri) vi.stubGlobal("__TAURI_INTERNALS__", { invoke: vi.fn() });
-    const sessions = Array.from({ length: 15 }, (_, index) => ({ ...session, id: `s${index}` }));
-    render(<Sidebar {...sidebarProps({ sessions })} />);
-    fireEvent.click(screen.getByRole("button", { name: "展开更多 10 条会话" }));
-    expect(screen.getByRole("button", { name: "收起" })).not.toBeNull();
-    expect(screen.queryByRole("button", { name: /展开.*条会话/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "展开剩余 2 条会话" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(15);
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
     expect(document.querySelectorAll(".session-select")).toHaveLength(3);
   });
