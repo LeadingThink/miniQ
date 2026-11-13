@@ -96,6 +96,32 @@ it("leaves Windows Alt+F available to the system", () => {
   expect(event.defaultPrevented).toBe(false);
 });
 
+it("keeps composer input available after returning with Windows Alt+Tab", () => {
+  mockPlatform("Win32");
+  const handlers = {
+    onPalette: vi.fn(),
+    onNewChat: vi.fn(),
+    onSettings: vi.fn(),
+    onShortcut: vi.fn(),
+  };
+  const { getByLabelText } = render(<>
+    <Harness handlers={handlers} />
+    <textarea aria-label="消息" />
+  </>);
+  const input = getByLabelText("消息") as HTMLTextAreaElement;
+  input.focus();
+
+  fireEvent.keyDown(input, { key: "Alt", code: "AltLeft", altKey: true });
+  fireEvent.keyDown(input, { key: "Tab", code: "Tab", altKey: true });
+  fireEvent.keyUp(input, { key: "Alt", code: "AltLeft" });
+  fireEvent.change(input, { target: { value: "继续 输入" } });
+  fireEvent.keyDown(input, { key: " ", code: "Space" });
+
+  expect(input.value).toBe("继续 输入");
+  expect(document.activeElement).toBe(input);
+  for (const handler of Object.values(handlers)) expect(handler).not.toHaveBeenCalled();
+});
+
 it("does not replace the browser shortcut when no session search handler is available", () => {
   mockPlatform("Win32");
   render(<Harness handlers={{

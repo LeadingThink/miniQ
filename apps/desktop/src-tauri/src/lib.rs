@@ -472,12 +472,29 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
-/// Alt+Space toggles the main window from anywhere, mirroring the
-/// ChatGPT desktop quick-launch experience.
-///
-/// Never fails startup: Alt+Space is already taken by the window manager on
-/// many Linux desktops (and by the system menu on Windows), so a failed
-/// registration only disables the quick-toggle and logs a warning.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum QuickToggleShortcut {
+    #[cfg(not(target_os = "windows"))]
+    AltSpace,
+    CtrlAltSpace,
+}
+
+#[cfg(target_os = "windows")]
+fn quick_toggle_shortcuts() -> &'static [QuickToggleShortcut] {
+    &[QuickToggleShortcut::CtrlAltSpace]
+}
+
+#[cfg(not(target_os = "windows"))]
+fn quick_toggle_shortcuts() -> &'static [QuickToggleShortcut] {
+    &[
+        QuickToggleShortcut::AltSpace,
+        QuickToggleShortcut::CtrlAltSpace,
+    ]
+}
+
+/// Registers a global shortcut that toggles the main window from anywhere.
+/// Windows reserves Alt+Space for its window menu, so using it there can steal
+/// focus after Alt+Tab and prevent the composer from receiving text input.
 fn setup_global_shortcut(app: &tauri::AppHandle) {
     use tauri::Manager;
     use tauri_plugin_global_shortcut::{
@@ -506,12 +523,16 @@ fn setup_global_shortcut(app: &tauri::AppHandle) {
         return;
     }
 
-    // Preferred first; fall back when the OS/window-manager already owns it.
-    let candidates = [
-        Shortcut::new(Some(Modifiers::ALT), Code::Space),
-        Shortcut::new(Some(Modifiers::ALT | Modifiers::CONTROL), Code::Space),
-    ];
-    for shortcut in candidates {
+    for candidate in quick_toggle_shortcuts() {
+        let shortcut = match candidate {
+            #[cfg(not(target_os = "windows"))]
+            QuickToggleShortcut::AltSpace => {
+                Shortcut::new(Some(Modifiers::ALT), Code::Space)
+            }
+            QuickToggleShortcut::CtrlAltSpace => {
+                Shortcut::new(Some(Modifiers::ALT | Modifiers::CONTROL), Code::Space)
+            }
+        };
         match app.global_shortcut().register(shortcut) {
             Ok(()) => {
                 eprintln!("[miniq] quick-toggle registered: {shortcut}");
@@ -521,6 +542,32 @@ fn setup_global_shortcut(app: &tauri::AppHandle) {
         }
     }
     eprintln!("[miniq] no quick-toggle shortcut available; continuing without it");
+}
+
+#[cfg(test)]
+mod quick_toggle_tests {
+    use super::{quick_toggle_shortcuts, QuickToggleShortcut};
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_does_not_register_the_system_alt_space_shortcut() {
+        assert_eq!(
+            quick_toggle_shortcuts(),
+            &[QuickToggleShortcut::CtrlAltSpace]
+        );
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn other_desktops_keep_alt_space_with_a_ctrl_alt_fallback() {
+        assert_eq!(
+            quick_toggle_shortcuts(),
+            &[
+                QuickToggleShortcut::AltSpace,
+                QuickToggleShortcut::CtrlAltSpace,
+            ]
+        );
+    }
 }
 
 fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
