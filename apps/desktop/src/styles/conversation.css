@@ -289,6 +289,68 @@
   cursor: pointer;
 }
 
+.sent-message-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  white-space: pre-wrap;
+}
+
+.sent-message-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sent-paste-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--text-mid) 24%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-footnote);
+  cursor: pointer;
+}
+
+.sent-paste-chip:hover {
+  border-color: color-mix(in srgb, var(--text-mid) 45%, transparent);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+}
+
+.sent-paste-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.message-edit-composer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 2px;
+  min-width: min(420px, 70vw);
+}
+
+.message-edit-composer > textarea {
+  flex: 1 1 12em;
+  min-width: 8em;
+  min-height: 24px;
+  padding: 1px 3px;
+  resize: none;
+  overflow: hidden;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1.5;
+}
+
 .paste-chip-remove:hover {
   color: var(--text);
   background: var(--bg-hover);

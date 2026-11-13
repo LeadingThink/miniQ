@@ -58,6 +58,38 @@ export type DraftSegment =
   | { kind: "text"; text: string }
   | { kind: "paste"; paste: PendingPaste };
 
+export type SentMessageSegment =
+  | { kind: "text"; text: string }
+  | { kind: "paste"; text: string; label: string };
+
+const TRAILING_TEXT_CHARS = 500;
+
+/**
+ * Recovers the visible shape of a sent long paste without changing the stored
+ * message. The pasted document starts the message and may contain short title
+ * lines; only a short trailing instruction after a newline is kept separate.
+ */
+export function sentMessageSegments(content: string): SentMessageSegment[] {
+  if (!isLargePaste(content)) return [{ kind: "text", text: content }];
+  const boundaries = [...content.matchAll(/\r?\n/g)].map((match) => ({
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length,
+  }));
+  const last = [...boundaries].reverse().find((boundary) =>
+    isLargePaste(content.slice(0, boundary.start).trim())
+      && charCount(content.slice(boundary.end).trim()) <= TRAILING_TEXT_CHARS,
+  );
+  if (!last) return [{ kind: "text", text: content }];
+  const paste = content.slice(0, last.start).trim();
+  const after = content.slice(last.end).trim();
+  if (!isLargePaste(paste) || !after)
+    return [{ kind: "text", text: content }];
+  return [
+    { kind: "paste", text: paste, label: `粘贴内容 ${charCount(paste)} 字` },
+    { kind: "text", text: after },
+  ];
+}
+
 /**
  * Splits a draft around its paste tokens. Text segments stay editable;
  * each token renders as one inline chip. A trailing empty segment keeps a

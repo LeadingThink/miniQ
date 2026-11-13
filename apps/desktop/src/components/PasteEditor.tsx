@@ -14,15 +14,17 @@ export function PasteEditor(props: {
   return (
     <Dialog
       open
-      title={props.paste.kind === "file-selection" ? "查看和编辑引用内容" : "查看和编辑粘贴内容"}
-      description="保存后将使用修改后的全文发送；取消不会改变原内容。"
+      title={props.readOnly
+        ? "查看粘贴内容"
+        : props.paste.kind === "file-selection" ? "查看和编辑引用内容" : "查看和编辑粘贴内容"}
+      description={props.readOnly ? "完整粘贴文本仅供查看。" : "保存后将使用修改后的全文发送；取消不会改变原内容。"}
       className="paste-editor"
       onClose={props.onClose}
       footer={
         <>
           <span className="paste-editor-count" role="status">{charCount(text)} 字</span>
-          <button type="button" className="secondary" onClick={props.onClose}>取消</button>
-          <button type="button" disabled={props.readOnly} onClick={() => props.onSave(text)}>保存修改</button>
+          <button type="button" className="secondary" onClick={props.onClose}>{props.readOnly ? "关闭" : "取消"}</button>
+          {!props.readOnly && <button type="button" onClick={() => props.onSave(text)}>保存修改</button>}
         </>
       }
     >

@@ -35,6 +35,8 @@ import { turnHasFileWrites } from "../turnChanges";
 import { ConfirmDialog } from "./ui/Dialog";
 import { SessionReviewPanel } from "./SessionReviewDialog";
 import { InterimReply } from "./InterimReply";
+import { SentMessageContent } from "./SentMessageContent";
+import { SentMessageEditor } from "./SentMessageEditor";
 
 /** An edit or regenerate that waits for the user to confirm stopping the run. */
 interface PendingRewrite {
@@ -319,13 +321,10 @@ export function TimelineEntries(props: {
             >
               <div className="bubble user">
                 {editingMessageId === item.message.id ? (
-                  <textarea
-                    className="message-edit-input"
-                    aria-label="修改消息内容"
-                    value={draft}
-                    autoFocus
-                    rows={Math.max(2, draft.split("\n").length)}
-                    onChange={(event) => setDraft(event.target.value)}
+                  <SentMessageEditor
+                    key={item.message.id}
+                    content={item.message.content}
+                    onChange={setDraft}
                     onKeyDown={(event) => {
                       if (event.key === "Escape") bridge.cancelEditing();
                       if (
@@ -336,7 +335,7 @@ export function TimelineEntries(props: {
                     }}
                   />
                 ) : item.message.content ? (
-                  <div>{item.message.content}</div>
+                  <SentMessageContent content={item.message.content} />
                 ) : null}
                 {item.message.attachments &&
                   item.message.attachments.length > 0 && (

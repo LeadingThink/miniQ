@@ -179,7 +179,7 @@ describe("Timeline execution flow", () => {
       ],
     });
 
-    expect(html).toMatch(/class="message-entry user"[^>]*><div class="bubble user"><div>你好<\/div><\/div><div class="message-footer"><details class="message-time">.*?<\/details><div class="message-actions"><span class="copy-control">/);
+    expect(html).toMatch(/class="message-entry user"[^>]*><div class="bubble user"><div class="sent-message-content"><span class="sent-message-text">你好<\/span><\/div><\/div><div class="message-footer"><details class="message-time">.*?<\/details><div class="message-actions"><span class="copy-control">/);
     expect(html).toContain('aria-label="修改消息"');
     expect(html).toMatch(/你好，有什么需要我帮你处理的？<\/p><\/div><\/div><div class="message-footer"><details class="message-time">.*?<\/details><div class="message-actions"><span class="copy-control">/);
     expect(html.indexOf('aria-label="复制消息"', html.indexOf("bubble assistant")))
@@ -334,6 +334,58 @@ describe("Timeline execution flow", () => {
       "user-edit",
       "修改后的内容",
       ["C:\\work\\context.txt"],
+    ));
+  });
+
+  it("restores a sent long paste as an editable chip when modifying the message", async () => {
+    const document = `# miniQ\n${"正文".repeat(600)}`;
+    const instruction = "请简要概括该文档内容。";
+    const editedDocument = `${document}\n补充内容`;
+    const onRewrite = vi.fn().mockResolvedValue(true);
+    render(
+      <Timeline
+        messages={[{
+          id: "user-long-paste",
+          sessionId: "session-1",
+          role: "user",
+          content: `${document}\n${instruction}`,
+          createdAt: "2026-09-08T00:00:00Z",
+        }]}
+        toolCalls={[]}
+        approvals={[]}
+        questions={[]}
+        plan={[]}
+        artifacts={[]}
+        queue={[]}
+        streamingText=""
+        turnProgress={null}
+        busy={false}
+        onResolveApproval={noop}
+        onResolveQuestion={noop}
+        onRollback={noop}
+        onOpenFile={noop}
+        onOpenUrl={noop}
+        onSteerQueued={asyncNoop}
+        onRemoveQueued={asyncNoop}
+        onUpdateQueued={asyncNoop}
+        onRewrite={onRewrite}
+        onError={noop}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "修改消息" }));
+    expect((screen.getByLabelText("修改消息内容") as HTMLTextAreaElement).value).toBe(instruction);
+    fireEvent.click(screen.getByRole("button", { name: /展开粘贴内容 \d+ 字/ }));
+    const fullText = screen.getByRole("textbox", { name: "完整文本" }) as HTMLTextAreaElement;
+    expect(fullText.value).toBe(document);
+    fireEvent.change(fullText, { target: { value: editedDocument } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    fireEvent.click(screen.getByRole("button", { name: "发送修改" }));
+
+    await waitFor(() => expect(onRewrite).toHaveBeenCalledWith(
+      "user-long-paste",
+      `${editedDocument}\n${instruction}`,
+      undefined,
     ));
   });
 
