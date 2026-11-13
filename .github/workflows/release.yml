@@ -427,6 +427,7 @@ jobs:
           npm ci
           python3 scripts/android_release_test.py
           npm run test:mobile
+          npx vitest run --maxWorkers=4 src/hooks/useSessionModel.test.tsx src/components/SessionModelControls.mobile.apply.test.tsx
           npm run build
           npx cap sync android
       - name: Test native Android upload storage and HTTP outcomes

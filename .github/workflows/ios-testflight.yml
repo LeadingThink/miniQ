@@ -86,6 +86,7 @@ jobs:
         run: |
           node --test scripts/ios_testflight.node-test.mjs scripts/ios_testflight_status.node-test.mjs
           npm run test:mobile
+          npx vitest run --maxWorkers=4 src/hooks/useSessionModel.test.tsx src/components/SessionModelControls.mobile.apply.test.tsx
           npx vitest run --maxWorkers=4 devModelProxy.test.ts src/mobileVoice.test.ts
           VITE_MINIQ_API_BASE_URL="$MINIQ_BUILD_API_BASE_URL" npm run build
           npx cap sync ios
