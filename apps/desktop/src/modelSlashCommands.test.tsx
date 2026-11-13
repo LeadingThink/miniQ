@@ -140,7 +140,7 @@ it("explains missing configuration without asking the server for an undefined mo
   expect(call).not.toHaveBeenCalled();
 });
 
-it("updates the global model through the real session-model hook", async () => {
+it("updates the selected session and future defaults through the real session-model hook", async () => {
   const initial: SessionModelResult = {
     settings: { ...DEFAULT_MODEL_SETTINGS, model: "gpt-5.6-sol" },
     effective: {
@@ -177,6 +177,7 @@ it("updates the global model through the real session-model hook", async () => {
     await children[0].onSelect!();
   });
   expect(call).toHaveBeenCalledWith("model.update", {
+    sessionId: "session-a",
     settings: {
       model: "claude-sonnet",
       apiProtocol: "auto",

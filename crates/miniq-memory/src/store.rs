@@ -21,6 +21,7 @@ mod memory_recall;
 mod memory_write;
 mod model_calls;
 mod model_context;
+mod model_defaults;
 mod output_cap;
 mod queue;
 mod records;

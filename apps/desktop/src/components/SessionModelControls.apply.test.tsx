@@ -75,6 +75,7 @@ it("waits for the save, shows failure, and closes only after a successful retry"
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(save).toHaveBeenCalledTimes(2);
   expect(call).toHaveBeenLastCalledWith("model.update", {
+    sessionId: "session-a",
     settings: { ...DEFAULT_MODEL_SETTINGS, model: "gpt-5.6-sol" },
   });
   expect(screen.queryByRole("alert")).toBeNull();

@@ -571,6 +571,16 @@ impl AppState {
 
     /// Apply and persist new settings.
     pub fn update_settings(&self, new_settings: DaemonSettings) -> Result<(), String> {
+        let mut settings = self.settings.lock().unwrap();
+        self.update_settings_locked(&mut settings, new_settings)
+    }
+
+    /// Hold the settings lock across updates that also snapshot session defaults.
+    pub(crate) fn update_settings_locked(
+        &self,
+        settings: &mut DaemonSettings,
+        new_settings: DaemonSettings,
+    ) -> Result<(), String> {
         if let Some(path) = &self.settings_path {
             let degraded = self.settings_load_error.lock().unwrap().clone();
             match &degraded {
@@ -587,7 +597,7 @@ impl AppState {
             }
             new_settings.save(path).map_err(|e| e.to_string())?;
         }
-        *self.settings.lock().unwrap() = new_settings;
+        *settings = new_settings;
         self.media_settings_changed.notify_one();
         Ok(())
     }

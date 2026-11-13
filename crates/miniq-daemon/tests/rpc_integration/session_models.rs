@@ -1,6 +1,95 @@
 use super::*;
 
 #[tokio::test]
+async fn global_choice_from_mobile_updates_b_and_future_c_but_preserves_a() {
+    let (port, token) = start_daemon().await;
+    let mut desktop = connect(port, &token).await;
+    let mut mobile = connect(port, &token).await;
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = call(
+        &mut desktop,
+        "workspace",
+        "workspace.open",
+        json!({
+            "path":dir.path().to_string_lossy()
+        }),
+    )
+    .await["result"]["id"]
+        .clone();
+    let old = json!({"model":"old-model","apiProtocol":"responses","reasoningEffort":null});
+    let chosen =
+        json!({"model":"new-model","apiProtocol":"chat_completions","reasoningEffort":null});
+    let a = call(
+        &mut desktop,
+        "a",
+        "session.create",
+        json!({
+            "workspaceId":workspace,"modelSettings":old
+        }),
+    )
+    .await["result"]["id"]
+        .clone();
+    let b = call(
+        &mut desktop,
+        "b",
+        "session.create",
+        json!({
+            "workspaceId":workspace,"modelSettings":old
+        }),
+    )
+    .await["result"]["id"]
+        .clone();
+    let changed = call(
+        &mut mobile,
+        "change",
+        "model.update",
+        json!({
+            "sessionId":b,"settings":chosen
+        }),
+    )
+    .await;
+    assert!(changed.get("error").is_none(), "{changed}");
+    desktop.close(None).await.unwrap();
+    desktop = connect(port, &token).await;
+    let c = call(
+        &mut desktop,
+        "c",
+        "session.create",
+        json!({
+            "workspaceId":workspace
+        }),
+    )
+    .await["result"]["id"]
+        .clone();
+    for client in [&mut desktop, &mut mobile] {
+        for (id, expected) in [(&a, &old), (&b, &chosen), (&c, &chosen)] {
+            let result = call(client, "model", "session.modelGet", json!({"sessionId":id})).await;
+            assert_eq!(result["result"]["settings"], *expected);
+        }
+    }
+    let draft = call(
+        &mut mobile,
+        "draft",
+        "model.update",
+        json!({
+            "settings":{"model":"draft-choice"}
+        }),
+    )
+    .await;
+    assert!(draft.get("error").is_none(), "{draft}");
+    for (id, expected) in [(&a, &old), (&b, &chosen), (&c, &chosen)] {
+        let result = call(
+            &mut desktop,
+            "model",
+            "session.modelGet",
+            json!({"sessionId":id}),
+        )
+        .await;
+        assert_eq!(result["result"]["settings"], *expected);
+    }
+}
+
+#[tokio::test]
 async fn separate_clients_preserve_each_sessions_model_after_creating_another() {
     let (port, token) = start_daemon().await;
     let mut desktop = connect(port, &token).await;

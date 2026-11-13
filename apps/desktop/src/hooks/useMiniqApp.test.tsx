@@ -153,7 +153,7 @@ it("creates a task that inherits the latest default instead of freezing the disp
   });
 });
 
-it("uses one global model for existing sessions and new conversations", async () => {
+it("preserves each existing session while model changes set future conversation defaults", async () => {
   const original = fake.call.getMockImplementation()!;
   const selections = new Map<string, SessionModelSettings>([
     ["a", { model: "gpt", apiProtocol: "responses", reasoningEffort: "high" }],
@@ -165,7 +165,7 @@ it("uses one global model for existing sessions and new conversations", async ()
     if (method === "session.modelGet") return { settings: selections.get(params.sessionId), effective: selections.get(params.sessionId) };
     if (method === "model.update") {
       projectDefault = params.settings;
-      for (const id of selections.keys()) selections.set(id, params.settings);
+      if (params.sessionId) selections.set(params.sessionId, params.settings);
       return { settings: params.settings, effective: params.settings };
     }
     if (method === "session.create") {
@@ -174,7 +174,7 @@ it("uses one global model for existing sessions and new conversations", async ()
     }
     if (method === "session.sendMessage") {
       expect(params.sessionId).toBe("new");
-      expect(selections.get("new")).toEqual({ model: "new-model", apiProtocol: "auto", reasoningEffort: "low" });
+      expect(selections.get("new")).toEqual({ model: "new-model", apiProtocol: "responses", reasoningEffort: "low" });
       return {};
     }
     if (method === "session.open" && params.sessionId === "new") {
@@ -191,14 +191,23 @@ it("uses one global model for existing sessions and new conversations", async ()
   await act(async () => expect(await hook.result.current.actions.startTask("test task")).toBe(true));
   expect(fake.call).toHaveBeenCalledWith("session.create", {
     workspaceId: "w",
-    modelSettings: { model: "new-model", apiProtocol: "auto", reasoningEffort: "low" },
+    modelSettings: { model: "new-model", apiProtocol: "responses", reasoningEffort: "low" },
   });
-  for (const id of ["a", "b", "new"]) {
+  for (const [id, expected] of [["a", "gpt"], ["b", "claude"], ["new", "new-model"]]) {
     await act(async () => hook.result.current.actions.openSession(id));
-    await waitFor(() => expect(hook.result.current.sessionModel.effective?.model).toBe("new-model"));
+    await waitFor(() => expect(hook.result.current.sessionModel.effective?.model).toBe(expected));
   }
+  await act(async () => hook.result.current.actions.openSession("b"));
+  await waitFor(() => expect(hook.result.current.sessionModel.ready).toBe(true));
+  await act(async () => hook.result.current.sessionModel.update({ model: "gpt-b", apiProtocol: "auto", reasoningEffort: "high" }));
+  expect(fake.call).toHaveBeenCalledWith("model.update", {
+    sessionId: "b",
+    settings: { model: "gpt-b", apiProtocol: "auto", reasoningEffort: "high" },
+  });
+  await act(async () => hook.result.current.actions.openSession("a"));
+  await waitFor(() => expect(hook.result.current.sessionModel.effective?.model).toBe("gpt"));
   act(() => hook.result.current.actions.newChat());
-  await waitFor(() => expect(hook.result.current.sessionModel.effective?.model).toBe("new-model"));
+  await waitFor(() => expect(hook.result.current.sessionModel.effective?.model).toBe("gpt-b"));
   expect(fake.call).toHaveBeenCalledWith("model.update", {
     settings: { model: "new-model", apiProtocol: "responses", reasoningEffort: "low" },
   });

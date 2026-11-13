@@ -79,7 +79,7 @@ it("reloads only the matching session on session-model broadcasts", async () => 
   await waitFor(() => expect(hook.result.current.effective?.model).toBe("two"));
 });
 
-it("reloads sessions on workspace model-change broadcasts", async () => {
+it("keeps existing sessions unchanged on workspace default broadcasts", async () => {
   const call = vi.fn().mockResolvedValue(result("one"));
   const { client, emit } = fakeClient(call);
   const hook = renderHook(() => useSessionModel(client, "a", "study"));
@@ -94,10 +94,11 @@ it("reloads sessions on workspace model-change broadcasts", async () => {
     })
   );
 
-  await waitFor(() => expect(hook.result.current.effective?.model).toBe("two"));
+  expect(call).toHaveBeenCalledTimes(1);
+  expect(hook.result.current.effective?.model).toBe("one");
 });
 
-it("reloads sessions in any workspace on global model-change broadcasts", async () => {
+it("keeps existing sessions unchanged on global default broadcasts", async () => {
   const call = vi.fn().mockResolvedValue(result("one"));
   const { client, emit } = fakeClient(call);
   const hook = renderHook(() => useSessionModel(client, "a", "study"));
@@ -111,9 +112,8 @@ it("reloads sessions in any workspace on global model-change broadcasts", async 
     })
   );
 
-  await waitFor(() =>
-    expect(hook.result.current.effective?.model).toBe("global")
-  );
+  expect(call).toHaveBeenCalledTimes(1);
+  expect(hook.result.current.effective?.model).toBe("one");
 });
 
 it("updates the global model from a project draft", async () => {
@@ -140,7 +140,37 @@ it("updates the global model from a project draft", async () => {
   expect(hook.result.current.effective?.model).toBe("updated-model");
 });
 
-it("updates the global model from an existing session", async () => {
+it("refreshes future defaults while existing session models stay independent", async () => {
+  let defaults = result("deepseek");
+  const sessions = new Map([["a", result("deepseek")], ["b", result("deepseek")]]);
+  const call = vi.fn(async (method, params) => {
+    if (method === "session.modelGet") return sessions.get(params.sessionId);
+    if (method === "workspace.modelGet") return defaults;
+    if (method === "model.update") {
+      defaults = result(params.settings.model);
+      if (params.sessionId) sessions.set(params.sessionId, defaults);
+      return defaults;
+    }
+    throw new Error(`Unexpected method ${method}`);
+  });
+  const { client, emit } = fakeClient(call);
+  const a = renderHook(() => useSessionModel(client, "a", "study"));
+  const b = renderHook(() => useSessionModel(client, "b", "study"));
+  const draft = renderHook(() => useSessionModel(client, null, "study"));
+  await waitFor(() => expect([a, b, draft].every((hook) => hook.result.current.ready)).toBe(true));
+  await act(async () => b.result.current.update({ ...DEFAULT_MODEL_SETTINGS, model: "gpt" }));
+  act(() => emit({ type: "global_model_settings_changed", settings: defaults.settings }));
+  await waitFor(() => expect(draft.result.current.effective?.model).toBe("gpt"));
+  expect(a.result.current.effective?.model).toBe("deepseek");
+  expect(b.result.current.effective?.model).toBe("gpt");
+  await act(async () => a.result.current.reload());
+  expect(a.result.current.effective?.model).toBe("deepseek");
+  expect(call).toHaveBeenCalledWith("model.update", {
+    sessionId: "b", settings: { ...DEFAULT_MODEL_SETTINGS, model: "gpt" },
+  });
+});
+
+it("updates the selected session and future defaults from an existing session", async () => {
   const call = vi.fn().mockResolvedValue(result("updated-model"));
   const { client } = fakeClient(call);
   const hook = renderHook(() => useSessionModel(client, "session-a", "study"));
@@ -149,6 +179,7 @@ it("updates the global model from an existing session", async () => {
   await act(async () => hook.result.current.update(DEFAULT_MODEL_SETTINGS));
 
   expect(call).toHaveBeenLastCalledWith("model.update", {
+    sessionId: "session-a",
     settings: DEFAULT_MODEL_SETTINGS,
   });
 });
@@ -309,7 +340,7 @@ it("hides the previous model and error while the next session is loading", async
   expect(hook.result.current.effective?.model).toBe("model-b");
 });
 
-it("blocks another global model update while one is pending", async () => {
+it("blocks another model update while one is pending", async () => {
   let complete!: (value: SessionModelResult) => void;
   const call = vi.fn((method, params) =>
     method === "model.update"

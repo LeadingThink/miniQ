@@ -61,5 +61,37 @@ pub struct WorkspaceModelUpdate {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GlobalModelUpdate {
+    /// Existing session to update alongside future-session defaults. Omit for a draft.
+    #[serde(default)]
+    pub session_id: Option<String>,
     pub settings: SessionModelSettings,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn global_model_update_accepts_existing_sessions_and_drafts() {
+        for input in [
+            json!({"settings":{}}),
+            json!({"sessionId":null,"settings":{}}),
+        ] {
+            let update: GlobalModelUpdate = serde_json::from_value(input).unwrap();
+            assert!(update.session_id.is_none());
+        }
+        let update: GlobalModelUpdate = serde_json::from_value(json!({
+            "sessionId":"b", "settings":{"model":"chosen", "apiProtocol":"responses", "reasoningEffort":"high"}
+        })).unwrap();
+        assert_eq!(update.session_id.as_deref(), Some("b"));
+        assert_eq!(
+            update.settings.reasoning_effort,
+            Some(ReasoningEffort::High)
+        );
+        assert!(serde_json::from_value::<GlobalModelUpdate>(json!({
+            "sessionId":42,"settings":{}
+        }))
+        .is_err());
+    }
 }

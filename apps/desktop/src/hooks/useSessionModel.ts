@@ -45,7 +45,7 @@ export function useSessionModel(
             ? {
                 model: defaults.provider.model,
                 apiProtocol: defaults.provider.apiProtocol,
-                reasoningEffort: null,
+                reasoningEffort: defaults.provider.reasoningEffort ?? null,
               }
             : null,
         };
@@ -71,9 +71,9 @@ export function useSessionModel(
     });
     const stopEvents = client.onEvent((event) => {
       if (
-        event.type === "global_model_settings_changed" ||
+        (!sessionId && event.type === "global_model_settings_changed") ||
         (event.type === "model_settings_changed" && event.sessionId === sessionId) ||
-        (event.type === "workspace_model_settings_changed" &&
+        (!sessionId && event.type === "workspace_model_settings_changed" &&
           event.workspaceId === workspaceId)
       )
         void reload();
@@ -94,6 +94,7 @@ export function useSessionModel(
     setPending(true);
     try {
       const next = await client.call<SessionModelResult>("model.update", {
+        ...(sessionId ? { sessionId } : {}),
         settings,
       });
       if (request === generation.current) setResult(next);

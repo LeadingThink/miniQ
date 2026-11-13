@@ -3263,6 +3263,14 @@
       }
     },
     "properties": {
+      "sessionId": {
+        "default": null,
+        "description": "Existing session to update alongside future-session defaults. Omit for a draft.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "settings": {
         "$ref": "#/definitions/SessionModelSettings"
       }

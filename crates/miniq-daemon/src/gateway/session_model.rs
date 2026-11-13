@@ -159,38 +159,61 @@ pub(super) async fn workspace_update(
 
 pub(super) async fn global_update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: GlobalModelUpdate = params(raw)?;
-    apply_global_update(state, input.settings).await
-}
-
-async fn apply_global_update(
-    state: &AppState,
-    mut settings: SessionModelSettings,
-) -> Result<Value, RpcError> {
+    // Reject stale session IDs before provider validation, settings persistence,
+    // or any database mutation.
+    let session = input
+        .session_id
+        .as_deref()
+        .map(|id| state.store.get_session(id))
+        .transpose()
+        .map_err(store_err)?;
+    let mut settings = input.settings;
     let baseline = state.settings.lock().unwrap().provider.clone();
     validate_settings(&baseline, &mut settings).await?;
-    let previous_settings = state.settings.lock().unwrap().clone();
+    let mut current_settings = state.settings.lock().unwrap();
+    let previous_settings = current_settings.clone();
+    let baseline = previous_settings.provider.clone();
+    let previous_defaults = crate::session_models::snapshot_selection(
+        baseline.clone(),
+        SessionModelSettings::default(),
+    );
+    let settings = crate::session_models::snapshot_selection(baseline, settings);
     let mut daemon_settings = previous_settings.clone();
     if let Some(provider) = &mut daemon_settings.provider {
         crate::session_models::apply_selection(provider, &settings);
     }
     state
-        .update_settings(daemon_settings)
+        .update_settings_locked(&mut current_settings, daemon_settings)
         .map_err(|error| RpcError::new(ErrorCode::InternalError, error))?;
-    if let Err(error) = state.store.synchronize_model_settings(&settings) {
+    if let Err(error) = state.store.update_model_defaults(
+        &settings,
+        &previous_defaults,
+        input.session_id.as_deref(),
+    ) {
         // The database transaction rolls itself back. Restore the persisted
         // provider and runtime settings too; never announce a partial update.
-        state.update_settings(previous_settings).map_err(|rollback| {
-            RpcError::new(
-                ErrorCode::InternalError,
-                format!("model synchronization failed: {error}; settings rollback failed: {rollback}"),
-            )
-        })?;
+        state
+            .update_settings_locked(&mut current_settings, previous_settings)
+            .map_err(|rollback| {
+                RpcError::new(
+                    ErrorCode::InternalError,
+                    format!("model update failed: {error}; settings rollback failed: {rollback}"),
+                )
+            })?;
         return Err(store_err(error));
     }
+    let effective = current_settings.provider.clone();
+    drop(current_settings);
     state.emit(Event::GlobalModelSettingsChanged {
         settings: settings.clone(),
     });
-    let effective = state.settings.lock().unwrap().provider.clone();
+    if let Some(session) = session {
+        state.emit(Event::ModelSettingsChanged {
+            session_id: session.id,
+            workspace_id: session.workspace_id,
+            settings: settings.clone(),
+        });
+    }
     to_value(
         json!({ "settings": settings, "effective": effective.map(|config| json!({
         "model": config.model, "apiProtocol": config.api_protocol, "reasoningEffort": config.reasoning_effort,

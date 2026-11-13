@@ -120,12 +120,9 @@ pub(crate) fn build_input_for_model(
     Ok(input)
 }
 
-/// DeepSeek answers thinking mode with plain-text chain of thought and requires
-/// it back on every later request that carries tools. OpenAI-compatible relays
-/// reshape that text into a `summary`, so a stored reasoning item can arrive as
-/// `content: null` plus `summary`, which DeepSeek drops. Sending it back as
-/// plain-text `content` (and supplying the empty echo DeepSeek accepts for turns
-/// that produced no thinking) keeps the tool loop valid.
+/// DeepSeek reasoning may be stored as streamed text, a summary or content
+/// parts. Replay it using the Responses `reasoning_text` content-part schema;
+/// a bare string in `content` is rejected as `invalid reasoning content`.
 mod deepseek {
     use serde_json::{json, Value};
 
@@ -176,20 +173,21 @@ mod deepseek {
             .unwrap_or_default()
     }
 
-    fn flatten(item: &mut Value) {
+    fn normalize_item(item: &mut Value) {
         let text = text(item);
         let Some(object) = item.as_object_mut() else {
             return;
         };
-        // `content` parts of type `reasoning_text` are rejected by Responses
-        // relays that forward to Chat Completions, so send one plain string.
-        object.insert("content".into(), Value::String(text));
-        // DeepSeek does not read summaries, and relay-only decorations are not
-        // part of the item schema. Keeping them would resend the same tokens.
+        object.insert(
+            "content".into(),
+            json!([{"type":"reasoning_text","text":text}]),
+        );
+        // The text now lives in content. Drop duplicate text and relay-only
+        // decorations while retaining the stored history unchanged.
         for key in ["summary", "encrypted_content", "quality", "size", "role"] {
             object.remove(key);
         }
-        // The content is now a new plaintext item. Reusing its provider ID
+        // The content is now a rewritten item. Reusing its provider ID
         // makes the relay reject it with `invalid reasoning content`.
         object.remove("id");
     }
@@ -197,7 +195,7 @@ mod deepseek {
     pub(super) fn normalize_reasoning(input: &mut Vec<Value>) {
         for item in input.iter_mut() {
             if item.get("type").and_then(Value::as_str) == Some("reasoning") {
-                flatten(item);
+                normalize_item(item);
             }
         }
         // Every assistant turn that calls a tool must replay reasoning, even
@@ -224,7 +222,10 @@ mod deepseek {
                 index += 1;
             }
             if has_call && !has_reasoning {
-                input.insert(start, json!({"type": "reasoning", "content": ""}));
+                input.insert(
+                    start,
+                    json!({"type":"reasoning","content":[{"type":"reasoning_text","text":""}]}),
+                );
                 index += 1;
             }
         }

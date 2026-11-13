@@ -81,7 +81,8 @@ fn deepseek_streamed_reasoning_survives_parallel_tool_replay() {
             ChatMessage::tool_result("b", "second file"),
         ]));
         assert_eq!(
-            body["input"][0]["content"], "Read both files.",
+            body["input"][0]["content"],
+            json!([{"type":"reasoning_text","text":"Read both files."}]),
             "done_only={done_only}"
         );
         assert_eq!(body["input"][1]["call_id"], "a");

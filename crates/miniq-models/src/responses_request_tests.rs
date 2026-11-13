@@ -174,7 +174,7 @@ async fn unreadable_screenshots_become_visible_errors_instead_of_poisoning_histo
 }
 
 #[test]
-fn deepseek_replays_reasoning_as_plain_text_instead_of_a_summary() {
+fn deepseek_replays_reasoning_as_responses_content_parts() {
     let message = assistant(vec![
         json!({
             "type":"reasoning", "id":"rs_1", "status":"completed", "content": null,
@@ -192,7 +192,10 @@ fn deepseek_replays_reasoning_as_plain_text_instead_of_a_summary() {
     )
     .unwrap();
     assert_eq!(input[0]["type"], "reasoning");
-    assert_eq!(input[0]["content"], "Call the tool first.");
+    assert_eq!(
+        input[0]["content"],
+        json!([{"type":"reasoning_text","text":"Call the tool first."}])
+    );
     for removed in ["id", "summary", "quality", "size", "role"] {
         assert!(
             input[0].get(removed).is_none(),
@@ -225,7 +228,10 @@ fn deepseek_rewritten_reasoning_has_no_stale_item_id_and_preserves_stored_contex
         let input = build_input_for_model(&messages, "oneapi.hy/deepseek-flash").unwrap();
         assert!(input[1].get("id").is_none());
         assert!(input[1].get("encrypted_content").is_none());
-        assert_eq!(input[1]["content"], "Inspect the public key.");
+        assert_eq!(
+            input[1]["content"],
+            json!([{"type":"reasoning_text","text":"Inspect the public key."}])
+        );
         assert_eq!(input[2], call);
         assert_eq!(input[3]["call_id"], "call-1");
         assert_eq!(input[3]["output"], "Synthetic public key.");
@@ -239,7 +245,8 @@ fn deepseek_rewritten_reasoning_has_no_stale_item_id_and_preserves_stored_contex
 #[test]
 fn deepseek_reasoning_stays_with_commentary_and_parallel_calls() {
     let message = assistant(vec![
-        json!({"type":"reasoning","content":"Inspect both files."}),
+        json!({"type":"reasoning","id":"item_tai_synthetic","status":"completed",
+            "summary":[{"type":"summary_text","text":"Inspect both files."}]}),
         json!({"type":"message","role":"assistant","content":[{"type":"output_text","text":"Checking."}]}),
         json!({"type":"function_call","call_id":"a","name":"file_read","arguments":"{}"}),
         json!({"type":"function_call","call_id":"b","name":"file_read","arguments":"{}"}),
@@ -254,7 +261,10 @@ fn deepseek_reasoning_stays_with_commentary_and_parallel_calls() {
     )
     .unwrap();
     assert_eq!(input.len(), 6);
-    assert_eq!(input[0]["content"], "Inspect both files.");
+    assert_eq!(
+        input[0]["content"],
+        json!([{"type":"reasoning_text","text":"Inspect both files."}])
+    );
     assert_eq!(input[1]["type"], "message");
     assert_eq!(input[2]["call_id"], "a");
     assert_eq!(input[3]["call_id"], "b");
@@ -279,7 +289,10 @@ fn deepseek_tool_rounds_without_reasoning_get_an_empty_echo() {
     )
     .unwrap();
     assert_eq!(input[1]["type"], "reasoning");
-    assert_eq!(input[1]["content"], "");
+    assert_eq!(
+        input[1]["content"],
+        json!([{"type":"reasoning_text","text":""}])
+    );
     assert_eq!(input[2]["type"], "function_call");
     assert_eq!(input[3]["type"], "function_call_output");
     assert_eq!(input.len(), 5);

@@ -12,6 +12,16 @@ fn checked_in_event_schema_matches_runtime_types() {
 }
 
 #[test]
+fn checked_in_global_model_update_schema_matches_runtime_types() {
+    let bundle: serde_json::Value =
+        serde_json::from_str(include_str!("../../../schemas/protocol.schema.json")).unwrap();
+    assert_eq!(
+        bundle["globalModelUpdate"],
+        serde_json::to_value(schemars::schema_for!(GlobalModelUpdate)).unwrap()
+    );
+}
+
+#[test]
 fn request_roundtrip() {
     let raw = json!({
         "jsonrpc": "2.0",

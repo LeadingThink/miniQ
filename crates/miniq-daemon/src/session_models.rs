@@ -40,8 +40,10 @@ impl AppState {
         session_id: &str,
         model: Option<&str>,
     ) -> Result<Option<ProviderConfig>, miniq_memory::MemoryError> {
+        // Read the provider and selection under the same lock used when changing defaults.
+        let settings = self.settings.lock().unwrap();
         let selection = self.store.session_model_settings(session_id)?;
-        let Some(mut config) = self.settings.lock().unwrap().provider.clone() else {
+        let Some(mut config) = settings.provider.clone() else {
             return Ok(None);
         };
         apply_selection(&mut config, &selection);

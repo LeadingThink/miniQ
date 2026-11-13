@@ -3,6 +3,8 @@ use miniq_models::{mock::MockProvider, ProviderConfig};
 use miniq_protocol::SessionModelSettings;
 use std::sync::Arc;
 
+mod global_updates;
+
 fn state() -> (AppState, String, String) {
     let store = miniq_memory::Store::open_in_memory().unwrap();
     let workspace = store.create_workspace("/tmp", "test").unwrap();
@@ -65,11 +67,11 @@ async fn global_update_failures_preserve_file_runtime_database_and_events() {
         let original_file = std::fs::read(&path).unwrap();
         let mut events = state.events.subscribe();
         if database_failure {
-            // Fail the second write after workspace rows have been updated.
+            // Fail after legacy sessions and the selected session have been written.
             rusqlite::Connection::open(&db)
                 .unwrap()
                 .execute_batch(
-                    "CREATE TRIGGER reject_model_sync BEFORE INSERT ON session_model_settings
+                    "CREATE TRIGGER reject_model_sync BEFORE INSERT ON workspace_model_settings
                  BEGIN SELECT RAISE(ABORT, 'injected model sync failure'); END;",
                 )
                 .unwrap();
@@ -77,9 +79,12 @@ async fn global_update_failures_preserve_file_runtime_database_and_events() {
             std::fs::remove_file(&path).unwrap();
             std::fs::create_dir(&path).unwrap();
         }
-        let error = global_update(&state, Some(json!({"settings":{"model":"new-global"}})))
-            .await
-            .unwrap_err();
+        let error = global_update(
+            &state,
+            Some(json!({"sessionId":session.id,"settings":{"model":"new-global"}})),
+        )
+        .await
+        .unwrap_err();
         assert_eq!(error.code, ErrorCode::InternalError as i64);
         assert_eq!(
             serde_json::to_value(&*state.settings.lock().unwrap()).unwrap(),
@@ -159,65 +164,6 @@ async fn new_projects_and_sessions_inherit_global_effort_but_explicit_models_can
 }
 
 #[tokio::test]
-async fn global_update_synchronizes_session_and_project_choices() {
-    let (state, a, b) = state();
-    let workspace_id = state.store.get_session(&a).unwrap().workspace_id;
-    let selected = SessionModelSettings {
-        model: Some("claude-sonnet-4.6".into()),
-        api_protocol: ApiProtocol::AnthropicMessages,
-        reasoning_effort: None,
-    };
-    state
-        .store
-        .set_session_model_settings(&a, &selected)
-        .unwrap();
-    let other_workspace = state.store.create_workspace("/other", "other").unwrap();
-    state
-        .store
-        .set_workspace_model_settings(&other_workspace.id, &selected)
-        .unwrap();
-    let response = global_update(
-        &state,
-        Some(json!({"settings":{"model":" custom/model ","apiProtocol":"chat_completions"}})),
-    )
-    .await
-    .unwrap();
-    assert_eq!(response["effective"]["model"], "custom/model");
-    assert!(!response.to_string().contains("private-key"));
-    assert!(!response.to_string().contains("baseUrl"));
-    let synchronized = SessionModelSettings {
-        model: Some("custom/model".into()),
-        api_protocol: ApiProtocol::ChatCompletions,
-        reasoning_effort: None,
-    };
-    assert_eq!(
-        state.store.session_model_settings(&a).unwrap(),
-        synchronized
-    );
-    assert_eq!(
-        state.store.session_model_settings(&b).unwrap(),
-        synchronized
-    );
-    assert_eq!(
-        state
-            .store
-            .workspace_model_settings(&other_workspace.id)
-            .unwrap(),
-        synchronized
-    );
-    let workspace = workspace_get(&state, Some(json!({"workspaceId": workspace_id}))).unwrap();
-    assert_eq!(workspace["settings"]["model"], "custom/model");
-    assert_eq!(workspace["effective"]["model"], "custom/model");
-    assert!(!workspace.to_string().contains("private-key"));
-    let provider = state.settings.lock().unwrap().provider.clone().unwrap();
-    assert_eq!(provider.model, "custom/model");
-    assert_eq!(provider.api_protocol, ApiProtocol::ChatCompletions);
-    assert_eq!(provider.api_key, "private-key");
-    assert_eq!(provider.base_url, "http://127.0.0.1:1/v1");
-    assert!(get(&state, Some(json!({"sessionId":"missing"}))).is_err());
-}
-
-#[tokio::test]
 async fn invalid_choices_are_rejected_and_global_updates_keep_active_turns_running() {
     let (state, a, _) = state();
     for settings in [
@@ -236,9 +182,12 @@ async fn invalid_choices_are_rejected_and_global_updates_keep_active_turns_runni
         );
     }
     state.begin_turn(&a).unwrap();
-    let changed = global_update(&state, Some(json!({"settings":{"model":"another"}})))
-        .await
-        .unwrap();
+    let changed = global_update(
+        &state,
+        Some(json!({"sessionId":a,"settings":{"model":"another"}})),
+    )
+    .await
+    .unwrap();
     assert_eq!(changed["effective"]["model"], "another");
     assert_eq!(
         state.store.session_model_settings(&a).unwrap(),
@@ -248,79 +197,6 @@ async fn invalid_choices_are_rejected_and_global_updates_keep_active_turns_runni
         }
     );
     assert!(state.active_turns.lock().unwrap().contains_key(&a));
-}
-
-#[tokio::test]
-async fn global_updates_override_existing_session_and_workspace_choices() {
-    let (state, a, b) = state();
-    let workspace_id = state.store.get_session(&a).unwrap().workspace_id;
-    let before_a = get(&state, Some(json!({"sessionId":a}))).unwrap();
-    let before_b = get(&state, Some(json!({"sessionId":b}))).unwrap();
-    let created = super::super::session::create(&state, Some(json!({
-        "workspaceId":workspace_id,
-        "modelSettings":{"model":"gpt-5.6-sol", "apiProtocol":"responses", "reasoningEffort":"high"}
-    }))).await.unwrap();
-    let id = created["id"].as_str().unwrap();
-    let chosen = get(&state, Some(json!({"sessionId":id}))).unwrap();
-    assert_eq!(chosen["effective"]["reasoningEffort"], "high");
-    assert_eq!(
-        state
-            .provider_config_for_session(id, None)
-            .unwrap()
-            .unwrap()
-            .reasoning_effort,
-        Some(miniq_protocol::ReasoningEffort::High)
-    );
-    assert_eq!(get(&state, Some(json!({"sessionId":a}))).unwrap(), before_a);
-    assert_eq!(get(&state, Some(json!({"sessionId":b}))).unwrap(), before_b);
-    assert_eq!(
-        state.store.workspace_model_settings(&workspace_id).unwrap(),
-        SessionModelSettings::default()
-    );
-
-    workspace_update(
-        &state,
-        Some(json!({"workspaceId": workspace_id, "settings":{"model":"gemini-3.8-flash"}})),
-    )
-    .await
-    .unwrap();
-    assert_eq!(get(&state, Some(json!({"sessionId":id}))).unwrap(), chosen);
-    let next = super::super::session::create(&state, Some(json!({"workspaceId":workspace_id})))
-        .await
-        .unwrap();
-    let next_id = next["id"].as_str().unwrap();
-    let next_settings = get(&state, Some(json!({"sessionId":next_id}))).unwrap();
-    assert_eq!(next_settings["effective"]["model"], "gemini-3.8-flash");
-    assert_eq!(next_settings["effective"]["reasoningEffort"], Value::Null);
-    global_update(&state, Some(json!({"settings":{"model":"new-global"}})))
-        .await
-        .unwrap();
-    for session_id in [&a, &b, id, next_id] {
-        let synchronized = get(&state, Some(json!({"sessionId":session_id}))).unwrap();
-        assert_eq!(synchronized["effective"]["model"], "new-global");
-        assert_eq!(synchronized["effective"]["reasoningEffort"], Value::Null);
-    }
-    assert_eq!(
-        state
-            .store
-            .workspace_model_settings(&workspace_id)
-            .unwrap()
-            .model
-            .as_deref(),
-        Some("new-global")
-    );
-    update(&state, Some(json!({"sessionId":id,"settings":{"model":"claude-sonnet-4.6","apiProtocol":"anthropic_messages"}}))).await.unwrap();
-    let config = state
-        .provider_config_for_session(id, None)
-        .unwrap()
-        .unwrap();
-    assert_eq!(config.model, "claude-sonnet-4.6");
-    assert_eq!(config.api_protocol, ApiProtocol::AnthropicMessages);
-    assert_eq!(config.reasoning_effort, None);
-    assert_eq!(
-        get(&state, Some(json!({"sessionId":next_id}))).unwrap()["effective"]["model"],
-        "new-global"
-    );
 }
 
 #[tokio::test]
@@ -353,45 +229,6 @@ async fn invalid_draft_settings_do_not_create_a_partial_session() {
             before
         );
     }
-}
-
-#[tokio::test]
-async fn global_updates_change_existing_and_future_sessions() {
-    let (state, a, _) = state();
-    let workspace_id = state.store.get_session(&a).unwrap().workspace_id;
-    let created = super::super::session::create(&state, Some(json!({"workspaceId":workspace_id})))
-        .await
-        .unwrap();
-    let id = created["id"].as_str().unwrap();
-    global_update(&state, Some(json!({"settings":{"model":"new-global"}})))
-        .await
-        .unwrap();
-    assert_eq!(
-        get(&state, Some(json!({"sessionId":id}))).unwrap()["effective"]["model"],
-        "new-global"
-    );
-    let next = super::super::session::create(&state, Some(json!({"workspaceId":workspace_id})))
-        .await
-        .unwrap();
-    assert_eq!(
-        get(&state, Some(json!({"sessionId":next["id"]}))).unwrap()["effective"]["model"],
-        "new-global"
-    );
-    let reset = update(&state, Some(json!({"sessionId":id,"settings":{}})))
-        .await
-        .unwrap();
-    assert_eq!(reset["effective"]["model"], "new-global");
-    global_update(&state, Some(json!({"settings":{"model":"another-global"}})))
-        .await
-        .unwrap();
-    assert_eq!(
-        get(&state, Some(json!({"sessionId":id}))).unwrap()["effective"]["model"],
-        "another-global"
-    );
-    assert_eq!(
-        get(&state, Some(json!({"sessionId":next["id"]}))).unwrap()["effective"]["model"],
-        "another-global"
-    );
 }
 
 #[tokio::test]

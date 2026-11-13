@@ -422,7 +422,7 @@ function useTurnActions(
           modelSettings: {
             // Inherited defaults stay null so the daemon resolves the latest default.
             model: sessionModel.settings.model ?? null,
-            apiProtocol: "auto",
+            apiProtocol: sessionModel.settings.apiProtocol,
             reasoningEffort: sessionModel.settings.reasoningEffort,
           },
         });
