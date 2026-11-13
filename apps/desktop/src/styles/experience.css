@@ -83,6 +83,7 @@
 }
 .session-model-surface-portal > .session-model-popover {
   position: static;
+  width: 100%;
   pointer-events: auto;
 }
 .session-model-popover header,

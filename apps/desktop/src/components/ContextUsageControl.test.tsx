@@ -8,11 +8,17 @@ import { useOpenDialog } from "../hooks/useOpenDialog";
 
 const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "showModal");
 const originalClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "close");
+const originalShowPopover = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "showPopover");
+const originalHidePopover = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "hidePopover");
 beforeEach(() => {
   Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true,
     value: vi.fn(function (this: HTMLDialogElement) { this.setAttribute("open", ""); }) });
   Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true,
     value: vi.fn(function (this: HTMLDialogElement) { this.removeAttribute("open"); }) });
+  Object.defineProperty(HTMLElement.prototype, "showPopover", { configurable: true,
+    value: vi.fn(function (this: HTMLElement) { this.style.display = "block"; }) });
+  Object.defineProperty(HTMLElement.prototype, "hidePopover", { configurable: true,
+    value: vi.fn(function (this: HTMLElement) { this.style.display = "none"; }) });
 });
 
 type ContextUsageState = {
@@ -76,6 +82,10 @@ afterEach(() => {
   else Reflect.deleteProperty(HTMLDialogElement.prototype, "showModal");
   if (originalClose) Object.defineProperty(HTMLDialogElement.prototype, "close", originalClose);
   else Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
+  if (originalShowPopover) Object.defineProperty(HTMLElement.prototype, "showPopover", originalShowPopover);
+  else Reflect.deleteProperty(HTMLElement.prototype, "showPopover");
+  if (originalHidePopover) Object.defineProperty(HTMLElement.prototype, "hidePopover", originalHidePopover);
+  else Reflect.deleteProperty(HTMLElement.prototype, "hidePopover");
 });
 
 function renderControl() {
@@ -92,10 +102,11 @@ it("opens an accessible popover, refreshes on open, and closes with its close bu
   expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
   fireEvent.click(trigger);
   const dialog = screen.getByRole("dialog", { name: "上下文用量" });
-  expect(dialog.tagName).toBe("DIALOG");
+  expect(dialog.tagName).toBe("DIV");
   expect(dialog.parentElement).toBe(document.body);
-  expect(dialog.hasAttribute("open")).toBe(true);
-  expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalledOnce();
+  expect(dialog.getAttribute("popover")).toBe("manual");
+  expect(HTMLElement.prototype.showPopover).toHaveBeenCalledOnce();
+  expect(HTMLDialogElement.prototype.showModal).not.toHaveBeenCalled();
   expect(mock.refresh).toHaveBeenCalledOnce();
   expect(within(dialog).getByText("系统提示词")).toBeTruthy();
   expect(within(dialog).getByText("工具及子智能体")).toBeTruthy();
@@ -106,14 +117,14 @@ it("opens an accessible popover, refreshes on open, and closes with its close bu
   expect(screen.queryByRole("dialog", { name: "上下文用量" })).toBeNull();
 });
 
-it("signals embedded browser suspension while the top-layer dialog is open", async () => {
+it("keeps the embedded browser visible while the information popover is open", async () => {
   function BrowserVisibilityProbe() {
     return <output data-testid="browser-suspended">{String(useOpenDialog())}</output>;
   }
   renderControl();
   render(<BrowserVisibilityProbe />);
   fireEvent.click(screen.getByRole("button", { name: "上下文用量" }));
-  await vi.waitFor(() => expect(screen.getByTestId("browser-suspended").textContent).toBe("true"));
+  await vi.waitFor(() => expect(screen.getByTestId("browser-suspended").textContent).toBe("false"));
   fireEvent.click(screen.getByRole("button", { name: "关闭上下文用量" }));
   await vi.waitFor(() => expect(screen.getByTestId("browser-suspended").textContent).toBe("false"));
 });
@@ -150,20 +161,14 @@ it("closes on Escape and returns keyboard focus to the trigger", () => {
   expect(document.activeElement).toBe(trigger);
 });
 
-it("dismisses backdrop clicks but keeps content and interior whitespace open", () => {
+it("dismisses outside clicks but keeps content clicks open", () => {
   renderControl();
   const trigger = screen.getByRole("button", { name: "上下文用量" });
   fireEvent.click(trigger);
   const dialog = screen.getByRole("dialog", { name: "上下文用量" });
-  vi.spyOn(dialog, "getBoundingClientRect").mockReturnValue({
-    left: 100, top: 100, right: 440, bottom: 600, width: 340, height: 500,
-    x: 100, y: 100, toJSON: () => ({}),
-  });
-  fireEvent.click(within(dialog).getByText("系统提示词"));
+  fireEvent.mouseDown(within(dialog).getByText("系统提示词"));
   expect(screen.getByRole("dialog")).toBe(dialog);
-  fireEvent.click(dialog, { clientX: 120, clientY: 120 });
-  expect(screen.getByRole("dialog")).toBe(dialog);
-  fireEvent.click(dialog, { clientX: 50, clientY: 120 });
+  fireEvent.mouseDown(document.body);
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(trigger);
 });

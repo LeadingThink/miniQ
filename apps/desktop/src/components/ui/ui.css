@@ -249,6 +249,11 @@ button.ui-list-row-main:active:not(:disabled) {
   outline: none;
 }
 
+.ui-popover[popover] {
+  inset: auto;
+  margin: 0;
+}
+
 .ui-menu-item {
   display: flex;
   width: 100%;

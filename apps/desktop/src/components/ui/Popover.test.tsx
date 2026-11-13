@@ -38,3 +38,30 @@ it("waits for visible positioning before moving focus into the dropdown", () => 
     screen.getByRole("button", { name: "电脑 A" }),
   );
 });
+
+it("uses the non-modal browser top layer without opening a modal dialog", () => {
+  const showPopover = vi.fn(function (this: HTMLElement) { this.style.display = "block"; });
+  const hidePopover = vi.fn(function (this: HTMLElement) { this.style.display = "none"; });
+  Object.defineProperties(HTMLElement.prototype, {
+    showPopover: { configurable: true, value: showPopover },
+    hidePopover: { configurable: true, value: hidePopover },
+  });
+  function Harness() {
+    const anchor = useRef<HTMLButtonElement>(null);
+    return <>
+      <button ref={anchor}>上下文用量</button>
+      <Popover open anchorRef={anchor} onClose={() => {}} label="上下文用量" layer="non-modal">
+        <button>关闭</button>
+      </Popover>
+    </>;
+  }
+
+  const view = render(<Harness />);
+  const popover = screen.getByRole("dialog", { name: "上下文用量" });
+  expect(popover.tagName).toBe("DIV");
+  expect(popover.getAttribute("popover")).toBe("manual");
+  expect(showPopover).toHaveBeenCalledOnce();
+
+  view.unmount();
+  expect(hidePopover).toHaveBeenCalledOnce();
+});

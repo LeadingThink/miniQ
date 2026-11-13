@@ -37,16 +37,18 @@ import { initializeNativeMenuBridge } from "./nativeMenuBridge";
 
 const App = React.lazy(() => import("./App"));
 const CompanionWindow = React.lazy(() => import("./components/CompanionWindow"));
+const ContextUsageOverlay = React.lazy(() => import("./components/ContextUsageOverlay"));
 const isCompanion = new URLSearchParams(window.location.search).has("companion");
+const isContextUsageOverlay = new URLSearchParams(window.location.search).has("context-usage-overlay");
 
 initializeAppearance();
 initializeFontScale();
-if (!isCompanion && !isNativeMobileApp()) {
+if (!isCompanion && !isContextUsageOverlay && !isNativeMobileApp()) {
   initializeBackground();
   initializeRotation();
 }
-if (isCompanion) {
-  document.documentElement.dataset.companion = "true";
+if (isCompanion || isContextUsageOverlay) {
+  document.documentElement.dataset.companion = isCompanion ? "true" : "context-usage-overlay";
   document.documentElement.style.background = "transparent";
   document.body.style.background = "transparent";
   document.getElementById("splash")?.remove();
@@ -61,7 +63,7 @@ if (isCompanion) {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <React.Suspense fallback={null}>
-      {isCompanion ? <CompanionWindow /> : <ToastProvider>
+      {isCompanion ? <CompanionWindow /> : isContextUsageOverlay ? <ContextUsageOverlay /> : <ToastProvider>
         <LivingBackground />
         <App />
       </ToastProvider>}

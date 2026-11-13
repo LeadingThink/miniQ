@@ -482,10 +482,10 @@ fn browser_label(view_id: &str) -> Result<String, String> {
 #[derive(Clone, Copy, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserBounds {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+    pub(crate) width: f64,
+    pub(crate) height: f64,
 }
 
 #[derive(serde::Serialize)]
@@ -542,7 +542,7 @@ fn parse_url(value: &str) -> Result<tauri::Url, String> {
     Ok(url)
 }
 
-fn validate_bounds(bounds: BrowserBounds) -> Result<(), String> {
+pub(crate) fn validate_bounds(bounds: BrowserBounds) -> Result<(), String> {
     if ![bounds.x, bounds.y, bounds.width, bounds.height]
         .into_iter()
         .all(f64::is_finite)
@@ -569,7 +569,7 @@ fn resize(webview: &tauri::Webview, bounds: BrowserBounds) -> Result<(), String>
         .map_err(|error| error.to_string())
 }
 
-fn viewport_bounds(app: &tauri::AppHandle, bounds: BrowserBounds) -> Result<BrowserBounds, String> {
+pub(crate) fn viewport_bounds(app: &tauri::AppHandle, bounds: BrowserBounds) -> Result<BrowserBounds, String> {
     #[cfg(target_os = "macos")]
     {
         let main = app

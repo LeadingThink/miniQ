@@ -25,6 +25,7 @@ import type { ModelPerformanceResult } from "../modelPerformance";
 import type { useSessionModel } from "../hooks/useSessionModel";
 import { ModelPerformanceIndicator } from "./ModelPerformanceIndicator";
 import { SessionModelSurface } from "./SessionModelSurface";
+import { modelPickerRightBoundary } from "./SessionModelSurface";
 import {
   groupModelIds,
   modelProvider,
@@ -102,9 +103,10 @@ export function SessionModelControls({
   const placeSubmenu = useCallback((row: HTMLElement) => {
     const rect = row.getBoundingClientRect();
     const height = submenuRef.current?.offsetHeight ?? 0;
+    const right = modelPickerRightBoundary(8);
     setMenuPos({
       top: Math.max(8, Math.min(rect.top, window.innerHeight - height - 8)),
-      left: Math.max(8, Math.min(rect.right + SUBMENU_GAP, window.innerWidth - SUBMENU_WIDTH - 8)),
+      left: Math.max(8, Math.min(rect.right + SUBMENU_GAP, right - SUBMENU_WIDTH)),
     });
   }, []);
 

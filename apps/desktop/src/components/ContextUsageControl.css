@@ -19,8 +19,18 @@
 .context-usage-track { stroke: var(--border); }
 .context-usage-fill { stroke: currentColor; transform: rotate(-90deg); transform-origin: center; stroke-linecap: round; }
 .context-usage-popover { width: min(340px, calc(100vw - 24px)); padding: 16px; color: var(--text); }
-dialog.context-usage-popover { margin: 0; right: auto; bottom: auto; max-width: calc(100vw - 24px); }
-dialog.context-usage-popover::backdrop { background: transparent; }
+.context-usage-overlay {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  overflow: auto;
+}
+html[data-companion="context-usage-overlay"],
+html[data-companion="context-usage-overlay"] body,
+html[data-companion="context-usage-overlay"] #root { width: 100%; height: 100%; overflow: hidden; }
 .context-usage-popover header, .context-usage-popover footer, .context-usage-popover dl > div {
   display: flex;
   align-items: center;

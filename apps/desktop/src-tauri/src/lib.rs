@@ -6,6 +6,7 @@ mod account_transport;
 mod app_menu;
 mod apple_speech;
 mod browser;
+mod context_usage_overlay;
 mod companion;
 mod daemon;
 mod data_directory;
@@ -291,6 +292,28 @@ fn browser_set_visible(
 }
 
 #[tauri::command]
+fn context_usage_overlay_open(
+    app: tauri::AppHandle,
+    bounds: browser::BrowserBounds,
+    snapshot: serde_json::Value,
+) -> Result<(), String> {
+    context_usage_overlay::open(&app, bounds, snapshot)
+}
+
+#[tauri::command]
+fn context_usage_overlay_update(
+    app: tauri::AppHandle,
+    snapshot: serde_json::Value,
+) -> Result<(), String> {
+    context_usage_overlay::update(&app, snapshot)
+}
+
+#[tauri::command]
+fn context_usage_overlay_close(app: tauri::AppHandle) -> Result<(), String> {
+    context_usage_overlay::close(&app)
+}
+
+#[tauri::command]
 fn browser_reveal_download(app: tauri::AppHandle, path: String) -> Result<(), String> {
     browser::reveal_download(&app, &path)
 }
@@ -349,7 +372,14 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(|invoke| {
-            if invoke.message.webview_ref().label() == "companion"
+            let webview_label = invoke.message.webview_ref().label();
+            if webview_label == "context-usage-overlay" {
+                invoke
+                    .resolver
+                    .reject("Commands are unavailable to the context usage overlay");
+                return true;
+            }
+            if webview_label == "companion"
                 && !companion::allowed_command(invoke.message.command())
             {
                 invoke
@@ -400,6 +430,9 @@ pub fn run() {
                 browser_current,
                 browser_close,
                 browser_set_visible,
+                context_usage_overlay_open,
+                context_usage_overlay_update,
+                context_usage_overlay_close,
                 browser_reveal_download,
                 open_microphone_settings,
                 apple_speech::apple_speech_available,

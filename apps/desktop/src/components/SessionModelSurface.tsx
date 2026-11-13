@@ -2,6 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import { createPortal } from "react-dom";
 import "./SessionModelSurface.css";
 
+export function modelPickerRightBoundary(margin = 16): number {
+  const browserLeft = Array.from(document.querySelectorAll<HTMLElement>(".browser-panel:not(.browser-panel-inactive) .browser-surface"))
+    .map((surface) => surface.getBoundingClientRect())
+    .filter((rect) => rect.width > 0 && rect.height > 0)
+    .reduce((left, rect) => Math.min(left, rect.left), window.innerWidth);
+  return Math.max(margin + 1, Math.min(window.innerWidth - margin, browserLeft - margin));
+}
+
 /** Share the same model form; phones put it in the native modal top layer. */
 export function SessionModelSurface(props: {
   mobile: boolean;
@@ -11,16 +19,18 @@ export function SessionModelSurface(props: {
   children: ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [desktopPosition, setDesktopPosition] = useState<{ top: number; left: number } | null>(null);
+  const [desktopPosition, setDesktopPosition] = useState<{ top: number; left: number; width: number } | null>(null);
   useLayoutEffect(() => {
     if (props.mobile) return;
     const updatePosition = () => {
       const bounds = props.trigger.current?.getBoundingClientRect();
       if (!bounds) return;
-      const width = Math.min(540, window.innerWidth - 32);
+      const right = modelPickerRightBoundary();
+      const width = Math.max(1, Math.min(540, right - 16));
       setDesktopPosition({
         top: props.placement === "below" ? bounds.bottom + 10 : bounds.top - 10,
-        left: Math.max(16, Math.min(bounds.left, window.innerWidth - width - 16)),
+        left: Math.max(16, Math.min(bounds.left, right - width)),
+        width,
       });
     };
     updatePosition();
@@ -50,6 +60,7 @@ export function SessionModelSurface(props: {
         style={{
           top: desktopPosition.top,
           left: desktopPosition.left,
+          width: desktopPosition.width,
           transform: props.placement === "below" ? undefined : "translateY(-100%) translateY(-10px)",
         }}
       >
