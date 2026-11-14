@@ -25,6 +25,24 @@ it("shows a long paste as a dialog trigger and keeps surrounding text separate",
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+it("uses persisted paste metadata for a short sent paste", () => {
+  const pasted = "这是发送后仍需收起的短文本。";
+  const { container } = render(
+    <SentMessageContent
+      content={`${pasted}\n请总结`}
+      pastedText={{
+        content: "[粘贴内容 14 字]\n请总结",
+        pastes: [{ placeholder: "[粘贴内容 14 字]", text: pasted }],
+      }}
+    />,
+  );
+
+  expect(container.textContent).not.toContain(pasted);
+  expect(container.textContent).toContain("请总结");
+  fireEvent.click(screen.getByRole("button", { name: "查看粘贴内容 14 字" }));
+  expect((screen.getByLabelText("完整文本") as HTMLTextAreaElement).value).toBe(pasted);
+});
+
 it("renders an ordinary message as one standalone text node", () => {
   const { container } = render(<SentMessageContent content="普通问题" />);
   expect(container.querySelectorAll(".sent-message-text")).toHaveLength(1);

@@ -1,11 +1,22 @@
 import { Clipboard } from "lucide-react";
 import { useState } from "react";
-import { sentMessageSegments } from "../largePaste";
+import type { PastedTextContent } from "../types";
+import { draftSegments, sentMessageSegments } from "../largePaste";
 import { PasteEditor } from "./PasteEditor";
 
-export function SentMessageContent(props: { content: string }) {
+export function SentMessageContent(props: { content: string; pastedText?: PastedTextContent }) {
   const [openText, setOpenText] = useState<string | null>(null);
-  const segments = sentMessageSegments(props.content);
+  const segments = props.pastedText
+    ? draftSegments(props.pastedText.content, props.pastedText.pastes).map((segment) =>
+        segment.kind === "text"
+          ? segment
+          : {
+              kind: "paste" as const,
+              text: segment.paste.text,
+              label: segment.paste.label ?? segment.paste.placeholder.slice(1, -1),
+            },
+      )
+    : sentMessageSegments(props.content);
   return (
     <>
       <div className="sent-message-content">

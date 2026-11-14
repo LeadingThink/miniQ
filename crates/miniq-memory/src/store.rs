@@ -203,6 +203,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0035_interim_messages",
         include_str!("../../../migrations/0035_interim_messages.sql"),
     ),
+    (
+        "0036_pasted_text",
+        include_str!("../../../migrations/0036_pasted_text.sql"),
+    ),
 ];
 
 #[cfg(test)]

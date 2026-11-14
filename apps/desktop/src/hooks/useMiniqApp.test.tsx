@@ -885,6 +885,8 @@ it("opens existing services settings and voice composer actions without model/wo
   await waitFor(() => expect(hook.result.current.companionVoiceRequest?.sessionId).toBeNull());
   expect(hook.result.current.catalog.currentSessionId).toBeNull();
   expect(hook.result.current.catalog.selectedWorkspaceId).toBe("w");
+  expect(hook.result.current.catalog.currentWorkspace?.id).toBe("w");
+  expect(hook.result.current.catalog.currentWorkspacePaths).toEqual(["/workspace"]);
   expect(fake.call.mock.calls.some(([method]) => /Update$|^workspace\.(create|open|updateRoots)|^session\.create$/.test(method))).toBe(false);
 });
 

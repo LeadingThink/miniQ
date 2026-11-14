@@ -348,6 +348,7 @@ export function AppWorkbench({
                     onAuthorizeFile={(target, chooseReplacement) =>
                       void app.preview.authorizeFile(target, chooseReplacement)
                     }
+                    onSaveText={app.preview.saveText}
                     onRetry={() => {
                       if (app.preview.state.target)
                         workbench.openFile(app.preview.state.target);

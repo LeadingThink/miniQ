@@ -237,6 +237,25 @@ export async function readLocalTextFile(
   return invoke<LocalTextFile>("read_local_text_file", { path, workspacePath, workspacePaths, authorizedFiles });
 }
 
+export async function writeLocalTextFile(
+  path: string,
+  content: string,
+  workspacePath?: string | null,
+  workspacePaths: readonly string[] = [],
+  authorizedFiles: readonly string[] = [],
+): Promise<void> {
+  if (!workspacePath) throw new Error("无法保存文件：当前会话没有工作区");
+  if (!isTauriRuntime()) throw new Error("文件编辑仅在 miniQ 桌面应用中可用");
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("write_local_text_file", {
+    path,
+    content,
+    workspacePath,
+    workspacePaths,
+    authorizedFiles,
+  });
+}
+
 export async function readLocalFilePreview(
   path: string,
   workspacePath?: string | null,

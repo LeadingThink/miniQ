@@ -1,19 +1,25 @@
+import { FileText } from "lucide-react";
 import type { RemotePreviewSource } from "../remoteTransfer";
 import { useEffect, useRef, useState } from "react";
+import type { LocalFileTarget } from "../localFiles";
 import type { MessageAttachment } from "../types";
 import { readImagePreview } from "../localFiles";
 import { useSessionFileAccess } from "../sessionFileAccess";
 import { ImageLightbox } from "./ImageLightbox";
 
 function isImageAttachment(attachment: MessageAttachment): boolean {
-  return Boolean(attachment.mimeType?.startsWith("image/"))
-    || /\.(?:png|jpe?g|webp|gif)$/i.test(attachment.name || attachment.path);
+  return (
+    Boolean(attachment.mimeType?.startsWith("image/")) ||
+    /\.(?:png|jpe?g|webp|gif)$/i.test(attachment.name || attachment.path)
+  );
 }
 
 export function MessageAttachmentPreview({
   attachment,
+  onOpenFile,
 }: {
   attachment: MessageAttachment;
+  onOpenFile?: (target: LocalFileTarget) => void;
 }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -30,12 +36,19 @@ export function MessageAttachmentPreview({
     let disposed = false;
     let objectUrl: string | undefined;
     const controller = new AbortController();
-    void readImagePreview(attachment.path, { ...access, signal: controller.signal })
+    void readImagePreview(attachment.path, {
+      ...access,
+      signal: controller.signal,
+    })
       .then((preview) => {
         if (!disposed) {
           if (preview.blob) objectUrl = URL.createObjectURL(preview.blob);
           source.current = preview.remoteSource ?? null;
-          setImageUrl(preview.remoteSource?.getUrl ?? objectUrl ?? `data:${preview.mimeType};base64,${preview.dataBase64}`);
+          setImageUrl(
+            preview.remoteSource?.getUrl ??
+              objectUrl ??
+              `data:${preview.mimeType};base64,${preview.dataBase64}`,
+          );
         }
       })
       .catch(() => {
@@ -66,11 +79,22 @@ export function MessageAttachmentPreview({
             onError={() => {
               const current = source.current;
               const id = generation.current;
-              if (!current) { setImageUrl(null); return; }
+              if (!current) {
+                setImageUrl(null);
+                return;
+              }
               source.current = null;
-              void current.refresh().then(next => {
-                if (generation.current === id) { source.current = next; setImageUrl(next.getUrl); }
-              }).catch(() => { if (generation.current === id) setImageUrl(null); });
+              void current
+                .refresh()
+                .then((next) => {
+                  if (generation.current === id) {
+                    source.current = next;
+                    setImageUrl(next.getUrl);
+                  }
+                })
+                .catch(() => {
+                  if (generation.current === id) setImageUrl(null);
+                });
             }}
           />
         </button>
@@ -83,5 +107,26 @@ export function MessageAttachmentPreview({
       </>
     );
   }
-  return <span className="message-attachment-file">{attachment.name}</span>;
+  if (onOpenFile) {
+    return (
+      <button
+        type="button"
+        className="message-attachment-file"
+        aria-label={`打开附件 ${attachment.name}`}
+        title={attachment.path}
+        onClick={() =>
+          onOpenFile({ path: attachment.path, line: null, column: null })
+        }
+      >
+        <FileText size={14} aria-hidden="true" />
+        <span>{attachment.name}</span>
+      </button>
+    );
+  }
+  return (
+    <span className="message-attachment-file">
+      <FileText size={14} aria-hidden="true" />
+      <span>{attachment.name}</span>
+    </span>
+  );
 }

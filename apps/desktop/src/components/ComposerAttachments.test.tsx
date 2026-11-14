@@ -4,10 +4,14 @@ import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ComposerCard } from "./Composer";
+import {
+  discardPendingTextEdit,
+  registerPendingTextEdit,
+} from "../pendingTextEdits";
 
 const attachmentStyles = readFileSync(resolve(process.cwd(), "src/styles/conversation.css"), "utf8");
 
-const fake = vi.hoisted(() => ({ open: vi.fn(), save: vi.fn(), preview: vi.fn().mockRejectedValue(new Error("preview unavailable")) }));
+const fake = vi.hoisted(() => ({ open: vi.fn(), save: vi.fn(), preview: vi.fn().mockRejectedValue(new Error("preview unavailable")), openAttachment: vi.fn() }));
 vi.mock("../runtime", () => ({ isTauriRuntime: () => true }));
 vi.mock("../localFiles", () => ({ savePastedFile: fake.save, readImagePreview: fake.preview }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: fake.open }));
@@ -70,6 +74,61 @@ it("opens an attached image in a centered viewer without removing it", async () 
   fireEvent.keyDown(dialog, { key: "Escape" });
   expect(screen.queryByRole("dialog", { name: "image.png" })).toBeNull();
   expect(screen.getByRole("button", { name: "放大查看 image.png" })).toBeTruthy();
+});
+
+it("opens a non-image attachment without removing it", () => {
+  const path = "/work/已粘贴的文本.txt";
+  localStorage.setItem("miniq.draft.open-file.attachments", JSON.stringify([path]));
+  const onOpenAttachment = vi.fn();
+  render(<ComposerCard {...props} draftKey="open-file" onOpenAttachment={onOpenAttachment} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "打开附件 已粘贴的文本.txt" }));
+  expect(onOpenAttachment).toHaveBeenCalledExactlyOnceWith(path);
+  expect(screen.getByText("已粘贴的文本.txt")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "移除附件 已粘贴的文本.txt" }));
+  expect(onOpenAttachment).toHaveBeenCalledOnce();
+  expect(screen.queryByText("已粘贴的文本.txt")).toBeNull();
+});
+
+it("saves the latest preview edit before sending its attachment", async () => {
+  const path = "/work/已粘贴的文本.txt";
+  const save = vi.fn().mockResolvedValue(undefined);
+  const onSend = vi.fn().mockResolvedValue(true);
+  localStorage.setItem("miniq.draft.edited-attachment.attachments", JSON.stringify([path]));
+  registerPendingTextEdit(path, "修改后的完整内容", save);
+  render(<ComposerCard {...props} draftKey="edited-attachment" onSend={onSend} />);
+
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送消息" })));
+
+  expect(save).toHaveBeenCalledExactlyOnceWith(path, "修改后的完整内容");
+  expect(onSend).toHaveBeenCalledExactlyOnceWith("", [path]);
+  expect(save.mock.invocationCallOrder[0]).toBeLessThan(onSend.mock.invocationCallOrder[0]);
+  discardPendingTextEdit(path);
+});
+
+it("does not send an attachment when saving its preview edit fails", async () => {
+  const path = "/work/已粘贴的文本.txt";
+  const save = vi.fn().mockRejectedValue(new Error("无法保存修改"));
+  const onSend = vi.fn();
+  const onError = vi.fn();
+  localStorage.setItem("miniq.draft.failed-edit.attachments", JSON.stringify([path]));
+  registerPendingTextEdit(path, "尚未写入的内容", save);
+  render(
+    <ComposerCard
+      {...props}
+      draftKey="failed-edit"
+      onSend={onSend}
+      onError={onError}
+    />,
+  );
+
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送消息" })));
+
+  expect(onSend).not.toHaveBeenCalled();
+  expect(onError).toHaveBeenCalledWith("无法保存修改");
+  expect(screen.getByText("已粘贴的文本.txt")).toBeTruthy();
+  discardPendingTextEdit(path);
 });
 
 it("removes a selected file from the preview, saved draft and outgoing message", async () => {

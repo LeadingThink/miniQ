@@ -192,6 +192,8 @@ pub struct QueuedMessage {
     pub id: String,
     pub session_id: String,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pasted_text: Option<PastedTextContent>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<MessageAttachment>,
     pub position: i64,
@@ -338,6 +340,23 @@ impl AssistantMessageKind {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PastedTextContent {
+    pub content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pastes: Vec<PastedTextItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PastedTextItem {
+    pub placeholder: String,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
@@ -345,6 +364,8 @@ pub struct Message {
     pub session_id: String,
     pub role: Role,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pasted_text: Option<PastedTextContent>,
     /// Display-only provider thinking/summary; never appended to answer text.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub reasoning: String,

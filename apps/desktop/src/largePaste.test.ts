@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { expect, it } from "vitest";
 import {
-  LARGE_PASTE_CHARS, charCount, draftSegments, expandPastes, isLargePaste, nextPlaceholder,
+  LARGE_PASTE_CHARS, charCount, draftSegments, expandPastes, isLargePaste,
   sentMessageSegments,
 } from "./largePaste";
 
@@ -14,13 +14,6 @@ it("collapses only pastes above the threshold", () => {
 it("counts characters rather than UTF-16 units", () => {
   expect(charCount("😀")).toBe(1);
   expect(isLargePaste("😀".repeat(LARGE_PASTE_CHARS + 1))).toBe(true);
-});
-
-it("labels a paste with its size and keeps repeated sizes apart", () => {
-  const first = nextPlaceholder("字".repeat(4200), []);
-  expect(first).toBe("[粘贴内容 4200 字]");
-  expect(nextPlaceholder("字".repeat(4200), [first])).toBe("[粘贴内容 4200 字 #2]");
-  expect(nextPlaceholder("字".repeat(4200), [first, "[粘贴内容 4200 字 #2]"])).toBe("[粘贴内容 4200 字 #3]");
 });
 
 it("expands every placeholder back into the full text", () => {

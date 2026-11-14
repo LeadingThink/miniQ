@@ -337,6 +337,7 @@ fn memory_forgetting_rejects_a_late_checkpoint_but_preserves_actual_reply() {
         role: Role::Assistant,
         assistant_kind: Some(AssistantMessageKind::Final),
         content: "已经发送的回复".into(),
+        pasted_text: None,
         attachments: vec![],
         created_at: now_iso(),
         turn_timing: None,

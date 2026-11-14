@@ -9,6 +9,7 @@ import { loadUnread, saveUnread, withUnread } from "../unreadStore";
 import type { SettingsTab } from "../settingsNavigation";
 import type {
   MessageAttachment,
+  PastedTextContent,
   QueuedMessage,
   Session,
   SessionStatus,
@@ -130,9 +131,10 @@ function useCatalog(client: RpcClient) {
   );
   const currentWorkspace = useMemo(
     () =>
-      workspaces.find((workspace) => workspace.id === currentSession?.workspaceId) ??
-      null,
-    [workspaces, currentSession],
+      currentSession
+        ? workspaces.find((workspace) => workspace.id === currentSession.workspaceId) ?? null
+        : selectedWorkspace,
+    [workspaces, currentSession, selectedWorkspace],
   );
   const workspacePathsJson = JSON.stringify(currentWorkspace ? [currentWorkspace.path, ...currentWorkspace.additionalPaths] : []);
   const currentWorkspacePaths = useMemo(() => JSON.parse(workspacePathsJson) as string[], [workspacePathsJson]);
@@ -358,7 +360,7 @@ function useTurnActions(
   const { openSession } = lifecycle;
 
   const sendMessage = useCallback(
-    async (content: string, attachments: string[] = [], asGoal = false) => {
+    async (content: string, attachments: string[] = [], asGoal = false, pastedText?: PastedTextContent) => {
       if (!catalog.currentSessionId) return false;
       if (!await ensureProviderConfigured()) return false;
       setError(null);
@@ -373,7 +375,7 @@ function useTurnActions(
         }
         await client.call("session.sendMessage", {
           sessionId: catalog.currentSessionId,
-          message: { role: "user", content, attachments },
+          message: { role: "user", content, attachments, pastedText },
         });
         void catalog.refreshSessions();
         return true;
@@ -407,7 +409,7 @@ function useTurnActions(
   );
 
   const startTask = useCallback(
-    async (content: string, attachments: string[] = [], asGoal = false) => {
+    async (content: string, attachments: string[] = [], asGoal = false, pastedText?: PastedTextContent) => {
       if (!await ensureProviderConfigured()) return false;
       if (!sessionModel.ready || sessionModel.pending) return false;
       if (!catalog.selectedWorkspace) {
@@ -441,7 +443,7 @@ function useTurnActions(
         }
         await client.call("session.sendMessage", {
           sessionId: session.id,
-          message: { role: "user", content, attachments },
+          message: { role: "user", content, attachments, pastedText },
         });
         if (epoch === catalog.navigationEpoch.current) await openSession(session.id);
         void catalog.refreshSessions();
@@ -648,7 +650,9 @@ export function useMiniqApp(active = true) {
     [feed.messages],
   );
   const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls, latestTurnId, active && !feed.loading);
-  const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths, client, desktop?.getFilePreviewCache(client.sshHost), setError);
+  const previewWorkspacePath =
+    catalog.currentSession?.workingDirectory ?? catalog.currentWorkspace?.path;
+  const preview = useFilePreview(previewWorkspacePath, catalog.currentSessionId, catalog.currentWorkspacePaths, client, desktop?.getFilePreviewCache(client.sshHost), setError);
   const stopCurrentTurnForUpdate = useCallback(
     async (expectedSessionId?: string | null) => {
       const currentSessionId = catalog.currentSessionId;

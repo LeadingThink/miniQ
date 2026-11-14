@@ -148,6 +148,17 @@ it("preserves the actual page element while switching modes and expanding", asyn
   expect(screen.getByTitle("page-stable")).toBe(frame);
 });
 
+it("renders an attachment preview for the selected workspace before a session exists", async () => {
+  const props = setup("files");
+  props.app.catalog.currentSessionId = null;
+  props.app.catalog.currentSession = null;
+  props.workbench.scope = "draft:w";
+
+  render(layout(props));
+
+  expect(await screen.findByRole("button", { name: "讨论选区" })).toBeTruthy();
+});
+
 it("offers an explicit mobile return action without changing open file tabs", async () => {
   viewport = 390;
   const props = setup("files");

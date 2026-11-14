@@ -16,8 +16,8 @@ pub struct PendingApprovalRequest {
 
 pub(super) fn insert_message(conn: &rusqlite::Connection, message: &Message) -> Result<()> {
     conn.execute(
-        "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at, assistant_kind, steered, reasoning)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at, assistant_kind, steered, reasoning, pasted_text_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             message.id,
             message.session_id,
@@ -27,7 +27,8 @@ pub(super) fn insert_message(conn: &rusqlite::Connection, message: &Message) -> 
             message.created_at,
             message.assistant_kind.map(miniq_protocol::AssistantMessageKind::as_str),
             message.steered,
-            message.reasoning
+            message.reasoning,
+            serde_json::to_string(&message.pasted_text)?
         ],
     )?;
     conn.execute(
@@ -56,6 +57,33 @@ impl Store {
             content,
             attachments,
         )
+    }
+
+    pub fn append_message_with_pasted_text(
+        &self,
+        session_id: &str,
+        role: Role,
+        content: &str,
+        attachments: &[MessageAttachment],
+        pasted_text: Option<miniq_protocol::PastedTextContent>,
+    ) -> Result<Message> {
+        let conn = self.conn.lock().unwrap();
+        let message = Message {
+            id: new_id("msg"),
+            session_id: session_id.to_string(),
+            role,
+            content: content.to_string(),
+            attachments: attachments.to_vec(),
+            pasted_text,
+            created_at: now_iso(),
+            turn_timing: None,
+            assistant_kind: (role == Role::Assistant)
+                .then_some(miniq_protocol::AssistantMessageKind::Final),
+            steered: false,
+            reasoning: String::new(),
+        };
+        insert_message(&conn, &message)?;
+        Ok(message)
     }
 
     /// Append a message with a caller-allocated id (used for streaming, where
@@ -91,6 +119,7 @@ impl Store {
                 .then_some(miniq_protocol::AssistantMessageKind::Final),
             steered: false,
             reasoning: String::new(),
+            pasted_text: None,
         };
         insert_message(&conn, &message)?;
         Ok(message)
@@ -99,7 +128,7 @@ impl Store {
     pub fn list_messages(&self, session_id: &str) -> Result<Vec<Message>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT m.id, m.session_id, m.role, m.content, m.attachments_json, m.created_at, m.steered, m.assistant_kind, m.reasoning
+            "SELECT m.id, m.session_id, m.role, m.content, m.attachments_json, m.created_at, m.steered, m.assistant_kind, m.reasoning, m.pasted_text_json
              FROM messages m
              LEFT JOIN external_session_events e ON e.projected_message_id = m.id
              WHERE m.session_id = ?1
@@ -160,7 +189,7 @@ impl Store {
         };
         let message = transaction
             .query_row(
-                "SELECT id, session_id, role, content, attachments_json, created_at, steered, assistant_kind, reasoning
+                "SELECT id, session_id, role, content, attachments_json, created_at, steered, assistant_kind, reasoning, pasted_text_json
                  FROM messages WHERE id = ?1 AND session_id = ?2 AND role = 'user'",
                 params![message_id, session_id],
                 row_to_message,
@@ -302,7 +331,7 @@ impl Store {
             // SQLite bare-column semantics: with MAX() in the select list,
             // the other columns come from the row where the max occurs, so
             // this yields the latest matching message per session.
-            "SELECT id, session_id, role, content, attachments_json, MAX(created_at) AS created_at, steered, assistant_kind, reasoning
+            "SELECT id, session_id, role, content, attachments_json, MAX(created_at) AS created_at, steered, assistant_kind, reasoning, pasted_text_json
              FROM messages
              WHERE content LIKE ?1 ESCAPE '\\' AND role IN ('user', 'assistant')
                AND inherited = 0

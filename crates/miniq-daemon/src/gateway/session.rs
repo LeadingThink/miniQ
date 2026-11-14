@@ -240,6 +240,8 @@ struct IncomingMessage {
     content: String,
     #[serde(default)]
     attachments: Vec<String>,
+    #[serde(default)]
+    pasted_text: Option<miniq_protocol::PastedTextContent>,
 }
 
 pub(super) async fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
@@ -301,7 +303,12 @@ pub(super) async fn send_message(state: &AppState, raw: Option<Value>) -> Result
             }
             let queued = state
                 .store
-                .enqueue_message_with_attachments(&input.session_id, &content, attachments.items())
+                .enqueue_message_with_pasted_text(
+                    &input.session_id,
+                    &content,
+                    attachments.items(),
+                    input.message.pasted_text.clone(),
+                )
                 .map_err(store_err)?;
             attachments.commit();
             emit_queue_changed(state, &input.session_id);
@@ -318,7 +325,13 @@ pub(super) async fn send_message(state: &AppState, raw: Option<Value>) -> Result
         {
             return Err(prompt_cancelled());
         }
-        let message = append_user_message(state, &input.session_id, &content, attachments.items())?;
+        let message = append_user_message(
+            state,
+            &input.session_id,
+            &content,
+            attachments.items(),
+            input.message.pasted_text.clone(),
+        )?;
         attachments.commit();
         state.emit(Event::MessageCreated {
             session_id: input.session_id.clone(),
@@ -502,10 +515,11 @@ fn append_user_message(
     session_id: &str,
     content: &str,
     attachments: &[MessageAttachment],
+    pasted_text: Option<miniq_protocol::PastedTextContent>,
 ) -> Result<miniq_protocol::Message, RpcError> {
     let message = state
         .store
-        .append_message_with_attachments(session_id, Role::User, content, attachments)
+        .append_message_with_pasted_text(session_id, Role::User, content, attachments, pasted_text)
         .map_err(store_err)?;
 
     Ok(message)

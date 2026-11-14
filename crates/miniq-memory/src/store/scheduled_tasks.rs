@@ -141,6 +141,7 @@ impl Store {
             session_id: session_id.to_owned(),
             role: Role::User,
             content: content.to_owned(),
+            pasted_text: None,
             attachments: Vec::new(),
             created_at: now_iso(),
             turn_timing: None,

@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import type { LocalFileTarget } from "../localFiles";
 import type { Message, ToolCall } from "../types";
 import { groupTimelineTurns } from "../timelineTurns";
 import { createTimelineItems, groupTimeline } from "../timelineModel";
@@ -12,9 +19,22 @@ vi.mock("./Md", () => ({
 vi.mock("./MessageAttachmentPreview", () => ({
   MessageAttachmentPreview: ({
     attachment,
+    onOpenFile,
   }: {
-    attachment: { name: string };
-  }) => <span>{attachment.name}</span>,
+    attachment: { path: string; name: string };
+    onOpenFile?: (target: LocalFileTarget) => void;
+  }) =>
+    onOpenFile ? (
+      <button
+        onClick={() =>
+          onOpenFile({ path: attachment.path, line: null, column: null })
+        }
+      >
+        {attachment.name}
+      </button>
+    ) : (
+      <span>{attachment.name}</span>
+    ),
 }));
 
 const { Timeline } = await import("./Timeline");
@@ -25,13 +45,31 @@ const noop = () => undefined;
 const asyncNoop = async () => undefined;
 const none: never[] = [];
 
-function message(id: string, role: Message["role"], minute: number, extra: Partial<Message> = {}): Message {
-  return { id, sessionId: "s", role, content: `${role} ${id}`, createdAt: `2026-01-01T00:0${minute}:00Z`, ...extra };
+function message(
+  id: string,
+  role: Message["role"],
+  minute: number,
+  extra: Partial<Message> = {},
+): Message {
+  return {
+    id,
+    sessionId: "s",
+    role,
+    content: `${role} ${id}`,
+    createdAt: `2026-01-01T00:0${minute}:00Z`,
+    ...extra,
+  };
 }
 
 const tool = (id: string, minute: number): ToolCall => ({
-  id, sessionId: "s", toolName: "shell", input: {}, output: "ok", status: "succeeded",
-  createdAt: `2026-01-01T00:0${minute}:30Z`, completedAt: `2026-01-01T00:0${minute}:40Z`,
+  id,
+  sessionId: "s",
+  toolName: "shell",
+  input: {},
+  output: "ok",
+  status: "succeeded",
+  createdAt: `2026-01-01T00:0${minute}:30Z`,
+  completedAt: `2026-01-01T00:0${minute}:40Z`,
 });
 
 const steeredMessages = [
@@ -47,7 +85,14 @@ const steeredMessages = [
 ];
 const steeredTools = [tool("t1", 2), tool("t2", 4)];
 
-function view(props: { busy: boolean; messages: Message[]; toolCalls?: ToolCall[]; onRewrite?: () => Promise<boolean>; onStopTurn?: () => Promise<void> }) {
+function view(props: {
+  busy: boolean;
+  messages: Message[];
+  toolCalls?: ToolCall[];
+  onRewrite?: () => Promise<boolean>;
+  onStopTurn?: () => Promise<void>;
+  onOpenAttachment?: (target: LocalFileTarget) => void;
+}) {
   return (
     <Timeline
       messages={props.messages}
@@ -64,6 +109,7 @@ function view(props: { busy: boolean; messages: Message[]; toolCalls?: ToolCall[
       onResolveQuestion={noop}
       onRollback={noop}
       onOpenFile={noop}
+      onOpenAttachment={props.onOpenAttachment}
       onOpenUrl={noop}
       onSteerQueued={asyncNoop}
       onRemoveQueued={asyncNoop}
@@ -76,14 +122,24 @@ function view(props: { busy: boolean; messages: Message[]; toolCalls?: ToolCall[
 }
 
 it("keeps a steered message inside the turn it interrupted", () => {
-  const groups = groupTimeline(createTimelineItems(steeredMessages, steeredTools));
+  const groups = groupTimeline(
+    createTimelineItems(steeredMessages, steeredTools),
+  );
   const turns = groupTimelineTurns(groups);
   expect(turns).toHaveLength(1);
   expect(turns[0].userMessageId).toBe("u1");
 });
 
 it("renders a steered message as an inline steer note in the process flow", async () => {
-  const { container } = render(view({ busy: false, messages: steeredMessages, toolCalls: steeredTools }));
+  const onOpenAttachment = vi.fn();
+  const { container } = render(
+    view({
+      busy: false,
+      messages: steeredMessages,
+      toolCalls: steeredTools,
+      onOpenAttachment,
+    }),
+  );
   expect(container.querySelectorAll(".timeline-turn")).toHaveLength(1);
   expect(container.querySelector("[data-execution-fold]")).toBeNull();
   const note = container.querySelector(".steer-note");
@@ -91,10 +147,19 @@ it("renders a steered message as an inline steer note in the process flow", asyn
   // CompletedProcess disclosure, just like tool details.
   expect(note).toBeNull();
   fireEvent.click(container.querySelector(".completed-process summary")!);
-  await waitFor(() => expect(container.querySelector(".steer-note")).not.toBeNull());
-  expect(container.querySelector(".steer-note-label")?.textContent).toBe("引导：");
+  await waitFor(() =>
+    expect(container.querySelector(".steer-note")).not.toBeNull(),
+  );
+  expect(container.querySelector(".steer-note-label")?.textContent).toBe(
+    "引导：",
+  );
   expect(screen.getByText("改用 pnpm")).toBeTruthy();
-  expect(screen.getByText("guide.png")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "guide.png" }));
+  expect(onOpenAttachment).toHaveBeenCalledWith({
+    path: "/tmp/guide.png",
+    line: null,
+    column: null,
+  });
   expect(container.querySelector('[data-user-message-id="u2"]')).toBeNull();
 });
 
@@ -102,13 +167,22 @@ const plainMessages = [message("u1", "user", 1), message("a1", "assistant", 2)];
 
 it("confirms, stops the running turn, then rewrites an edited message", async () => {
   const order: string[] = [];
-  const onStopTurn = vi.fn(async () => { order.push("stop"); });
-  const onRewrite = vi.fn(async () => { order.push("rewrite"); return true; });
+  const onStopTurn = vi.fn(async () => {
+    order.push("stop");
+  });
+  const onRewrite = vi.fn(async () => {
+    order.push("rewrite");
+    return true;
+  });
   render(view({ busy: true, messages: plainMessages, onRewrite, onStopTurn }));
-  const edit = screen.getByRole("button", { name: "修改消息" }) as HTMLButtonElement;
+  const edit = screen.getByRole("button", {
+    name: "修改消息",
+  }) as HTMLButtonElement;
   expect(edit.disabled).toBe(false);
   fireEvent.click(edit);
-  fireEvent.change(screen.getByLabelText("修改消息内容"), { target: { value: "new question" } });
+  fireEvent.change(screen.getByLabelText("修改消息内容"), {
+    target: { value: "new question" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "发送修改" }));
   expect(screen.getByRole("alertdialog")).toBeTruthy();
   expect(onStopTurn).not.toHaveBeenCalled();
@@ -122,7 +196,9 @@ it("cancelling the confirmation neither stops nor rewrites", () => {
   const onRewrite = vi.fn(async () => true);
   render(view({ busy: true, messages: plainMessages, onRewrite, onStopTurn }));
   fireEvent.click(screen.getByRole("button", { name: "修改消息" }));
-  fireEvent.change(screen.getByLabelText("修改消息内容"), { target: { value: "new question" } });
+  fireEvent.change(screen.getByLabelText("修改消息内容"), {
+    target: { value: "new question" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "发送修改" }));
   fireEvent.click(screen.getByRole("button", { name: "取消" }));
   expect(onStopTurn).not.toHaveBeenCalled();
@@ -141,7 +217,9 @@ it("rewrites immediately without confirmation when idle", async () => {
   const onRewrite = vi.fn(async () => true);
   render(view({ busy: false, messages: plainMessages, onRewrite, onStopTurn }));
   fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
-  await waitFor(() => expect(onRewrite).toHaveBeenCalledWith("u1", "user u1", undefined));
+  await waitFor(() =>
+    expect(onRewrite).toHaveBeenCalledWith("u1", "user u1", undefined),
+  );
   expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(onStopTurn).not.toHaveBeenCalled();
 });

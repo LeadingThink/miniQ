@@ -119,14 +119,23 @@ impl Store {
             0
         };
         let mut message_ids = HashMap::with_capacity(source_messages.len());
-        for (id, role, content, attachments, created_at, steered, assistant_kind, reasoning) in
-            source_messages
+        for (
+            id,
+            role,
+            content,
+            attachments,
+            created_at,
+            steered,
+            assistant_kind,
+            reasoning,
+            pasted_text,
+        ) in source_messages
         {
             let copied_id = new_id("msg");
             transaction.execute(
-                "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at, steered, assistant_kind, inherited, reasoning)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                params![copied_id, target_id, role, content, attachments, created_at, steered, assistant_kind, if side { 1 } else { 0 }, reasoning],
+                "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at, steered, assistant_kind, inherited, reasoning, pasted_text_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![copied_id, target_id, role, content, attachments, created_at, steered, assistant_kind, if side { 1 } else { 0 }, reasoning, pasted_text],
             )?;
             message_ids.insert(id, copied_id);
         }
@@ -362,10 +371,11 @@ fn load_messages(
         bool,
         Option<String>,
         String,
+        String,
     )>,
 > {
     let mut statement = transaction.prepare(
-        "SELECT id, role, content, attachments_json, created_at, steered, assistant_kind, reasoning FROM messages
+        "SELECT id, role, content, attachments_json, created_at, steered, assistant_kind, reasoning, pasted_text_json FROM messages
          WHERE session_id = ?1 AND (created_at < ?2 OR (created_at = ?2 AND id <= ?3))
          ORDER BY created_at ASC, id ASC",
     )?;
@@ -379,6 +389,7 @@ fn load_messages(
             row.get(5)?,
             row.get(6)?,
             row.get(7)?,
+            row.get(8)?,
         ))
     })?;
     Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -827,6 +838,7 @@ mod tests {
             assistant_kind: Some(miniq_protocol::AssistantMessageKind::Commentary),
             content: "working".into(),
             created_at: now_iso(),
+            pasted_text: None,
             attachments: Vec::new(),
             turn_timing: None,
             steered: false,
@@ -848,6 +860,7 @@ mod tests {
             assistant_kind: Some(miniq_protocol::AssistantMessageKind::Final),
             content: "final".into(),
             created_at: now_iso(),
+            pasted_text: None,
             attachments: Vec::new(),
             turn_timing: None,
             steered: false,

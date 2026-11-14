@@ -14,6 +14,8 @@ import {
   Minimize2,
   MessageSquare,
   MessageSquarePlus,
+  Pencil,
+  Save,
   X,
 } from "lucide-react";
 import {
@@ -48,10 +50,16 @@ import { isTauriRuntime } from "../runtime";
 import { useSessionFileAccess } from "../sessionFileAccess";
 import { RemoteFileDownload } from "./RemoteFileDownload";
 import { ExternalEditorMenu } from "./ExternalEditorMenu";
+import { Dialog } from "./ui/Dialog";
+import { Button } from "./ui/Button";
 import { PreviewTabs } from "./PreviewTabs";
 import { PreviewSelection } from "./PreviewSelection";
 import { usePreviewSelection } from "../hooks/usePreviewSelection";
 import type { LocalFileTarget } from "../localFiles";
+import {
+  discardPendingTextEdit,
+  registerPendingTextEdit,
+} from "../pendingTextEdits";
 import "./PreviewFocus.css";
 import "./FilePreviewMobile.css";
 import {
@@ -71,6 +79,7 @@ interface FilePreviewPanelProps {
   onClose: () => void;
   onOpenFile: (target: NonNullable<FilePreviewState["target"]>) => void;
   onRetry: () => void;
+  onSaveText?: (path: string, content: string) => Promise<void>;
   onAuthorizeFile?: (
     target: NonNullable<FilePreviewState["target"]>,
     chooseReplacement?: boolean,
@@ -129,6 +138,7 @@ function PreviewPanelContent({
   onClose,
   onOpenFile,
   onRetry,
+  onSaveText,
   onAuthorizeFile,
   tabs = [],
   onCloseTab,
@@ -149,6 +159,9 @@ function PreviewPanelContent({
   const [actionError, setActionError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [renderAttempt, setRenderAttempt] = useState(0);
+  const [editContent, setEditContent] = useState<string | null>(null);
+  const [editPath, setEditPath] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [markdownSource, setMarkdownSource] = usePreviewValue(
     "source",
     Boolean(preview.target?.line),
@@ -184,6 +197,10 @@ function PreviewPanelContent({
   }, [line, column, preview.content]);
 
   useEffect(() => {
+    if (editPath && editPath !== path) {
+      setActionError("另一个文件仍有未保存的修改；请返回该文件保存或取消编辑");
+      return;
+    }
     setActionError(null);
     setRenderError(null);
     setRenderAttempt(0);
@@ -202,6 +219,65 @@ function PreviewPanelContent({
   const segments = breadcrumbSegments(path, roots);
   const sourceVisible =
     ((preview.kind === "text" || preview.kind === "markdown") && !renderable) || (renderable && markdownSource);
+  const canEdit = Boolean(
+    onSaveText && !remote && !preview.textPage && preview.content !== null &&
+    (preview.kind === "text" || preview.kind === "markdown"),
+  );
+  const pastedTextDialog = fileName(path) === "已粘贴的文本.txt" && canEdit;
+  const editing = editContent !== null && editPath === path;
+  const dialogContent = pastedTextDialog ? (editing ? editContent : preview.content ?? "") : "";
+  const dirty = editing && editContent !== preview.content;
+  const confirmDiscard = () => !dirty || window.confirm("此文件有未保存的修改，确定要放弃吗？");
+  const updateEditContent = (content: string) => {
+    setEditContent(content);
+    if (!editPath || !onSaveText) return;
+    if (content === preview.content) discardPendingTextEdit(editPath);
+    else registerPendingTextEdit(editPath, content, onSaveText);
+  };
+  const cancelEditing = () => {
+    if (confirmDiscard()) {
+      if (editPath) discardPendingTextEdit(editPath);
+      setEditContent(null);
+      setEditPath(null);
+      setActionError(null);
+    }
+  };
+  const closePanel = () => {
+    if (!confirmDiscard()) return;
+    if (editPath) discardPendingTextEdit(editPath);
+    onClose();
+  };
+  const openPreviewFile = (next: NonNullable<FilePreviewState["target"]>) => {
+    if (!confirmDiscard()) return;
+    if (editPath) discardPendingTextEdit(editPath);
+    setEditContent(null);
+    setEditPath(null);
+    onOpenFile(next);
+  };
+  const saveEditing = async (): Promise<boolean> => {
+    if (!onSaveText || editContent === null || !path) return false;
+    setSaving(true);
+    setActionError(null);
+    try {
+      await onSaveText(path, editContent);
+      discardPendingTextEdit(path);
+      setEditContent(null);
+      setEditPath(null);
+      return true;
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!pastedTextDialog || editing || preview.content === null) return;
+    setEditPath(path);
+    setEditContent(preview.content);
+    setActionError(null);
+  }, [pastedTextDialog, editing, path, preview.content]);
 
   useEffect(() => {
     if (!sourceVisible) editorRef.current = null;
@@ -302,6 +378,43 @@ function PreviewPanelContent({
     }
   };
 
+  if (pastedTextDialog) {
+    return (
+      <Dialog
+        open
+        className="pasted-text-dialog"
+        title="编辑已粘贴的文本"
+        description="修改后的完整内容将在保存或发送时提供给模型。"
+        onClose={closePanel}
+        footer={
+          <>
+            <Button variant="secondary" disabled={saving} onClick={closePanel}>取消</Button>
+            <Button
+              disabled={saving || !dirty}
+              onClick={() => {
+                void saveEditing().then((saved) => {
+                  if (saved) onClose();
+                });
+              }}
+            >
+              {saving ? "正在保存…" : "保存修改"}
+            </Button>
+          </>
+        }
+      >
+        <textarea
+          className="pasted-text-dialog-editor"
+          aria-label="已粘贴的文本内容"
+          value={dialogContent}
+          disabled={saving}
+          spellCheck={false}
+          onChange={(event) => updateEditContent(event.currentTarget.value)}
+        />
+        {actionError && <div className="pasted-text-dialog-error" role="alert">{actionError}</div>}
+      </Dialog>
+    );
+  }
+
   return (
     <aside
       className={`file-preview-panel${onCloseTab ? " has-tabs" : ""}${expanded && !withinWorkbench ? " preview-expanded" : ""}`}
@@ -319,7 +432,7 @@ function PreviewPanelContent({
           tabs={tabs}
           active={path}
           id={contentId}
-          onSelect={onOpenFile}
+          onSelect={openPreviewFile}
           onClose={onCloseTab}
           onCloseOthers={onCloseOtherTabs}
           onCloseAll={onCloseAllTabs}
@@ -368,7 +481,7 @@ function PreviewPanelContent({
           className="icon-button"
           title="关闭预览"
           aria-label="关闭预览"
-          onClick={onClose}
+          onClick={closePanel}
         >
           <X size={17} />
         </button>}
@@ -417,6 +530,46 @@ function PreviewPanelContent({
               </button>
             </span>
           )}
+          {canEdit && (editing ? (
+            <span className="file-preview-edit-actions" role="group" aria-label="文件编辑">
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="保存文件"
+                title="保存文件"
+                disabled={saving || !dirty}
+                onClick={() => void saveEditing()}
+              >
+                <Save size={15} />
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="取消编辑"
+                title="取消编辑"
+                disabled={saving}
+                onClick={cancelEditing}
+              >
+                <X size={15} />
+              </button>
+              {dirty && <span className="file-preview-dirty" role="status">未保存</span>}
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="编辑文件"
+              title="编辑文件"
+              onClick={() => {
+                setEditPath(path);
+                setEditContent(preview.content);
+                setMarkdownSource(true);
+                setActionError(null);
+              }}
+            >
+              <Pencil size={15} />
+            </button>
+          ))}
           {sourceVisible && (
             <button
               type="button"
@@ -578,7 +731,7 @@ function PreviewPanelContent({
               ? `正在接收文件… ${formatFileSize(preview.progress.received)} / ${formatFileSize(preview.progress.total)}`
               : "正在加载文件…"}</span>
             {preview.progress && <progress aria-label="文件加载进度" value={preview.progress.received} max={preview.progress.total || 1} />}
-            <button type="button" className="ghost" onClick={onClose}>取消加载</button>
+            <button type="button" className="ghost" onClick={closePanel}>取消加载</button>
           </div>
         ) : !preview.textPage && preview.kind === "markdown" &&
           preview.content !== null &&
@@ -623,7 +776,9 @@ function PreviewPanelContent({
           >
             <CodePreview
               path={path}
-              content={preview.content}
+              content={editing ? editContent : preview.content}
+              editable={editing}
+              onChange={editing ? updateEditContent : undefined}
               wrap={wrapCode}
               onMount={handleMount}
               onGoToLine={openGoToLine}

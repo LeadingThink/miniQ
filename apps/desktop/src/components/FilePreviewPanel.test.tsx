@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { FilePreviewPanel } from "./FilePreviewPanel";
+import { flushPendingTextEdits } from "../pendingTextEdits";
 const loadEditor = vi.hoisted(() => vi.fn());
 vi.mock("./CodePreview", () => {
   loadEditor();
   return {
-    default: ({ content }: { content: string }) => (
+    default: ({ content, editable, onChange }: { content: string; editable?: boolean; onChange?: (value: string) => void }) => editable ? (
+      <textarea aria-label="代码视图" value={content} onChange={(event) => onChange?.(event.currentTarget.value)} />
+    ) : (
       <pre aria-label="代码视图">{content}</pre>
     ),
   };
@@ -14,6 +17,167 @@ vi.mock("./CodePreview", () => {
 afterEach(() => {
   cleanup();
   delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+});
+
+it("opens pasted text in an editable dialog and closes only after a successful save", async () => {
+  Object.defineProperty(window, "__TAURI_INTERNALS__", {
+    configurable: true,
+    value: {},
+  });
+  const path = "/attachments/已粘贴的文本.txt";
+  const save = vi.fn().mockRejectedValueOnce(new Error("保存失败")).mockResolvedValueOnce(undefined);
+  const close = vi.fn();
+  render(
+    <FilePreviewPanel
+      preview={{
+        target: { path, line: null, column: null },
+        resolvedPath: path,
+        content: "完整原文",
+        kind: "text",
+        mimeType: "text/plain",
+        dataBase64: null,
+        size: 12,
+        loading: false,
+        error: null,
+        open: true,
+      }}
+      workspacePath="/workspace"
+      workspacePaths={[]}
+      onClose={close}
+      onOpenFile={vi.fn()}
+      onRetry={vi.fn()}
+      onSaveText={save}
+    />,
+  );
+
+  expect(screen.getByRole("dialog", { name: "编辑已粘贴的文本" })).toBeTruthy();
+  const editor = await screen.findByRole("textbox", { name: "已粘贴的文本内容" });
+  expect((editor as HTMLTextAreaElement).value).toBe("完整原文");
+  fireEvent.change(editor, { target: { value: "修改后的完整内容" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("保存失败");
+  expect(close).not.toHaveBeenCalled();
+  expect(screen.getByRole("dialog", { name: "编辑已粘贴的文本" })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  await waitFor(() => expect(save).toHaveBeenLastCalledWith(path, "修改后的完整内容"));
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+});
+
+it("keeps ordinary text files in the file preview instead of opening the pasted-text dialog", () => {
+  Object.defineProperty(window, "__TAURI_INTERNALS__", {
+    configurable: true,
+    value: {},
+  });
+  render(
+    <FilePreviewPanel
+      preview={{
+        target: { path: "/workspace/notes.txt", line: null, column: null },
+        resolvedPath: "/workspace/notes.txt",
+        content: "notes",
+        kind: "text",
+        mimeType: "text/plain",
+        dataBase64: null,
+        size: 5,
+        loading: false,
+        error: null,
+        open: true,
+      }}
+      workspacePath="/workspace"
+      workspacePaths={[]}
+      onClose={vi.fn()}
+      onOpenFile={vi.fn()}
+      onRetry={vi.fn()}
+      onSaveText={vi.fn()}
+    />,
+  );
+
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByRole("button", { name: "编辑文件" })).toBeTruthy();
+});
+
+it("edits, cancels, saves, and preserves content after save failures", async () => {
+  Object.defineProperty(window, "__TAURI_INTERNALS__", {
+    configurable: true,
+    value: {},
+  });
+  const save = vi.fn().mockRejectedValueOnce(new Error("磁盘只读")).mockResolvedValueOnce(undefined);
+  const preview = {
+    target: { path: "/workspace/notes.txt", line: null, column: null },
+    resolvedPath: "/workspace/notes.txt",
+    content: "before",
+    kind: "text" as const,
+    mimeType: "text/plain",
+    dataBase64: null,
+    size: 6,
+    loading: false,
+    error: null,
+    open: true,
+  };
+  const view = render(<FilePreviewPanel preview={preview} workspacePath="/workspace" workspacePaths={[]}
+    onClose={vi.fn()} onOpenFile={vi.fn()} onRetry={vi.fn()} onSaveText={save} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "编辑文件" }));
+  fireEvent.change(await screen.findByLabelText("代码视图"), { target: { value: "changed" } });
+  expect(screen.getByRole("status").textContent).toBe("未保存");
+  fireEvent.click(screen.getByRole("button", { name: "保存文件" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("磁盘只读");
+  expect((screen.getByLabelText("代码视图") as HTMLTextAreaElement).value).toBe("changed");
+
+  fireEvent.click(screen.getByRole("button", { name: "保存文件" }));
+  await waitFor(() => expect(save).toHaveBeenLastCalledWith("/workspace/notes.txt", "changed"));
+  view.rerender(<FilePreviewPanel preview={{ ...preview, content: "changed" }} workspacePath="/workspace" workspacePaths={[]}
+    onClose={vi.fn()} onOpenFile={vi.fn()} onRetry={vi.fn()} onSaveText={save} />);
+  expect(screen.getByRole("button", { name: "编辑文件" })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "编辑文件" }));
+  fireEvent.change(screen.getByLabelText("代码视图"), { target: { value: "discarded" } });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  fireEvent.click(screen.getByRole("button", { name: "取消编辑" }));
+  expect(confirm).toHaveBeenCalledOnce();
+  expect(screen.getByLabelText("代码视图").textContent).toBe("changed");
+});
+
+it("makes the latest unsaved edit available to attachment sending", async () => {
+  Object.defineProperty(window, "__TAURI_INTERNALS__", {
+    configurable: true,
+    value: {},
+  });
+  const path = "/workspace/pasted.txt";
+  const save = vi.fn().mockResolvedValue(undefined);
+  render(
+    <FilePreviewPanel
+      preview={{
+        target: { path, line: null, column: null },
+        resolvedPath: path,
+        content: "before",
+        kind: "text",
+        mimeType: "text/plain",
+        dataBase64: null,
+        size: 6,
+        loading: false,
+        error: null,
+        open: true,
+      }}
+      workspacePath="/workspace"
+      workspacePaths={[]}
+      onClose={vi.fn()}
+      onOpenFile={vi.fn()}
+      onRetry={vi.fn()}
+      onSaveText={save}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "编辑文件" }));
+  fireEvent.change(await screen.findByLabelText("代码视图"), {
+    target: { value: "first change" },
+  });
+  fireEvent.change(screen.getByLabelText("代码视图"), {
+    target: { value: "latest complete change" },
+  });
+  await flushPendingTextEdits([path]);
+
+  expect(save).toHaveBeenCalledExactlyOnceWith(path, "latest complete change");
 });
 
 it("retries reading after a read failure without exposing the transfer route", () => {
@@ -156,7 +320,7 @@ it("does not load the code editor for Markdown rendering, but loads it on demand
     />,
   );
   expect(screen.getByRole("heading", { name: "Evidence" })).toBeTruthy();
-  expect(loadEditor).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText("代码视图")).toBeNull();
   const article = screen.getByLabelText("Markdown 预览");
   fireEvent.click(screen.getByRole("button", { name: "展开预览" }));
   expect(screen.getByLabelText("Markdown 预览")).toBe(article);
@@ -172,7 +336,6 @@ it("does not load the code editor for Markdown rendering, but loads it on demand
   expect((await screen.findByLabelText("代码视图")).textContent).toContain(
     "# Evidence",
   );
-  expect(loadEditor).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "渲染预览" }));
   expect(screen.getByRole("heading", { name: "Evidence" })).toBeTruthy();
 });

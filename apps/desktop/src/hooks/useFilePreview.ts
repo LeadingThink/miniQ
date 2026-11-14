@@ -8,6 +8,7 @@ import {
   readLocalFilePreview,
   requestRemoteFileAccess,
   resolveRemoteFileAccess,
+  writeLocalTextFile,
   type LocalPathKind,
   type LocalPreviewKind,
   type LocalFilePreview,
@@ -257,6 +258,15 @@ export function useFilePreview(
         return;
       }
       if (!isTauriRuntime()) return;
+      const requestId = ++requestSequence.current;
+      requestController.current?.abort();
+      setState((current) => ({
+        ...current,
+        target,
+        loading: true,
+        error: null,
+        open: true,
+      }));
       try {
         let selected = target.path;
         if (chooseReplacement) {
@@ -267,7 +277,7 @@ export function useFilePreview(
             title: "选择要允许 miniQ 打开的文件",
             defaultPath: target.path,
           });
-          if (typeof replacement !== "string") return;
+          if (requestId !== requestSequence.current || typeof replacement !== "string") return;
           selected = replacement;
         }
         const next = Array.from(new Set([...(authorizedFilesRef.current[scope] ?? []), selected]));
@@ -279,6 +289,7 @@ export function useFilePreview(
           { client, sessionId },
           next,
         );
+        if (requestId !== requestSequence.current) return;
         authorizedFilesRef.current = { ...authorizedFilesRef.current, [scope]: next };
         setAuthorizedFiles(authorizedFilesRef.current);
         updateTabs((current) => selectPreviewTab(current, { ...selectedTarget, path: file.path }, target.path));
@@ -299,6 +310,7 @@ export function useFilePreview(
           open: true,
         });
       } catch (cause) {
+        if (requestId !== requestSequence.current) return;
         setState((current) => ({
           ...current,
           loading: false,
@@ -393,6 +405,25 @@ export function useFilePreview(
     };
   }, [scope, openFile]);
 
+  const saveText = useCallback(
+    async (path: string, content: string) => {
+      if (!isTauriRuntime() || client?.mode === "remote")
+        throw new Error("远程文件当前仅支持只读预览");
+      await writeLocalTextFile(
+        path,
+        content,
+        workspacePath,
+        workspacePaths,
+        authorizedFilesRef.current[scope] ?? [],
+      );
+      const target = state.target?.path === path
+        ? state.target
+        : { path, line: null, column: null };
+      await loadFile(target);
+    },
+    [client, loadFile, scope, state.target, workspacePath, workspacePaths],
+  );
+
   return {
     views,
     viewScope: scope,
@@ -415,6 +446,7 @@ export function useFilePreview(
     reopen,
     openFile,
     authorizeFile,
+    saveText,
     authorizedFiles: authorizedFiles[scope] ?? NO_PATHS,
     close,
   };

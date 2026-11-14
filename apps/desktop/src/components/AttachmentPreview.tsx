@@ -16,6 +16,8 @@ export function AttachmentPreview(props: {
   path: string;
   sending: boolean;
   onRemove: () => void;
+  /** Open a non-image attachment in the existing file workbench. */
+  onOpenAttachment?: (path: string) => void;
   remote?: boolean;
 }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -72,17 +74,29 @@ export function AttachmentPreview(props: {
     );
   }
 
+  const name = fileName(props.path);
   return (
     <span className="attach-chip" title={props.path}>
-      <Paperclip size={12} />
-      <span className="attach-file-name">{fileName(props.path)}</span>
+      <button
+        type="button"
+        className="attach-file-open"
+        aria-label={`打开附件 ${name}`}
+        disabled={!props.onOpenAttachment}
+        onClick={() => props.onOpenAttachment?.(props.path)}
+      >
+        <Paperclip size={12} />
+        <span className="attach-file-name">{name}</span>
+      </button>
       <button
         type="button"
         className="attach-remove"
-        title={`移除附件 ${fileName(props.path)}`}
-        aria-label={`移除附件 ${fileName(props.path)}`}
+        title={`移除附件 ${name}`}
+        aria-label={`移除附件 ${name}`}
         disabled={props.sending}
-        onClick={props.onRemove}
+        onClick={(event) => {
+          event.stopPropagation();
+          props.onRemove();
+        }}
       >
         <X size={11} />
       </button>

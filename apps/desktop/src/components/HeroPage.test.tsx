@@ -78,6 +78,28 @@ it("focuses the task input and keeps project/approval controls before it", () =>
   expect(app.connection.changeApprovalMode).toHaveBeenCalledWith("alwaysAsk");
 });
 
+it("opens a draft attachment from the new-conversation composer", () => {
+  const app = fixture();
+  const onOpenFile = vi.fn();
+  localStorage.setItem(
+    "miniq.draft.hero.attachments",
+    JSON.stringify(["/tmp/已粘贴的文本.txt"]),
+  );
+
+  render(
+    <HeroPage app={app} slashCommands={[]} onOpenFile={onOpenFile} />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "打开附件 已粘贴的文本.txt" }),
+  );
+
+  expect(onOpenFile).toHaveBeenCalledExactlyOnceWith({
+    path: "/tmp/已粘贴的文本.txt",
+    line: null,
+    column: null,
+  });
+});
+
 it("keeps examples separate from working extension shortcuts", () => {
   const app = fixture();
   render(<HeroPage app={app} slashCommands={[]} />);

@@ -47,6 +47,38 @@ it("authorizes only a file explicitly selected by the user", async () => {
   expect(hook.result.current.authorizedFiles).toEqual([target.path]);
 });
 
+it("keeps the authorized attachment preview when opening and authorizing in one click", async () => {
+  vi.mocked(readLocalFilePreview).mockClear();
+  const target = { path: "/tmp/miniq/已粘贴的文本.txt", line: null, column: null };
+  let resolvePathKind: ((kind: "file") => void) | undefined;
+  local.pathKind.mockImplementationOnce(
+    () => new Promise<"file">((resolve) => { resolvePathKind = resolve; }),
+  );
+  vi.mocked(readLocalFilePreview).mockResolvedValueOnce({
+    path: target.path,
+    kind: "text",
+    mimeType: "text/plain",
+    size: 12,
+    content: "完整的长文本内容",
+    dataBase64: null,
+  });
+  const hook = renderHook(() => useFilePreview("/workspace", "session"));
+
+  await act(async () => {
+    const opening = hook.result.current.openFile(target);
+    const authorizing = hook.result.current.authorizeFile(target);
+    resolvePathKind?.("file");
+    await Promise.all([opening, authorizing]);
+  });
+
+  expect(readLocalFilePreview).toHaveBeenCalledTimes(1);
+  expect(hook.result.current.state.target).toEqual(target);
+  expect(hook.result.current.state.kind).toBe("text");
+  expect(hook.result.current.state.content).toBe("完整的长文本内容");
+  expect(hook.result.current.state.loading).toBe(false);
+  expect(hook.result.current.state.error).toBeNull();
+});
+
 it("replaces an unresolved preview target with the explicitly selected file", async () => {
   const target = { path: "D:/study/readme", line: null, column: null };
   const selected = "D:/test/2022-Machine-Learning-Specialization/README.md";

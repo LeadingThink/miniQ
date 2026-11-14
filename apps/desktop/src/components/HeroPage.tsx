@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PlugZap, Sparkles } from "lucide-react";
+import type { LocalFileTarget } from "../localFiles";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { hostDraftKey } from "../desktopHost";
@@ -13,10 +14,12 @@ export function HeroPage({
   app,
   slashCommands,
   sendBlockedReason,
+  onOpenFile,
 }: {
   app: MiniqAppController;
   slashCommands: ComposerSlashCommand[];
   sendBlockedReason?: string;
+  onOpenFile?: (target: LocalFileTarget) => void;
 }) {
   const selectedWorkspace = app.catalog.selectedWorkspace;
   const [draftRequest, setDraftRequest] = useState<
@@ -93,6 +96,11 @@ export function HeroPage({
           onApprovalModeChange={app.connection.changeApprovalMode}
           allowGoal
           onSend={app.actions.startTask}
+          onOpenAttachment={onOpenFile ? (path) => {
+            const target = { path, line: null, column: null };
+            onOpenFile(target);
+            if (app.client.mode !== "remote") void app.preview.authorizeFile(target);
+          } : undefined}
           onError={app.setError}
           sendBlocked={!!sendBlockedReason}
           sendBlockedReason={sendBlockedReason}

@@ -21,6 +21,13 @@ fn row_to_queued(row: &rusqlite::Row<'_>) -> rusqlite::Result<QueuedMessage> {
         position: row.get(4)?,
         created_at: row.get(5)?,
         steered: row.get(6)?,
+        pasted_text: serde_json::from_str(&row.get::<_, String>(7)?).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                7,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
     })
 }
 
@@ -45,6 +52,16 @@ impl Store {
         content: &str,
         attachments: &[MessageAttachment],
     ) -> Result<QueuedMessage> {
+        self.enqueue_message_with_pasted_text(session_id, content, attachments, None)
+    }
+
+    pub fn enqueue_message_with_pasted_text(
+        &self,
+        session_id: &str,
+        content: &str,
+        attachments: &[MessageAttachment],
+        pasted_text: Option<miniq_protocol::PastedTextContent>,
+    ) -> Result<QueuedMessage> {
         let conn = self.conn.lock().unwrap();
         let position: i64 = conn.query_row(
             "SELECT COALESCE(MAX(position), 0) + 1 FROM queued_messages WHERE session_id = ?1",
@@ -55,6 +72,7 @@ impl Store {
             id: new_id("qmsg"),
             session_id: session_id.to_string(),
             content: content.to_string(),
+            pasted_text,
             attachments: attachments.to_vec(),
             position,
             created_at: now_iso(),
@@ -62,15 +80,16 @@ impl Store {
         };
         conn.execute(
             "INSERT INTO queued_messages
-               (id, session_id, content, attachments_json, position, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+               (id, session_id, content, attachments_json, position, created_at, pasted_text_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 message.id,
                 message.session_id,
                 message.content,
                 serde_json::to_string(&message.attachments)?,
                 message.position,
-                message.created_at
+                message.created_at,
+                serde_json::to_string(&message.pasted_text)?
             ],
         )?;
         Ok(message)
@@ -80,7 +99,7 @@ impl Store {
     pub fn list_queued_messages(&self, session_id: &str) -> Result<Vec<QueuedMessage>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, session_id, content, attachments_json, position, created_at, steered
+            "SELECT id, session_id, content, attachments_json, position, created_at, steered, pasted_text_json
              FROM queued_messages WHERE session_id = ?1 ORDER BY position ASC, id ASC",
         )?;
         let rows = stmt.query_map(params![session_id], row_to_queued)?;
@@ -102,7 +121,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let mut message = conn
             .query_row(
-                "SELECT id, session_id, content, attachments_json, position, created_at, steered
+                "SELECT id, session_id, content, attachments_json, position, created_at, steered, pasted_text_json
                  FROM queued_messages WHERE id = ?1 AND session_id = ?2",
                 params![id, session_id],
                 row_to_queued,
@@ -124,10 +143,11 @@ impl Store {
             return Err(MemoryError::InvalidData("消息内容不能为空".into()));
         }
         conn.execute(
-            "UPDATE queued_messages SET content = ?2, attachments_json = ?3 WHERE id = ?1",
+            "UPDATE queued_messages SET content = ?2, attachments_json = ?3, pasted_text_json = 'null' WHERE id = ?1",
             params![id, content, serde_json::to_string(next_attachments)?],
         )?;
         message.content = content.into();
+        message.pasted_text = None;
         message.attachments = next_attachments.to_vec();
         Ok(message)
     }
@@ -139,7 +159,7 @@ impl Store {
         let transaction = conn.transaction()?;
         let queued = transaction
             .query_row(
-                "SELECT id, session_id, content, attachments_json, position, created_at, steered
+                "SELECT id, session_id, content, attachments_json, position, created_at, steered, pasted_text_json
                  FROM queued_messages WHERE session_id = ?1
                  ORDER BY position ASC, id ASC LIMIT 1",
                 params![session_id],
@@ -154,6 +174,7 @@ impl Store {
             session_id: session_id.into(),
             role: Role::User,
             content: queued.content,
+            pasted_text: queued.pasted_text,
             attachments: queued.attachments,
             created_at: now_iso(),
             turn_timing: None,
@@ -182,7 +203,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let message = conn
             .query_row(
-                "SELECT id, session_id, content, attachments_json, position, created_at, steered
+                "SELECT id, session_id, content, attachments_json, position, created_at, steered, pasted_text_json
                  FROM queued_messages WHERE id = ?1",
                 params![id],
                 row_to_queued,
@@ -198,7 +219,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let message = conn
             .query_row(
-                "SELECT id, session_id, content, attachments_json, position, created_at, steered
+                "SELECT id, session_id, content, attachments_json, position, created_at, steered, pasted_text_json
                  FROM queued_messages WHERE id = ?1",
                 params![id],
                 row_to_queued,
@@ -245,7 +266,7 @@ impl Store {
         let transaction = conn.transaction()?;
         let message = transaction
             .query_row(
-                "SELECT id, session_id, content, attachments_json, position, created_at, steered
+                "SELECT id, session_id, content, attachments_json, position, created_at, steered, pasted_text_json
                  FROM queued_messages WHERE id = ?1 AND session_id = ?2",
                 params![id, session_id],
                 row_to_queued,

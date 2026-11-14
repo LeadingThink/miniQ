@@ -170,6 +170,7 @@ mod tests {
             role: Role::Assistant,
             assistant_kind: Some(miniq_protocol::AssistantMessageKind::Interrupted),
             content: "interrupted output".into(),
+            pasted_text: None,
             attachments: Vec::new(),
             created_at: now_iso(),
             turn_timing: None,

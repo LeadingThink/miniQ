@@ -70,6 +70,29 @@ it("uploads a desktop drop, shows progress and sends only the confirmed remote r
   expect(props.onError).not.toHaveBeenCalled();
 });
 
+it("uploads a long text paste as a normalized text file through the remote queue", async () => {
+  vi.mocked(uploadRemoteFile).mockResolvedValueOnce(receipt("/project/inbox/已粘贴的文本.txt"));
+  render(<ComposerCard {...props} />);
+  const input = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "消息" });
+  fireEvent.change(input, { target: { value: "保留正文" } });
+  const text = `首行\r\n${"文".repeat(1000)}`;
+
+  await act(async () => {
+    expect(fireEvent.paste(input, {
+      clipboardData: { items: [], files: [], getData: () => text },
+    })).toBe(false);
+  });
+
+  expect(stageBrowserUploadSources).toHaveBeenCalledOnce();
+  const file = vi.mocked(stageBrowserUploadSources).mock.calls[0][0][0];
+  expect(file.name).toBe("已粘贴的文本.txt");
+  expect(file.type).toBe("text/plain;charset=utf-8");
+  expect(await file.text()).toBe(text.replace(/\r\n?/g, "\n"));
+  expect(input.value).toBe("保留正文");
+  expect(uploadRemoteFile).toHaveBeenCalledOnce();
+  expect(readAttachments("draft-A")).toEqual(["/project/inbox/已粘贴的文本.txt"]);
+});
+
 it.each(["input", "transcript"])("uploads a clipboard image from %s once even under StrictMode", async (target) => {
   vi.mocked(uploadRemoteFile).mockResolvedValueOnce(receipt("/project/inbox/截图.png"));
   render(<StrictMode><ComposerCard {...props} /></StrictMode>);
@@ -264,6 +287,6 @@ it("cancels a waiting send when a transcript paste edits its text", async () => 
   fireEvent.paste(document.body, { clipboardData: { items: [], files: [], getData: () => "补充说明" } });
   await act(async () => finish(receipt("/project/inbox/截图.png")));
   expect(props.onSend).not.toHaveBeenCalled();
-  expect(readDraft("draft-A")).toBe("补充说明");
+  expect(readDraft("draft-A")).toBe("[粘贴内容 4 字]");
   expect(readAttachments("draft-A")).toEqual(["/project/inbox/截图.png"]);
 });

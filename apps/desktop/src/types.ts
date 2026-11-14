@@ -206,11 +206,21 @@ export interface ExternalSessionImportJob {
   failure: string | null;
 }
 
+export interface PastedTextContent {
+  content: string;
+  pastes: Array<{
+    placeholder: string;
+    text: string;
+    label?: string;
+  }>;
+}
+
 export interface Message {
   id: string;
   sessionId: string;
   role: Role;
   content: string;
+  pastedText?: PastedTextContent;
   attachments?: MessageAttachment[];
   createdAt: string;
   turnTiming?: TurnTiming;

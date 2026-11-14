@@ -564,6 +564,18 @@
   background: var(--bg-active);
 }
 
+.file-preview-edit-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.file-preview-dirty {
+  color: var(--warning-text, var(--text-mid));
+  font-family: var(--font-body) !important;
+  font-size: var(--font-caption) !important;
+}
+
 .preview-mode-toggle {
   flex: none;
   display: inline-flex;

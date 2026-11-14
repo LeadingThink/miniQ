@@ -1,10 +1,13 @@
 import { Spinner } from "./ui/Spinner";
+import { ArrowDown, ChevronUp, RefreshCw } from "lucide-react";
 import {
-  ArrowDown,
-  ChevronUp,
-  RefreshCw,
-} from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useSearchNavigation } from "../hooks/useSearchNavigation";
 import { findHitElement, type SearchHit } from "../sessionSearch";
 import { SessionSearchNavigator } from "./SessionSearchNavigator";
@@ -89,6 +92,7 @@ export interface TimelineProps {
   onResolveQuestion: QuestionCardProps["onResolve"];
   onRollback: (checkpointId: string) => void;
   onOpenFile: (target: LocalFileTarget) => void;
+  onOpenAttachment?: (target: LocalFileTarget) => void;
   onOpenUrl: (url: string) => void;
   onSteerQueued: QueueActions["onSteer"];
   onRemoveQueued: QueueActions["onRemove"];
@@ -118,7 +122,8 @@ export function Timeline(props: TimelineProps) {
       else if (detail.action === "diagnostics") setShowDiagnostics(true);
     };
     window.addEventListener(SESSION_TOOLBAR_ACTION_EVENT, onAction);
-    return () => window.removeEventListener(SESSION_TOOLBAR_ACTION_EVENT, onAction);
+    return () =>
+      window.removeEventListener(SESSION_TOOLBAR_ACTION_EVENT, onAction);
   }, [props.client, props.sessionId]);
   const [filter, setFilter] = useState<TimelineFilter>("all");
   const [query, setQuery] = useState("");
@@ -205,12 +210,23 @@ export function Timeline(props: TimelineProps) {
               historySearch.page?.messages ?? [],
               historySearch.page?.toolCalls ?? [],
               props.artifacts.filter((artifact) =>
-                itemMatches({ kind: "artifact", at: artifact.createdAt, artifact }, filter, query),
+                itemMatches(
+                  { kind: "artifact", at: artifact.createdAt, artifact },
+                  filter,
+                  query,
+                ),
               ),
             ),
           )
         : filterTimelineGroups(groups, filter, query),
-    [groups, filter, query, historySearch.enabled, historySearch.page, props.artifacts],
+    [
+      groups,
+      filter,
+      query,
+      historySearch.enabled,
+      historySearch.page,
+      props.artifacts,
+    ],
   );
   const historyCursor = historySearch.enabled
     ? historySearch.page?.nextCursor
@@ -219,19 +235,54 @@ export function Timeline(props: TimelineProps) {
   const loadingOlder = historySearch.enabled
     ? historySearch.loading
     : props.loadingOlder;
-  const contentVersion = useMemo(() => [
-    items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText, props.streamingReasoning,
-    props.turnProgress, props.busy, props.queue, props.lastTurn,
-  ], [items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText, props.streamingReasoning,
-    props.turnProgress, props.busy, props.queue, props.lastTurn]);
-  const { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump, reveal, historyError, retryingOlder } = useConversationScroll({
+  const contentVersion = useMemo(
+    () => [
+      items,
+      props.approvals,
+      props.questions,
+      props.plan,
+      props.turnPlans,
+      props.streamingText,
+      props.streamingReasoning,
+      props.turnProgress,
+      props.busy,
+      props.queue,
+      props.lastTurn,
+    ],
+    [
+      items,
+      props.approvals,
+      props.questions,
+      props.plan,
+      props.turnPlans,
+      props.streamingText,
+      props.streamingReasoning,
+      props.turnProgress,
+      props.busy,
+      props.queue,
+      props.lastTurn,
+    ],
+  );
+  const {
+    scrollRef,
+    historyTopRef,
+    onScroll,
+    loadOlder,
+    jumpToBottom,
+    showJump,
+    reveal,
+    historyError,
+    retryingOlder,
+  } = useConversationScroll({
     viewKey: JSON.stringify([props.sessionId, filter, query.trim()]),
     cursorKey: historyCursor ? JSON.stringify(historyCursor) : null,
     autoLoadOlder: true,
     hasOlder,
     loadingOlder,
     loading: props.loading || (historySearch.loading && !historySearch.page),
-    loadOlder: historySearch.enabled ? historySearch.loadOlder : props.onLoadOlder,
+    loadOlder: historySearch.enabled
+      ? historySearch.loadOlder
+      : props.onLoadOlder,
     contentVersion,
   });
   const searching = filter !== "all" || !!query.trim();
@@ -255,7 +306,10 @@ export function Timeline(props: TimelineProps) {
   const windowHandle = useRef<TimelineWindowHandle>(null);
   const [mountedForLocate, setMountedForLocate] = useState(0);
   useEffect(() => setLocating(null), [props.sessionId]);
-  const onLocated = useCallback(() => setMountedForLocate((value) => value + 1), []);
+  const onLocated = useCallback(
+    () => setMountedForLocate((value) => value + 1),
+    [],
+  );
   const locate = () => {
     if (!navigation.current) return;
     setLocating(navigation.current);
@@ -264,7 +318,12 @@ export function Timeline(props: TimelineProps) {
   };
   /** Jump from a search result card to its record, leaving search mode first. */
   const locateMessage = (message: { id: string; createdAt: string }) => {
-    setLocating({ key: `message:${message.id}`, kind: "message", id: message.id, at: message.createdAt });
+    setLocating({
+      key: `message:${message.id}`,
+      kind: "message",
+      id: message.id,
+      at: message.createdAt,
+    });
     setFilter("all");
     setQuery("");
     setSearchSheetOpen(false);
@@ -283,17 +342,24 @@ export function Timeline(props: TimelineProps) {
       if (element) {
         // Lazy disclosures expose search keys before mounting their records.
         // Wait for the native toggle and React commit before positioning.
-        if (element instanceof HTMLDetailsElement &&
-          (!element.open || !element.querySelector(":scope > [data-lazy-body]"))) {
+        if (
+          element instanceof HTMLDetailsElement &&
+          (!element.open || !element.querySelector(":scope > [data-lazy-body]"))
+        ) {
           element.open = true;
           setMountedForLocate((value) => value + 1);
           return;
         }
         reveal(element);
         element.setAttribute("data-search-located", "true");
-        window.setTimeout(() => element.removeAttribute("data-search-located"), 1600);
+        window.setTimeout(
+          () => element.removeAttribute("data-search-located"),
+          1600,
+        );
         setLocating(null);
-      } else if (windowHandle.current?.locateRecord(locating.key, locating.at)) {
+      } else if (
+        windowHandle.current?.locateRecord(locating.key, locating.at)
+      ) {
         // The record is in a folded turn whose records load on demand; the
         // fold reports back through onLocated once they are in.
       } else if (props.historyCursor && props.onLoadOlder) {
@@ -305,9 +371,18 @@ export function Timeline(props: TimelineProps) {
     });
     return () => cancelAnimationFrame(frame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locating, searching, props.loading, props.loadingOlder, props.historyCursor, items, mountedForLocate]);
+  }, [
+    locating,
+    searching,
+    props.loading,
+    props.loadingOlder,
+    props.historyCursor,
+    items,
+    mountedForLocate,
+  ]);
   const navigationMessages = useMemo(
-    () => items.flatMap((item) => item.kind === "message" ? [item.message] : []),
+    () =>
+      items.flatMap((item) => (item.kind === "message" ? [item.message] : [])),
     [items],
   );
 
@@ -333,13 +408,24 @@ export function Timeline(props: TimelineProps) {
           exporting={exporting}
           onFilter={setFilter}
           onQuery={setQuery}
-          onShare={props.client && props.sessionId ? () => setShowShare(true) : undefined}
-          onDiagnostics={props.client && props.sessionId ? () => setShowDiagnostics(true) : undefined}
+          onShare={
+            props.client && props.sessionId
+              ? () => setShowShare(true)
+              : undefined
+          }
+          onDiagnostics={
+            props.client && props.sessionId
+              ? () => setShowDiagnostics(true)
+              : undefined
+          }
           onExport={(format) => void exportSession(format)}
           summary={props.summary}
           onStep={searching ? navigation.step : undefined}
-          onSearchOpen={isMobileLayout() ? () => setSearchSheetOpen(true) : undefined}
-          navigator={searching && !historySearch.error ? (
+          onSearchOpen={
+            isMobileLayout() ? () => setSearchSheetOpen(true) : undefined
+          }
+          navigator={
+            searching && !historySearch.error ? (
             <SessionSearchNavigator
               count={navigation.count}
               position={navigation.position}
@@ -348,7 +434,8 @@ export function Timeline(props: TimelineProps) {
               onStep={navigation.step}
               onLocate={locate}
             />
-          ) : null}
+            ) : null
+          }
         />
       </div>
       {searchSheetOpen && props.client && props.sessionId && (
@@ -368,13 +455,34 @@ export function Timeline(props: TimelineProps) {
           onClose={() => setShowDiagnostics(false)}
         />
       )}
-      {showShare && props.client && props.sessionId && <SessionShareDialog client={props.client} sessionId={props.sessionId} title={props.title ?? "miniQ 会话"} artifacts={props.artifacts} onClose={() => setShowShare(false)} />}
+      {showShare && props.client && props.sessionId && (
+        <SessionShareDialog
+          client={props.client}
+          sessionId={props.sessionId}
+          title={props.title ?? "miniQ 会话"}
+          artifacts={props.artifacts}
+          onClose={() => setShowShare(false)}
+        />
+      )}
       <div className="timeline-shell">
-        <ConversationNavigationRail messages={navigationMessages} scrollRef={scrollRef} />
+        <ConversationNavigationRail
+          messages={navigationMessages}
+          scrollRef={scrollRef}
+        />
         <TimelineQuote scrollRef={scrollRef} />
-        <div className="timeline" ref={scrollRef} tabIndex={0} onScroll={onScroll}>
-          <div ref={historyTopRef} className="history-top-sentinel" aria-hidden="true" />
-        {(props.loading || (historySearch.loading && !historySearch.page)) && (
+        <div
+          className="timeline"
+          ref={scrollRef}
+          tabIndex={0}
+          onScroll={onScroll}
+        >
+          <div
+            ref={historyTopRef}
+            className="history-top-sentinel"
+            aria-hidden="true"
+          />
+          {(props.loading ||
+            (historySearch.loading && !historySearch.page)) && (
           <div className="history-loading" role="status">
             <Spinner size={16} />
             正在加载会话
@@ -400,7 +508,8 @@ export function Timeline(props: TimelineProps) {
             </button>
           </div>
         )}
-        {(loadingOlder || retryingOlder) && !(historySearch.loading && !historySearch.page) && (
+          {(loadingOlder || retryingOlder) &&
+            !(historySearch.loading && !historySearch.page) && (
           <div className="history-loading" role="status">
             <Spinner size={14} />
             正在加载更早的记录
@@ -429,11 +538,7 @@ export function Timeline(props: TimelineProps) {
               disabled={Boolean(loadingOlder) || retryingOlder}
               onClick={loadOlder}
             >
-              {loadingOlder ? (
-                <Spinner size={14} />
-              ) : (
-                <ChevronUp size={14} />
-              )}
+                {loadingOlder ? <Spinner size={14} /> : <ChevronUp size={14} />}
               更早的记录
             </button>
           </div>
@@ -459,17 +564,34 @@ export function Timeline(props: TimelineProps) {
           streamingText={props.streamingText}
           streamingReasoning={props.streamingReasoning}
           latestTurnTiming={props.latestTurnTiming}
-          status={!props.loading && props.approvals.length === 0 && <ExecutionStatusBar
-            key={props.sessionId} messages={props.messages} calls={props.toolCalls}
-            progress={props.turnProgress} plan={props.plan} busy={props.busy}
-            approvals={0} questions={props.questions.length} timing={props.latestTurnTiming}
-          />}
-          showActivity={props.busy && !props.loading && props.approvals.length === 0 && props.questions.length === 0}
+            status={
+              !props.loading &&
+              props.approvals.length === 0 && (
+                <ExecutionStatusBar
+                  key={props.sessionId}
+                  messages={props.messages}
+                  calls={props.toolCalls}
+                  progress={props.turnProgress}
+                  plan={props.plan}
+                  busy={props.busy}
+                  approvals={0}
+                  questions={props.questions.length}
+                  timing={props.latestTurnTiming}
+                />
+              )
+            }
+            showActivity={
+              props.busy &&
+              !props.loading &&
+              props.approvals.length === 0 &&
+              props.questions.length === 0
+            }
           progress={props.turnProgress}
           busy={props.busy}
           onResolveQuestion={props.onResolveQuestion}
           onRollback={props.onRollback}
           onOpenFile={props.onOpenFile}
+            onOpenAttachment={props.onOpenAttachment}
           onOpenUrl={props.onOpenUrl}
           onRewrite={props.onRewrite}
           onFork={props.onFork}
@@ -480,7 +602,12 @@ export function Timeline(props: TimelineProps) {
           windowHandle={windowHandle}
           onLocated={onLocated}
         />
-        {!props.loading && !props.busy && props.lastTurn && <TurnFailureNotice outcome={props.lastTurn} onError={props.onError} />}
+          {!props.loading && !props.busy && props.lastTurn && (
+            <TurnFailureNotice
+              outcome={props.lastTurn}
+              onError={props.onError}
+            />
+          )}
         </div>
         {showJump && (
           <button
@@ -494,8 +621,10 @@ export function Timeline(props: TimelineProps) {
           </button>
         )}
       </div>
-      <PendingApprovalBar approvals={props.approvals} onResolve={props.onResolveApproval} />
-
+      <PendingApprovalBar
+        approvals={props.approvals}
+        onResolve={props.onResolveApproval}
+      />
     </div>
   );
 }

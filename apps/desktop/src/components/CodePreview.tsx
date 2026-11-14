@@ -50,6 +50,8 @@ export default function CodePreview(props: {
   path: string;
   content: string;
   wrap: boolean;
+  editable?: boolean;
+  onChange?: (content: string) => void;
   onMount: OnMount;
   /** ⌘L / Ctrl+L and Ctrl+G inside the editor open the "转到行" input. */
   onGoToLine?: () => void;
@@ -73,6 +75,7 @@ export default function CodePreview(props: {
     <Editor
       saveViewState={false}
       value={props.content}
+      onChange={(value) => props.onChange?.(value ?? "")}
       path={props.path}
       language={languageForPath(props.path)}
       onMount={handleMount}
@@ -80,8 +83,8 @@ export default function CodePreview(props: {
       theme="miniq"
       options={{
         automaticLayout: true,
-        readOnly: true,
-        domReadOnly: true,
+        readOnly: !props.editable,
+        domReadOnly: !props.editable,
         minimap: { enabled: false },
         renderLineHighlight: "all",
         scrollBeyondLastLine: false,

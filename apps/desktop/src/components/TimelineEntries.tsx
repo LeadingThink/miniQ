@@ -1,6 +1,33 @@
-import { Check, GitBranch, LoaderCircle, Pencil, RefreshCw, ScanSearch, Target, X } from "lucide-react";
-import { Fragment, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { AnchoredTurnTiming, Message, ProcessSummary, Question, SessionGoal, TurnPlan, TurnProgress } from "../types";
+import {
+  Check,
+  GitBranch,
+  LoaderCircle,
+  Pencil,
+  RefreshCw,
+  ScanSearch,
+  Target,
+  X,
+} from "lucide-react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import type {
+  AnchoredTurnTiming,
+  Message,
+  ProcessSummary,
+  Question,
+  SessionGoal,
+  TurnPlan,
+  TurnProgress,
+} from "../types";
 import type { RpcClient } from "../rpc";
 import type { TimelineGroup } from "../timelineModel";
 import type { TimelineProps } from "./Timeline";
@@ -21,8 +48,14 @@ import { compareTimestamps } from "../timelineModel";
 import { foldRecords, useProcessRecords } from "../processRecords";
 import { errorMessage } from "../errorMessage";
 import {
-  completedTurnContent, groupTimelineTurns, liveTurnContent, recordCount, searchRecordKeys, turnProcessKey,
-  turnSeparators, turnSettled,
+  completedTurnContent,
+  groupTimelineTurns,
+  liveTurnContent,
+  recordCount,
+  searchRecordKeys,
+  turnProcessKey,
+  turnSeparators,
+  turnSettled,
 } from "../timelineTurns";
 import { WINDOW_MIN_TURNS } from "../timelineWindow";
 import { useTurnWindow } from "../hooks/useTurnWindow";
@@ -59,17 +92,28 @@ export function findGoalMessageId(
   goal?: SessionGoal | null,
 ): string | null {
   if (!goal) return null;
-  return [...messages].reverse().find(
+  return (
+    [...messages]
+      .reverse()
+      .find(
     (message) =>
-      message.role === "user" && message.content.trim() === goal.goal.trim(),
-  )?.id ?? null;
+          message.role === "user" &&
+          message.content.trim() === goal.goal.trim(),
+      )?.id ?? null
+  );
 }
 
 /** Records a running turn folds behind "上 N 条消息": all it holds except the latest activity. */
-function earlierCount(live: { earlier: TimelineGroup[]; recent: TimelineGroup[] }, stats?: ProcessSummary): number {
+function earlierCount(
+  live: { earlier: TimelineGroup[]; recent: TimelineGroup[] },
+  stats?: ProcessSummary,
+): number {
   if (!stats) return recordCount(live.earlier);
   const loaded = recordCount(live.earlier) + recordCount(live.recent);
-  return Math.max(0, Math.max(stats.recordCount, loaded) - recordCount(live.recent));
+  return Math.max(
+    0,
+    Math.max(stats.recordCount, loaded) - recordCount(live.recent),
+  );
 }
 
 export function TimelineEntries(props: {
@@ -91,6 +135,7 @@ export function TimelineEntries(props: {
   onResolveQuestion: TimelineProps["onResolveQuestion"];
   onRollback: TimelineProps["onRollback"];
   onOpenFile: TimelineProps["onOpenFile"];
+  onOpenAttachment?: TimelineProps["onOpenAttachment"];
   onOpenUrl: TimelineProps["onOpenUrl"];
   onRewrite: TimelineProps["onRewrite"];
   onFork?: TimelineProps["onFork"];
@@ -103,29 +148,46 @@ export function TimelineEntries(props: {
   /** A fold finished loading for `locateRecord`, whether or not the record was found. */
   onLocated?: () => void;
 }) {
-  const [pendingRewrite, setPendingRewrite] = useState<PendingRewrite | null>(null);
-  const [reviewTarget, setReviewTarget] = useState<{ sessionId: string; messageId: string } | null>(null);
+  const [pendingRewrite, setPendingRewrite] = useState<PendingRewrite | null>(
+    null,
+  );
+  const [reviewTarget, setReviewTarget] = useState<{
+    sessionId: string;
+    messageId: string;
+  } | null>(null);
   const sessionId = props.messages[0]?.sessionId;
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const voiceCapabilities = useVoiceCapabilities(props.client);
   const processes = useProcessRecords();
-  const [locateFold, setLocateFold] = useState<{ key: string; recordKey: string } | null>(null);
+  const [locateFold, setLocateFold] = useState<{
+    key: string;
+    recordKey: string;
+  } | null>(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
-  const turnPlanEnds = useMemo(() => timelineTurnPlanEnds(props.items, props.turnPlans ?? []),
-    [props.items, props.turnPlans]);
+  const turnPlanEnds = useMemo(
+    () => timelineTurnPlanEnds(props.items, props.turnPlans ?? []),
+    [props.items, props.turnPlans],
+  );
   // The running turn's plan lives in the composer pill; it joins the timeline once the turn ends.
   const runningAnchor = props.busy
-    ? [...props.messages].reverse().find((message) => message.role === "user")?.id
+    ? [...props.messages].reverse().find((message) => message.role === "user")
+        ?.id
     : undefined;
   // Completed turns can be forked while a run is active. The backend copies
   // only durable history, so only replies in the running turn stay locked.
   const runningTurnMessageIds = useMemo(() => {
     if (!props.busy) return null;
     let start = props.messages.length - 1;
-    while (start >= 0 && (props.messages[start].role !== "user" || props.messages[start].steered)) start -= 1;
-    return new Set(start < 0 ? [] : props.messages.slice(start).map((message) => message.id));
+    while (
+      start >= 0 &&
+      (props.messages[start].role !== "user" || props.messages[start].steered)
+    )
+      start -= 1;
+    return new Set(
+      start < 0 ? [] : props.messages.slice(start).map((message) => message.id),
+    );
   }, [props.busy, props.messages]);
   const goalMessageId = useMemo(
     () => findGoalMessageId(props.messages, props.goal),
@@ -142,7 +204,10 @@ export function TimelineEntries(props: {
   };
   // Rewriting while a turn runs first stops it; the daemon waits for the
   // stopped turn to release the session before replacing history.
-  const rewrite = async ({ kind, message, content }: PendingRewrite, stopFirst: boolean) => {
+  const rewrite = async (
+    { kind, message, content }: PendingRewrite,
+    stopFirst: boolean,
+  ) => {
     setSaving(true);
     try {
       if (stopFirst) await props.onStopTurn?.();
@@ -153,7 +218,9 @@ export function TimelineEntries(props: {
       );
       if (sent && kind === "edit") cancelEditing();
     } catch (cause) {
-      props.onError(`${kind === "edit" ? "重新发送消息" : "重新生成回复"}失败: ${String(cause)}`);
+      props.onError(
+        `${kind === "edit" ? "重新发送消息" : "重新生成回复"}失败: ${String(cause)}`,
+      );
     } finally {
       setSaving(false);
     }
@@ -182,16 +249,32 @@ export function TimelineEntries(props: {
       props.onError("找不到这条回复对应的用户消息");
       return;
     }
-    await requestRewrite({ kind: "regenerate", message: userMessage, content: userMessage.content });
+    await requestRewrite({
+      kind: "regenerate",
+      message: userMessage,
+      content: userMessage.content,
+    });
   };
 
   const live = useRef({
-    props, startEditing, cancelEditing, saveMessage, regenerateMessage,
+    props,
+    startEditing,
+    cancelEditing,
+    saveMessage,
+    regenerateMessage,
   });
-  live.current = { props, startEditing, cancelEditing, saveMessage, regenerateMessage };
-  const bridge = useMemo(() => ({
-    openFile: (target: Parameters<NonNullable<TimelineProps["onOpenFile"]>>[0]) =>
-      live.current.props.onOpenFile(target),
+  live.current = {
+    props,
+    startEditing,
+    cancelEditing,
+    saveMessage,
+    regenerateMessage,
+  };
+  const bridge = useMemo(
+    () => ({
+      openFile: (
+        target: Parameters<NonNullable<TimelineProps["onOpenFile"]>>[0],
+      ) => live.current.props.onOpenFile(target),
     openUrl: (url: string) => live.current.props.onOpenUrl(url),
     reportError: (message: string) => live.current.props.onError(message),
     rollback: ((...args: Parameters<TimelineProps["onRollback"]>) =>
@@ -199,20 +282,26 @@ export function TimelineEntries(props: {
     startEditing: (message: Message) => live.current.startEditing(message),
     cancelEditing: () => live.current.cancelEditing(),
     saveMessage: (message: Message) => live.current.saveMessage(message),
-    regenerateMessage: (message: Message) => live.current.regenerateMessage(message),
+      regenerateMessage: (message: Message) =>
+        live.current.regenerateMessage(message),
     fork: (messageId: string) => {
       setForkingMessageId(messageId);
-      return Promise.resolve(live.current.props.onFork?.(messageId))
-        .finally(() => setForkingMessageId(null));
+        return Promise.resolve(live.current.props.onFork?.(messageId)).finally(
+          () => setForkingMessageId(null),
+        );
     },
-  }), []);
+    }),
+    [],
+  );
   const hasFork = Boolean(props.onFork);
   const canSpeak = voiceCapabilities.capabilities.speak;
   // Streaming tokens only change the live tail. Keeping each turn's content
   // element identity stable lets React skip every completed message on each
   // token instead of re-rendering the whole conversation.
-  const turns = useMemo(() => groupTimelineTurns(props.items, props.latestTurnTiming),
-    [props.items, props.latestTurnTiming]);
+  const turns = useMemo(
+    () => groupTimelineTurns(props.items, props.latestTurnTiming),
+    [props.items, props.latestTurnTiming],
+  );
   const turnKeys = useMemo(() => turns.map((turn) => turn.key), [turns]);
   const separators = useMemo(() => turnSeparators(turns), [turns]);
   const listRef = useRef<HTMLDivElement>(null);
@@ -230,10 +319,14 @@ export function TimelineEntries(props: {
     setLocateFold(null);
     onLocated?.();
   }, [onLocated]);
-  useImperativeHandle(props.windowHandle, () => ({
+  useImperativeHandle(
+    props.windowHandle,
+    () => ({
     mountRecord: (recordKey: string) => {
       const { turns, turnWindow } = windowState.current;
-      const index = turns.findIndex((turn) => searchRecordKeys(turn.groups).split(" ").includes(recordKey));
+        const index = turns.findIndex((turn) =>
+          searchRecordKeys(turn.groups).split(" ").includes(recordKey),
+        );
       if (index < 0 || turnWindow.isMounted(index)) return false;
       turnWindow.mount(turns[index].key);
       return true;
@@ -245,13 +338,23 @@ export function TimelineEntries(props: {
         if (compareTimestamps(turn.groups[0].at, at) <= 0) index = position;
       });
       const key = index < 0 ? undefined : turnProcessKey(turns[index], index);
-      if (key === undefined || !processes?.summaries[key] || processes.loads[key]?.complete) return false;
+        if (
+          key === undefined ||
+          !processes?.summaries[key] ||
+          processes.loads[key]?.complete
+        )
+          return false;
       if (!turnWindow.isMounted(index)) turnWindow.mount(turns[index].key);
-      setLocateFold((current) => current?.key === key && current.recordKey === recordKey
-        ? current : { key, recordKey });
+        setLocateFold((current) =>
+          current?.key === key && current.recordKey === recordKey
+            ? current
+            : { key, recordKey },
+        );
       return true;
     },
-  }), []);
+    }),
+    [],
+  );
   // A running turn shows its latest activity, so its newest records load without
   // waiting for the fold to open. Each summary is tried once; reopening the
   // fold retries a failure.
@@ -261,11 +364,13 @@ export function TimelineEntries(props: {
     turns.forEach((turn, index) => {
       const key = turnProcessKey(turn, index);
       const stats = key === undefined ? undefined : processes.summaries[key];
-      if (!stats || processes.loads[key!] || autoLoaded.current.has(stats)) return;
+      if (!stats || processes.loads[key!] || autoLoaded.current.has(stats))
+        return;
       if (turnSettled(turn, turn === turns.at(-1), props.busy)) return;
       autoLoaded.current.add(stats);
       void processes.load(turn.userMessageId ?? null).then((result) => {
-        if (result && "error" in result) props.onError(`加载工作过程失败: ${errorMessage(result.error)}`);
+        if (result && "error" in result)
+          props.onError(`加载工作过程失败: ${errorMessage(result.error)}`);
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -275,7 +380,10 @@ export function TimelineEntries(props: {
     let latestAssistantId: string | undefined;
     for (let index = props.items.length - 1; index >= 0; index -= 1) {
       const candidate = props.items[index];
-      if (candidate.kind === "message" && candidate.message.role === "assistant") {
+      if (
+        candidate.kind === "message" &&
+        candidate.message.role === "assistant"
+      ) {
         latestAssistantId = candidate.message.id;
         break;
       }
@@ -284,16 +392,22 @@ export function TimelineEntries(props: {
     const artifactPaths = new Set<string>();
     for (const candidate of props.items) {
       if (candidate.kind !== "artifact") continue;
-      const path = resolveWorkspacePath(candidate.artifact.path, props.workspacePath);
+      const path = resolveWorkspacePath(
+        candidate.artifact.path,
+        props.workspacePath,
+      );
       if (path) artifactPaths.add(path);
     }
     const renderGroup = (item: TimelineGroup) => {
-      const finalReply = item.kind === "message" && item.message.role === "assistant"
-        && (item.message.assistantKind === "final" || item.message.assistantKind === undefined)
-        && !runningTurnMessageIds?.has(item.message.id);
-      return <Fragment key={timelineGroupKey(item)}>
-        {
-        item.kind === "message" ? (
+      const finalReply =
+        item.kind === "message" &&
+        item.message.role === "assistant" &&
+        (item.message.assistantKind === "final" ||
+          item.message.assistantKind === undefined) &&
+        !runningTurnMessageIds?.has(item.message.id);
+      return (
+        <Fragment key={timelineGroupKey(item)}>
+          {item.kind === "message" ? (
           item.message.role === "user" ? (
             item.message.steered ? (
               <div
@@ -308,18 +422,39 @@ export function TimelineEntries(props: {
                 {!!item.message.attachments?.length && (
                   <div className="message-attachments">
                     {item.message.attachments.map((attachment) => (
-                      <MessageAttachmentPreview key={attachment.path} attachment={attachment} />
+                        <MessageAttachmentPreview
+                          key={attachment.path}
+                          attachment={attachment}
+                          onOpenFile={
+                            props.onOpenAttachment ?? props.onOpenFile
+                          }
+                        />
                     ))}
                   </div>
                 )}
               </div>
-            ) : <div
+              ) : (
+                <div
               key={item.message.id}
               className="message-entry user"
               data-user-message-id={item.message.id}
               data-history-anchor={`message:${item.message.id}`}
             >
               <div className="bubble user">
+                    {item.message.attachments &&
+                      item.message.attachments.length > 0 && (
+                        <div className="message-attachments">
+                          {item.message.attachments.map((attachment) => (
+                            <MessageAttachmentPreview
+                              key={attachment.path}
+                              attachment={attachment}
+                              onOpenFile={
+                                props.onOpenAttachment ?? props.onOpenFile
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
                 {editingMessageId === item.message.id ? (
                   <SentMessageEditor
                     key={item.message.id}
@@ -335,19 +470,8 @@ export function TimelineEntries(props: {
                     }}
                   />
                 ) : item.message.content ? (
-                  <SentMessageContent content={item.message.content} />
+                  <SentMessageContent content={item.message.content} pastedText={item.message.pastedText} />
                 ) : null}
-                {item.message.attachments &&
-                  item.message.attachments.length > 0 && (
-                    <div className="message-attachments">
-                      {item.message.attachments.map((attachment) => (
-                        <MessageAttachmentPreview
-                          key={attachment.path}
-                          attachment={attachment}
-                        />
-                      ))}
-                    </div>
-                  )}
               </div>
               <div className="message-footer">
                 <MessageTime at={item.message.createdAt} />
@@ -366,7 +490,9 @@ export function TimelineEntries(props: {
                         title="发送修改"
                         aria-label="发送修改"
                         disabled={!draft.trim() || saving}
-                        onClick={() => void bridge.saveMessage(item.message)}
+                            onClick={() =>
+                              void bridge.saveMessage(item.message)
+                            }
                       >
                         {saving ? (
                           <LoaderCircle className="spin" size={15} />
@@ -406,6 +532,7 @@ export function TimelineEntries(props: {
                 </div>
               </div>
             </div>
+              )
           ) : item.message.role === "tool" ? (
             <div
               key={item.message.id}
@@ -422,8 +549,13 @@ export function TimelineEntries(props: {
               </Md>
             </div>
           ) : item.message.assistantKind === "interim" ? (
-            <InterimReply message={item.message} running={Boolean(runningTurnMessageIds?.has(item.message.id))}
-              workspacePath={props.workspacePath} onOpenFile={bridge.openFile} onOpenUrl={bridge.openUrl} />
+              <InterimReply
+                message={item.message}
+                running={Boolean(runningTurnMessageIds?.has(item.message.id))}
+                workspacePath={props.workspacePath}
+                onOpenFile={bridge.openFile}
+                onOpenUrl={bridge.openUrl}
+              />
           ) : (
             <div
               key={item.message.id}
@@ -440,7 +572,11 @@ export function TimelineEntries(props: {
                   {item.message.content}
                 </Md>
               </div>
-              {replyFileArtifacts(item.message, props.workspacePath, artifactPaths).map((artifact) => (
+                {replyFileArtifacts(
+                  item.message,
+                  props.workspacePath,
+                  artifactPaths,
+                ).map((artifact) => (
                 <ArtifactCard
                   key={artifact.id}
                   artifact={artifact}
@@ -450,7 +586,8 @@ export function TimelineEntries(props: {
                   onError={bridge.reportError}
                 />
               ))}
-              {finalReply && <div className="message-footer">
+                {finalReply && (
+                  <div className="message-footer">
                 <MessageTime at={item.message.createdAt} />
                 <div className="message-actions">
                   <CopyButton
@@ -459,15 +596,27 @@ export function TimelineEntries(props: {
                     content={item.message.content}
                     onError={bridge.reportError}
                   />
-                  {props.client && item.message.sessionId && !runningTurnMessageIds?.has(item.message.id) && (
+                      {props.client &&
+                        item.message.sessionId &&
+                        !runningTurnMessageIds?.has(item.message.id) && (
                     <button
                       type="button"
                       className="msg-action session-review-trigger"
                       aria-label="第二意见：让另一模型检查"
                       title="第二意见：让另一模型检查"
-                      aria-expanded={reviewTarget?.messageId === item.message.id}
-                      onClick={() => setReviewTarget((current) => current?.messageId === item.message.id
-                        ? null : { sessionId: item.message.sessionId, messageId: item.message.id })}
+                            aria-expanded={
+                              reviewTarget?.messageId === item.message.id
+                            }
+                            onClick={() =>
+                              setReviewTarget((current) =>
+                                current?.messageId === item.message.id
+                                  ? null
+                                  : {
+                                      sessionId: item.message.sessionId,
+                                      messageId: item.message.id,
+                                    },
+                              )
+                            }
                     >
                       <ScanSearch size={15} />
                     </button>
@@ -485,8 +634,13 @@ export function TimelineEntries(props: {
                     className="msg-action"
                     title="重新生成"
                     aria-label="重新生成"
-                    disabled={saving || (props.busy && item.message.id !== latestAssistantId)}
-                    onClick={() => void bridge.regenerateMessage(item.message)}
+                        disabled={
+                          saving ||
+                          (props.busy && item.message.id !== latestAssistantId)
+                        }
+                        onClick={() =>
+                          void bridge.regenerateMessage(item.message)
+                        }
                   >
                     <RefreshCw size={15} />
                   </button>
@@ -494,20 +648,39 @@ export function TimelineEntries(props: {
                     <button
                       type="button"
                       className="msg-action"
-                      title={runningTurnMessageIds?.has(item.message.id) ? "本轮完成后可分支" : "创建聊天分支"}
+                          title={
+                            runningTurnMessageIds?.has(item.message.id)
+                              ? "本轮完成后可分支"
+                              : "创建聊天分支"
+                          }
                       aria-label="创建聊天分支"
-                      disabled={Boolean(runningTurnMessageIds?.has(item.message.id)) || forkingMessageId !== null}
+                          disabled={
+                            Boolean(
+                              runningTurnMessageIds?.has(item.message.id),
+                            ) || forkingMessageId !== null
+                          }
                       onClick={() => {
-                        void bridge.fork(item.message.id).finally(() => setForkingMessageId(null));
+                            void bridge
+                              .fork(item.message.id)
+                              .finally(() => setForkingMessageId(null));
                       }}
                     >
-                      {forkingMessageId === item.message.id ? <LoaderCircle className="spin" size={15} /> : <GitBranch size={15} />}
+                          {forkingMessageId === item.message.id ? (
+                            <LoaderCircle className="spin" size={15} />
+                          ) : (
+                            <GitBranch size={15} />
+                          )}
                     </button>
                   )}
                 </div>
-              </div>}
-              {finalReply && props.client && reviewTarget && reviewTarget.messageId === item.message.id
-                && reviewTarget.sessionId === item.message.sessionId && reviewTarget.sessionId === sessionId && (
+                  </div>
+                )}
+                {finalReply &&
+                  props.client &&
+                  reviewTarget &&
+                  reviewTarget.messageId === item.message.id &&
+                  reviewTarget.sessionId === item.message.sessionId &&
+                  reviewTarget.sessionId === sessionId && (
                 <SessionReviewPanel
                   client={props.client}
                   sessionId={reviewTarget.sessionId}
@@ -532,74 +705,157 @@ export function TimelineEntries(props: {
             />
           </div>
         ) : (
-          <ToolSegment calls={item.calls} expanded={props.expandGroups}
-            client={props.client} onRollback={bridge.rollback} />
+            <ToolSegment
+              calls={item.calls}
+              expanded={props.expandGroups}
+              client={props.client}
+              onRollback={bridge.rollback}
+            />
         )}
-      </Fragment>;
+        </Fragment>
+      );
     };
     const lastTurn = turns.at(-1);
     return turns.map((turn, turnIndex) => {
       const endKey = timelineGroupKey(turn.groups[turn.groups.length - 1]);
       const turnPlan = turnPlanEnds.get(endKey);
-      const planNode = turnPlan && turnPlan.anchorMessageId !== runningAnchor
-        ? <TurnPlanSummary plan={turnPlan.tasks} /> : null;
+      const planNode =
+        turnPlan && turnPlan.anchorMessageId !== runningAnchor ? (
+          <TurnPlanSummary plan={turnPlan.tasks} />
+        ) : null;
       const isLast = turn === lastTurn;
       const settled = turnSettled(turn, isLast, props.busy);
       const { process, output } = completedTurnContent(turn);
       // Folded work whose records stay on the daemon until the fold opens.
-      const processKey = props.expandGroups ? undefined : turnProcessKey(turn, turnIndex);
-      const stats = processKey === undefined ? undefined : processes?.summaries[processKey];
-      const records = stats && processes
-        ? foldRecords(stats, processes.loads[processKey!], () => processes.load(turn.userMessageId ?? null))
+      const processKey = props.expandGroups
+        ? undefined
+        : turnProcessKey(turn, turnIndex);
+      const stats =
+        processKey === undefined ? undefined : processes?.summaries[processKey];
+      const records =
+        stats && processes
+          ? foldRecords(stats, processes.loads[processKey!], () =>
+              processes.load(turn.userMessageId ?? null),
+            )
         : undefined;
-      const changes = turn.userMessageId && !(isLast && props.busy) && turnHasFileWrites(turn, stats)
-        ? <TurnChangesCard turnId={turn.userMessageId} /> : null;
-      const collapse = settled && !props.expandGroups
-        && (process.length > 0 || stats !== undefined || planNode !== null || changes !== null);
-      const live = settled || props.expandGroups ? undefined : liveTurnContent(turn);
-      const separatorAt = props.expandGroups ? undefined : separators.get(turn.key);
-      return { header: <Fragment key={`${turn.key}:header`}>
+      const changes =
+        turn.userMessageId &&
+        !(isLast && props.busy) &&
+        turnHasFileWrites(turn, stats) ? (
+          <TurnChangesCard turnId={turn.userMessageId} />
+        ) : null;
+      const collapse =
+        settled &&
+        !props.expandGroups &&
+        (process.length > 0 ||
+          stats !== undefined ||
+          planNode !== null ||
+          changes !== null);
+      const live =
+        settled || props.expandGroups ? undefined : liveTurnContent(turn);
+      const separatorAt = props.expandGroups
+        ? undefined
+        : separators.get(turn.key);
+      return {
+        header: (
+          <Fragment key={`${turn.key}:header`}>
         {separatorAt && <ConversationTimeSeparator at={separatorAt} />}
         {turn.userMessageId && renderGroup(turn.groups[0])}
-      </Fragment>, body: <Fragment key={`${turn.key}:body`}>
-        {collapse ? <>
-          <CompletedProcess timing={turn.timing} stats={stats} records={records}
-            locateKey={locateFold && locateFold.key === processKey ? locateFold.recordKey : undefined}
-            onLocated={finishLocate} recordKeys={searchRecordKeys(process)}>
-            {() => <>
+          </Fragment>
+        ),
+        body: (
+          <Fragment key={`${turn.key}:body`}>
+            {collapse ? (
+              <>
+                <CompletedProcess
+                  timing={turn.timing}
+                  stats={stats}
+                  records={records}
+                  locateKey={
+                    locateFold && locateFold.key === processKey
+                      ? locateFold.recordKey
+                      : undefined
+                  }
+                  onLocated={finishLocate}
+                  recordKeys={searchRecordKeys(process)}
+                >
+                  {() => (
+                    <>
               {process.map(renderGroup)}
               {planNode}
               {changes}
-            </>}
+                    </>
+                  )}
           </CompletedProcess>
           {output.map(renderGroup)}
-        </> : <>
-          {live && (live.earlier.length > 0 || (records && !records.complete)) && <CompletedProcess
-            summary={`上 ${earlierCount(live, stats)} 条消息`} records={records}
-            locateKey={locateFold && locateFold.key === processKey ? locateFold.recordKey : undefined}
-            onLocated={finishLocate} recordKeys={searchRecordKeys(live.earlier)}>
+              </>
+            ) : (
+              <>
+                {live &&
+                  (live.earlier.length > 0 ||
+                    (records && !records.complete)) && (
+                    <CompletedProcess
+                      summary={`上 ${earlierCount(live, stats)} 条消息`}
+                      records={records}
+                      locateKey={
+                        locateFold && locateFold.key === processKey
+                          ? locateFold.recordKey
+                          : undefined
+                      }
+                      onLocated={finishLocate}
+                      recordKeys={searchRecordKeys(live.earlier)}
+                    >
             {() => live.earlier.map(renderGroup)}
-          </CompletedProcess>}
-          {(live?.recent ?? turn.groups.slice(turn.userMessageId ? 1 : 0)).map(renderGroup)}
+                    </CompletedProcess>
+                  )}
+                {(
+                  live?.recent ?? turn.groups.slice(turn.userMessageId ? 1 : 0)
+                ).map(renderGroup)}
           {planNode}
           {changes}
-        </>}
-      </Fragment> };
+              </>
+            )}
+          </Fragment>
+        ),
+      };
     });
   }, [
-    props.items, props.busy, props.workspacePath, props.workspacePaths,
-    props.expandGroups, props.client, editingMessageId, draft, saving,
-    forkingMessageId, runningTurnMessageIds, goalMessageId, turnPlanEnds, runningAnchor,
-    hasFork, canSpeak, bridge, turns, separators, reviewTarget, sessionId, processes, locateFold,
+    props.items,
+    props.busy,
+    props.workspacePath,
+    props.workspacePaths,
+    props.expandGroups,
+    props.client,
+    editingMessageId,
+    draft,
+    saving,
+    forkingMessageId,
+    runningTurnMessageIds,
+    goalMessageId,
+    turnPlanEnds,
+    runningAnchor,
+    hasFork,
+    canSpeak,
+    bridge,
+    turns,
+    separators,
+    reviewTarget,
+    sessionId,
+    processes,
+    locateFold,
     finishLocate,
   ]);
 
   // The live reply streams at the end of the current turn, where its message
   // lands when it is created, rather than below approval and question cards.
-  const streaming = props.streamingText || props.streamingReasoning ? (
+  const streaming =
+    props.streamingText || props.streamingReasoning ? (
     <div className="message-entry assistant is-streaming">
       <div className="bubble assistant">
-        <DeepThinking text={props.streamingReasoning} streaming={props.busy && !props.streamingText} />
+          <DeepThinking
+            text={props.streamingReasoning}
+            streaming={props.busy && !props.streamingText}
+          />
         <Md
           streaming
           workspacePath={props.workspacePath}
@@ -611,8 +867,9 @@ export function TimelineEntries(props: {
       </div>
     </div>
   ) : null;
-  const activity = props.showActivity
-    ? <TurnActivityTail progress={props.progress} /> : null;
+  const activity = props.showActivity ? (
+    <TurnActivityTail progress={props.progress} />
+  ) : null;
   return (
     <div className="timeline-inner" ref={listRef}>
       {turns.map((turn, index) => (
@@ -629,11 +886,21 @@ export function TimelineEntries(props: {
           {index === turns.length - 1 && activity}
         </TimelineTurnFrame>
       ))}
-      {turns.length === 0 && <>{props.status}{streaming}{activity}</>}
+      {turns.length === 0 && (
+        <>
+          {props.status}
+          {streaming}
+          {activity}
+        </>
+      )}
       <ConfirmDialog
         open={pendingRewrite !== null}
         tone="danger"
-        title={pendingRewrite?.kind === "regenerate" ? "停止当前任务并重新生成？" : "停止当前任务并发送修改？"}
+        title={
+          pendingRewrite?.kind === "regenerate"
+            ? "停止当前任务并重新生成？"
+            : "停止当前任务并发送修改？"
+        }
         description="当前正在运行的任务会被停止，之后从这条消息重新开始。"
         confirmLabel="停止并继续"
         onCancel={() => setPendingRewrite(null)}

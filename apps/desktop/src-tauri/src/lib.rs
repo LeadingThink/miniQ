@@ -139,6 +139,23 @@ fn read_local_text_file(
 }
 
 #[tauri::command]
+fn write_local_text_file(
+    path: String,
+    content: String,
+    workspace_path: String,
+    workspace_paths: Vec<String>,
+    authorized_files: Vec<String>,
+) -> Result<(), String> {
+    local_file::write_text_authorized(
+        &path,
+        &content,
+        &workspace_path,
+        &workspace_paths,
+        &authorized_files,
+    )
+}
+
+#[tauri::command]
 fn read_local_file_preview(
     path: String,
     workspace_path: String,
@@ -412,6 +429,7 @@ pub fn run() {
                 link_download::save_external_link_as,
                 local_path_kind,
                 read_local_text_file,
+                write_local_text_file,
                 read_local_file_preview,
                 local_upload::local_upload_file_info,
                 local_upload::read_local_upload_chunk,

@@ -4,7 +4,7 @@ pub use miniq_local::files::LocalTargetKind;
 use miniq_local::files::{preview_format, read_preview, read_text, validated_target};
 use miniq_local::files::{
     read_preview_with_authorization, read_text_with_authorization,
-    validated_target_with_authorization,
+    validated_file_with_authorization, validated_target_with_authorization,
 };
 pub use miniq_local::files::{LocalFilePreview, LocalTextFile};
 use std::path::Path;
@@ -246,6 +246,23 @@ pub fn read_text_authorized(
     read_text_with_authorization(path, workspace_path, workspace_paths, authorized_files)
 }
 
+pub fn write_text_authorized(
+    path: &str,
+    content: &str,
+    workspace_path: &str,
+    workspace_paths: &[String],
+    authorized_files: &[String],
+) -> Result<(), String> {
+    let file = validated_file_with_authorization(
+        path,
+        workspace_path,
+        workspace_paths,
+        authorized_files,
+    )?;
+    std::fs::write(&file, content)
+        .map_err(|error| format!("无法保存文件 {}: {error}", file.display()))
+}
+
 pub fn read_preview_authorized(
     path: &str,
     workspace_path: &str,
@@ -354,6 +371,32 @@ mod tests {
         .unwrap();
         assert_eq!(preview.kind, "text");
         assert_eq!(preview.content.as_deref(), Some("fn main() {}\n"));
+    }
+
+    #[test]
+    fn writes_only_workspace_or_explicitly_authorized_text_files() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let inside = workspace.path().join("notes.txt");
+        let external = outside.path().join("attachment.txt");
+        std::fs::write(&inside, "before").unwrap();
+        std::fs::write(&external, "before").unwrap();
+        let root = workspace.path().to_str().unwrap();
+
+        write_text_authorized(inside.to_str().unwrap(), "inside", root, &[], &[]).unwrap();
+        assert_eq!(std::fs::read_to_string(&inside).unwrap(), "inside");
+        assert!(write_text_authorized(external.to_str().unwrap(), "blocked", root, &[], &[])
+            .unwrap_err()
+            .contains("工作区外"));
+        write_text_authorized(
+            external.to_str().unwrap(),
+            "authorized",
+            root,
+            &[],
+            &[external.to_string_lossy().into_owned()],
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&external).unwrap(), "authorized");
     }
 
     #[test]

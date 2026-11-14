@@ -28,7 +28,7 @@ import { useComposerMention } from "../hooks/useComposerMention";
 import { useComposerInsert } from "../hooks/useComposerInsert";
 import { insertComposerText } from "../composerMention";
 import type { ComposerSlashCommand } from "../composerSlash";
-import type { ApprovalMode, Message } from "../types";
+import type { ApprovalMode, Message, PastedTextContent } from "../types";
 import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import {
@@ -42,8 +42,12 @@ import { VoiceTranscript } from "./VoiceTranscript";
 import type { VoicePreview } from "../voiceTranscription";
 import { savePastedFile } from "../localFiles";
 import { clipboardFiles } from "../clipboardFiles";
+import {
+  discardPendingTextEdit,
+  flushPendingTextEdits,
+} from "../pendingTextEdits";
 import { readDraft, storeDraft, readAttachments, storeAttachments, readPastes, storePastes } from "../composerDraft";
-import { charCount, expandPastes, isLargePaste, nextContextPlaceholder, nextPlaceholder, type DraftContext, type PendingPaste } from "../largePaste";
+import { charCount, expandPastes, isLargePaste, nextContextPlaceholder, type DraftContext, type PendingPaste } from "../largePaste";
 import { ComposerField as ComposerFieldView } from "./ComposerField";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { RemotePathDialog } from "./RemotePathDialog";
@@ -64,6 +68,7 @@ type SendMessage = (
   content: string,
   attachments?: string[],
   asGoal?: boolean,
+  pastedText?: PastedTextContent,
 ) => void | boolean | Promise<void | boolean>;
 
 /** Writes one segment back into the combined draft without touching chips. */
@@ -139,6 +144,8 @@ export function ComposerCard(props: {
   onSend: SendMessage;
   onCancel?: () => void;
   onError?: (message: string) => void;
+  /** Open a local attachment in the existing file workbench. */
+  onOpenAttachment?: (path: string) => void;
   sendBlocked?: boolean;
   sendBlockedReason?: string;
   /** Current session: enables `@` file mentions from its project folder. */
@@ -432,22 +439,7 @@ export function ComposerCard(props: {
     }
   };
 
-  /** Inserts text at the caret, or at the end when the input was idle. */
-  const insertDraftText = (text: string) => {
-    // Windows clipboards hand text over with CRLF; the draft keeps plain LF.
-    const inserted = sanitizeTextInput(text.replace(/\r\n?/g, "\n")).value;
-    if (!inserted) return;
-    const field = fieldRef.current;
-    const value = readComposerValue(field) || draftValueRef.current;
-    const area = activeTextarea(field);
-    const focused = area !== null && document.activeElement === area;
-    const start = focused ? readComposerCaret(field) : value.length;
-    const end = focused ? start + area.selectionEnd - area.selectionStart : value.length;
-    setDraft(`${value.slice(0, start)}${inserted}${value.slice(end)}`);
-    placeCaret(start + inserted.length);
-  };
-
-  /** Drops one paste chip and the text it was hiding. */
+  /** Removes a draft context chip and its placeholder. */
   const removePaste = (placeholder: string) => {
     const value = draftValueRef.current;
     const at = value.indexOf(placeholder);
@@ -455,21 +447,34 @@ export function ComposerCard(props: {
     placeCaret(Math.max(0, at));
   };
 
-  /** Collapses a long paste into a token; the full text returns on send. */
-  const insertLargePaste = (text: string) => {
-    const placeholder = nextPlaceholder(
-      text,
+  const insertCollapsedPaste = (text: string) => {
+    const placeholder = nextContextPlaceholder(
+      `粘贴内容 ${charCount(text)} 字`,
       pastesRef.current.map((paste) => paste.placeholder),
     );
-    applyPastes([...pastesRef.current, { placeholder, text }]);
-    insertDraftText(placeholder);
+    const field = fieldRef.current;
+    const value = readComposerValue(field) || draftValueRef.current;
+    const area = activeTextarea(field);
+    const focused = area !== null && document.activeElement === area;
+    const start = focused ? readComposerCaret(field) : value.length;
+    const end = focused ? start + area.selectionEnd - area.selectionStart : value.length;
+    applyPastes([...pastesRef.current, { placeholder, text, kind: "paste" }]);
+    setDraft(`${value.slice(0, start)}${placeholder}${value.slice(end)}`);
+    placeCaret(start + placeholder.length);
   };
 
   const receivePastedText = (text: string) => {
-    // Windows clipboards hand text over with CRLF; the stored text keeps plain LF.
-    const normalized = text.replace(/\r\n?/g, "\n");
-    if (isLargePaste(normalized)) insertLargePaste(normalized);
-    else insertDraftText(normalized);
+    const normalized = sanitizeTextInput(text.replace(/\r\n?/g, "\n")).value;
+    if (!normalized.trim()) return;
+    if (isLargePaste(normalized)) {
+      void attachPastedFiles([
+        new File([normalized], "已粘贴的文本.txt", {
+          type: "text/plain;charset=utf-8",
+        }),
+      ]);
+      return;
+    }
+    insertCollapsedPaste(normalized);
   };
 
   // A paste made while the transcript owns the focus has no editor to land in.
@@ -487,10 +492,9 @@ export function ComposerCard(props: {
       return;
     }
     const text = event.clipboardData.getData("text/plain");
-    // Short text keeps native editing (undo, autocorrect); long text collapses.
-    if (!text || !isLargePaste(text)) return;
+    if (!text || !text.trim()) return;
     event.preventDefault();
-    insertLargePaste(text.replace(/\r\n?/g, "\n"));
+    receivePastedText(text);
   };
 
   const send = async () => {
@@ -510,17 +514,24 @@ export function ComposerCard(props: {
     sendRequest.current = request;
     setWaitingUploads(uploads.items.length > 0);
     const key = props.draftKey;
-    // Collapsed pastes only exist while editing; the message carries their text.
+    // Draft context placeholders are expanded into message text on send.
     const content = expandPastes(draft, pastesRef.current).trim();
+    const pastedText = pastesRef.current.length > 0
+      ? { content: draft.trim(), pastes: pastesRef.current.map(({ placeholder, text, label }) => ({ placeholder, text, label })) }
+      : undefined;
     try {
       if (uploads.queue && !await uploads.queue.wait(request.signal)) return;
       if (sendRequest.current !== request || sendBlockedRef.current) return;
       const paths = [...attachmentsRef.current];
       if (!canSendComposer(content, paths)) return;
+      await flushPendingTextEdits(paths);
+      if (sendRequest.current !== request || sendBlockedRef.current) return;
       setWaitingUploads(false);
       const accepted = goalMode
-        ? await props.onSend(content, paths, true)
-        : await props.onSend(content, paths);
+        ? await props.onSend(content, paths, true, pastedText)
+        : pastedText
+          ? await props.onSend(content, paths, false, pastedText)
+          : await props.onSend(content, paths);
       if (accepted === false) return;
       storeDraft(key, "");
       storeAttachments(key, []);
@@ -727,7 +738,11 @@ export function ComposerCard(props: {
               path={path}
               remote={!!remoteHost}
               sending={sending}
-              onRemove={() => applyAttachments(attachmentsRef.current.filter((item) => item !== path))}
+              onOpenAttachment={props.onOpenAttachment}
+              onRemove={() => {
+                discardPendingTextEdit(path);
+                applyAttachments(attachmentsRef.current.filter((item) => item !== path));
+              }}
             />
           ))}
         </div>

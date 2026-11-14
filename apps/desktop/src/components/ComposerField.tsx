@@ -5,7 +5,7 @@ import { draftSegments } from "../largePaste";
 import type { PendingPaste } from "../largePaste";
 import { PasteEditor } from "./PasteEditor";
 
-/** One inline editor: plain text stays in textareas, a long paste becomes a chip. */
+/** One inline editor: plain text stays in textareas, context placeholders become chips. */
 export function ComposerField(props: {
   fieldRef: RefObject<HTMLDivElement | null>;
   draft: string;

@@ -1,6 +1,41 @@
 use super::*;
-use miniq_protocol::{AssistantMessageKind, HistoryParams, Message, Role};
+use miniq_protocol::{
+    AssistantMessageKind, HistoryParams, Message, PastedTextContent, PastedTextItem, Role,
+};
 use serde_json::json;
+
+#[test]
+fn pasted_text_survives_storage_and_queue_drain() {
+    let store = Store::open_in_memory().unwrap();
+    let workspace = store.create_workspace("/tmp/pastes", "pastes").unwrap();
+    let session = store.create_session(&workspace.id, "pastes").unwrap();
+    let pasted = PastedTextContent {
+        content: "[粘贴内容 4 字]\n请总结".into(),
+        pastes: vec![PastedTextItem {
+            placeholder: "[粘贴内容 4 字]".into(),
+            text: "测试正文".into(),
+            label: None,
+        }],
+    };
+
+    store
+        .append_message_with_pasted_text(
+            &session.id,
+            Role::User,
+            "测试正文\n请总结",
+            &[],
+            Some(pasted.clone()),
+        )
+        .unwrap();
+    let saved = store.list_messages(&session.id).unwrap();
+    assert_eq!(saved[0].pasted_text, Some(pasted.clone()));
+
+    store
+        .enqueue_message_with_pasted_text(&session.id, "测试正文", &[], Some(pasted.clone()))
+        .unwrap();
+    let drained = store.start_queued_message(&session.id).unwrap().unwrap();
+    assert_eq!(drained.pasted_text, Some(pasted));
+}
 
 #[test]
 fn phases_and_reasoning_survive_reopen_pagination_search_and_fork() {
@@ -25,6 +60,7 @@ fn phases_and_reasoning_survive_reopen_pagination_search_and_fork() {
             assistant_kind: Some(kind),
             content: format!("phase-{id}"),
             created_at: now_iso(),
+            pasted_text: None,
             attachments: vec![],
             turn_timing: None,
             steered: false,

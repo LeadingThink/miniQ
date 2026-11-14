@@ -729,6 +729,7 @@ async fn execute_turn(
         role: Role::Assistant,
         assistant_kind: Some(miniq_protocol::AssistantMessageKind::Final),
         content: outcome.final_text.clone(),
+        pasted_text: None,
         reasoning: outcome.reasoning.clone(),
         attachments: Vec::new(),
         created_at: miniq_memory::now_iso(),
