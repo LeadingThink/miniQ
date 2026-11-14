@@ -15,6 +15,8 @@ vi.mock("@xterm/xterm", () => ({ Terminal: class {
   open() {}
   focus() {}
   dispose() {}
+  input(data: string) { xterm.onData?.(data); }
+  attachCustomKeyEventHandler() {}
   write = xterm.write;
   onData(callback: (data: string) => void) { xterm.onData = callback; return { dispose() {} }; }
 } }));

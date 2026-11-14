@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { installMacTerminalKeyboard } from "../terminalKeyboard";
 import type { RpcClient } from "../rpc";
 import "./TerminalPanel.css";
 
@@ -39,6 +40,7 @@ export function TerminalPanel({
     const fitAddon = new FitAddon();
     instance.loadAddon(fitAddon);
     instance.open(element);
+    installMacTerminalKeyboard(instance);
     terminal.current = instance;
     fit.current = fitAddon;
     let terminalId: string | null = null;
