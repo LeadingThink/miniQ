@@ -595,6 +595,16 @@
           "id": {
             "type": "string"
           },
+          "pastedText": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/PastedTextContent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "reasoning": {
             "description": "Display-only provider thinking/summary; never appended to answer text.",
             "type": "string"
@@ -680,6 +690,44 @@
           "attempt",
           "delayMs",
           "maxAttempts"
+        ],
+        "type": "object"
+      },
+      "PastedTextContent": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "pastes": {
+            "items": {
+              "$ref": "#/definitions/PastedTextItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "type": "object"
+      },
+      "PastedTextItem": {
+        "properties": {
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "placeholder": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "placeholder",
+          "text"
         ],
         "type": "object"
       },
@@ -972,6 +1020,16 @@
           },
           "id": {
             "type": "string"
+          },
+          "pastedText": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/PastedTextContent"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "position": {
             "format": "int64",
@@ -3382,6 +3440,16 @@
           "id": {
             "type": "string"
           },
+          "pastedText": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/PastedTextContent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "reasoning": {
             "description": "Display-only provider thinking/summary; never appended to answer text.",
             "type": "string"
@@ -3435,6 +3503,44 @@
         "required": [
           "name",
           "path"
+        ],
+        "type": "object"
+      },
+      "PastedTextContent": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "pastes": {
+            "items": {
+              "$ref": "#/definitions/PastedTextItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "type": "object"
+      },
+      "PastedTextItem": {
+        "properties": {
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "placeholder": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "placeholder",
+          "text"
         ],
         "type": "object"
       },
