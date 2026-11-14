@@ -71,7 +71,9 @@ it("does not edit or resend while a send is pending", async () => {
   const onSend = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
   const { input } = setup(false, onSend);
   fireEvent.change(input, { target: { value: "等待发送" } });
-  fireEvent.keyDown(input, { key: "Enter" });
+  await act(async () => {
+    fireEvent.keyDown(input, { key: "Enter" });
+  });
   expect(input.readOnly).toBe(true);
   fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
   fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });

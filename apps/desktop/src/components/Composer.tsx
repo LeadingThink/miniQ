@@ -527,10 +527,10 @@ export function ComposerCard(props: {
       await flushPendingTextEdits(paths);
       if (sendRequest.current !== request || sendBlockedRef.current) return;
       setWaitingUploads(false);
-      const accepted = goalMode
-        ? await props.onSend(content, paths, true, pastedText)
-        : pastedText
-          ? await props.onSend(content, paths, false, pastedText)
+      const accepted = pastedText
+        ? await props.onSend(content, paths, goalMode, pastedText)
+        : goalMode
+          ? await props.onSend(content, paths, true)
           : await props.onSend(content, paths);
       if (accepted === false) return;
       storeDraft(key, "");

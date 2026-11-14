@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ComposerCard } from "./Composer";
 afterEach(() => {
@@ -83,10 +83,23 @@ it("keeps multiple file selections as removable references and expands them on s
   expect(screen.queryByText("a.ts 第 5–11 行")).toBeNull();
   expect(screen.getByText("b.rs 第 20 行")).toBeTruthy();
   fireEvent.change(screen.getAllByRole("textbox").at(-1)!, { target: { value: "请解释" } });
-  fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+  });
 
   expect(onSend).toHaveBeenCalledWith(
     "文件「/work/b.rs」第 20 行：\n> let b = 2;\n\n请解释",
     [],
+    false,
+    {
+      content: "[b.rs 第 20 行]请解释",
+      pastes: [
+        {
+          placeholder: "[b.rs 第 20 行]",
+          text: "文件「/work/b.rs」第 20 行：\n> let b = 2;\n\n",
+          label: "b.rs 第 20 行",
+        },
+      ],
+    },
   );
 });

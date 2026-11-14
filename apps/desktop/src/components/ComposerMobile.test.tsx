@@ -101,8 +101,10 @@ it("keeps the draft while sending is blocked and prevents repeated pending sends
   expect(onSend).not.toHaveBeenCalled();
   expect(screen.getByRole("status").textContent).toContain("草稿会保留");
   view.rerender(<ComposerCard {...view.props} sendBlocked={false} />);
-  fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
-  fireEvent.keyDown(view.input, { key: "Enter", ctrlKey: true });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    fireEvent.keyDown(view.input, { key: "Enter", ctrlKey: true });
+  });
   expect(onSend).toHaveBeenCalledTimes(1);
   await act(async () => finish(false));
   expect(view.input.value).toBe("不能丢失的草稿");

@@ -69,8 +69,10 @@ describe("reliable composer", () => {
       />
     );
     const input = screen.getByRole("textbox");
-    fireEvent.keyDown(input, { key: "Enter" });
-    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
     expect(onSend).toHaveBeenCalledTimes(1);
     rerender(
       <ComposerCard
