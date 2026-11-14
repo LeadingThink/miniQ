@@ -790,6 +790,7 @@ mod tests {
             attachments: Vec::new(),
             created_at: "2026-08-30T00:00:00Z".to_string(),
             turn_timing: None,
+            pasted_text: None,
             steered: false,
         }
     }
