@@ -309,25 +309,33 @@ fn browser_set_visible(
 }
 
 #[tauri::command]
-fn context_usage_overlay_open(
+async fn context_usage_overlay_open(
     app: tauri::AppHandle,
     bounds: browser::BrowserBounds,
     snapshot: serde_json::Value,
 ) -> Result<(), String> {
-    context_usage_overlay::open(&app, bounds, snapshot)
+    tauri::async_runtime::spawn_blocking(move || {
+        context_usage_overlay::open(&app, bounds, snapshot)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn context_usage_overlay_update(
+async fn context_usage_overlay_update(
     app: tauri::AppHandle,
     snapshot: serde_json::Value,
 ) -> Result<(), String> {
-    context_usage_overlay::update(&app, snapshot)
+    tauri::async_runtime::spawn_blocking(move || context_usage_overlay::update(&app, snapshot))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn context_usage_overlay_close(app: tauri::AppHandle) -> Result<(), String> {
-    context_usage_overlay::close(&app)
+async fn context_usage_overlay_close(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || context_usage_overlay::close(&app))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
