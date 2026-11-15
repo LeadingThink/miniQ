@@ -67,6 +67,13 @@
       <div class="splash-mark">Q</div>
       <div class="splash-name">miniQ</div>
     </div>
+    <!-- Embedded surfaces (companion, context-usage overlay) load this page
+         too; drop the splash before first paint so it never flashes there. -->
+    <script>
+      if (/[?&](companion|context-usage-overlay)(=|&|$)/.test(location.search)) {
+        document.getElementById("splash").remove();
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

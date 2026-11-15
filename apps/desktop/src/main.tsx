@@ -51,7 +51,6 @@ if (isCompanion || isContextUsageOverlay) {
   document.documentElement.dataset.companion = isCompanion ? "true" : "context-usage-overlay";
   document.documentElement.style.background = "transparent";
   document.body.style.background = "transparent";
-  document.getElementById("splash")?.remove();
 } else {
   initializeWindowChrome();
   initializeMobileViewport();

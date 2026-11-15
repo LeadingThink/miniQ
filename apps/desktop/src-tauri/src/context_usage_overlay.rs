@@ -61,10 +61,16 @@ pub fn open(
     Ok(())
 }
 
-pub fn update(app: &tauri::AppHandle, snapshot: serde_json::Value) -> Result<(), String> {
+/// Pushes a new snapshot and resizes the overlay to fit the content it renders.
+pub fn update(
+    app: &tauri::AppHandle,
+    bounds: BrowserBounds,
+    snapshot: serde_json::Value,
+) -> Result<(), String> {
     let Some(webview) = app.get_webview(LABEL) else {
         return Ok(());
     };
+    browser::resize(&webview, bounds)?;
     let value = serde_json::to_string(&snapshot).map_err(|error| error.to_string())?;
     webview
         .eval(format!("window.__MINIQ_SET_CONTEXT_USAGE__?.({value})"))

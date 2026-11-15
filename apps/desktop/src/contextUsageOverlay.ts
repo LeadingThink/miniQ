@@ -21,10 +21,16 @@ function enqueueOverlayCommand<T>(command: () => Promise<T>): Promise<T> {
   return result;
 }
 
-export function contextUsageOverlayBounds(anchor: DOMRect, viewportWidth: number, viewportHeight: number): BrowserBounds {
+/** Places a panel of the measured size above the trigger, clamped to the viewport. */
+export function contextUsageOverlayBounds(
+  anchor: DOMRect,
+  panel: { width: number; height: number },
+  viewportWidth: number,
+  viewportHeight: number,
+): BrowserBounds {
   const gap = 12;
-  const width = Math.max(1, Math.min(372, viewportWidth - gap * 2));
-  const height = Math.max(1, Math.min(620, viewportHeight - gap * 2));
+  const width = Math.max(1, Math.min(Math.ceil(panel.width), viewportWidth - gap * 2));
+  const height = Math.max(1, Math.min(Math.ceil(panel.height), viewportHeight - gap * 2));
   const maxX = Math.max(0, viewportWidth - width);
   const maxY = Math.max(0, viewportHeight - height);
   return {
@@ -44,9 +50,12 @@ export async function openContextUsageOverlay(
   return true;
 }
 
-export async function updateContextUsageOverlay(snapshot: ContextUsageOverlaySnapshot): Promise<void> {
+export async function updateContextUsageOverlay(
+  bounds: BrowserBounds,
+  snapshot: ContextUsageOverlaySnapshot,
+): Promise<void> {
   if (!isTauriRuntime()) return;
-  await enqueueOverlayCommand(() => invokeOverlay("context_usage_overlay_update", { snapshot }));
+  await enqueueOverlayCommand(() => invokeOverlay("context_usage_overlay_update", { bounds, snapshot }));
 }
 
 export async function closeContextUsageOverlay(): Promise<void> {

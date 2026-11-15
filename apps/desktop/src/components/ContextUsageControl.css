@@ -18,7 +18,7 @@
 .context-usage-trigger svg { width: 22px; height: 22px; fill: none; stroke-width: 2.5; }
 .context-usage-track { stroke: var(--border); }
 .context-usage-fill { stroke: currentColor; transform: rotate(-90deg); transform-origin: center; stroke-linecap: round; }
-.context-usage-popover { width: min(340px, calc(100vw - 24px)); padding: 16px; color: var(--text); }
+.context-usage-popover { width: min(300px, calc(100vw - 24px)); padding: 12px 14px 14px; color: var(--text); font-size: 13px; }
 .context-usage-overlay {
   position: fixed;
   inset: 0;
@@ -27,37 +27,49 @@
   height: 100%;
   max-height: none;
   overflow: auto;
+  animation: none;
+}
+/* Off-screen copy used to size the native overlay to its content. */
+.context-usage-measure {
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  max-height: none;
+  visibility: hidden;
+  pointer-events: none;
+  animation: none;
 }
 html[data-companion="context-usage-overlay"],
 html[data-companion="context-usage-overlay"] body,
 html[data-companion="context-usage-overlay"] #root { width: 100%; height: 100%; overflow: hidden; }
-.context-usage-popover header, .context-usage-popover footer, .context-usage-popover dl > div {
+.context-usage-popover header, .context-usage-total, .context-usage-popover li, .context-usage-popover dl > div {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
-.context-usage-popover button { display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-mid); padding: 4px; cursor: pointer; }
-.context-usage-popover button:hover { background: var(--bg-hover); }
-.context-usage-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.context-usage-total strong { font-size: 26px; font-variant-numeric: tabular-nums; }
-.context-usage-total span, .context-usage-popover small, .context-usage-note, .context-usage-popover footer { font-size: 12px; color: var(--text-dim); }
-.context-usage-meter { height: 8px; margin: 8px 0 18px; border-radius: 4px; background: var(--border); overflow: hidden; }
-.context-usage-meter > span { display: block; height: 100%; background: var(--accent); }
-.context-usage-popover ul { list-style: none; margin: 0; padding: 0; }
-.context-usage-popover li { display: flex; align-items: center; gap: 8px; margin: 10px 0; font-size: 13px; }
-.context-usage-popover li > span { flex: 1; }
-.context-usage-popover li > i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
-.context-usage-popover .context-category-1 { background: var(--success, var(--accent)); }
-.context-usage-popover .context-category-2 { background: var(--warning, var(--accent)); }
-.context-usage-popover .context-category-3 { background: var(--text-mid); }
-.context-usage-popover .context-category-4 { background: var(--danger); }
-.context-usage-note { line-height: 1.6; margin: 16px 0; }
-.context-usage-popover dl { font-size: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
-.context-usage-popover dl > div { margin: 8px 0; flex-wrap: wrap; }
-.context-usage-popover dd { margin: 0; font-variant-numeric: tabular-nums; }
-.context-usage-warning { font-size: 12px; color: var(--danger); }
-.context-usage-popover footer { margin-top: 12px; }
+.context-usage-popover header > strong { font-size: 13px; font-weight: 600; }
+.context-usage-actions { display: inline-flex; gap: 2px; margin-right: -4px; }
+.context-usage-popover button { display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-dim); padding: 4px; cursor: pointer; }
+.context-usage-popover button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.context-usage-popover button.is-loading svg { animation: context-usage-spin 0.9s linear infinite; }
+.context-usage-popover .context-usage-retry { padding: 4px 10px; border: 1px solid var(--border); color: var(--text); }
+@keyframes context-usage-spin { to { transform: rotate(360deg); } }
+.context-usage-total { align-items: baseline; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.context-usage-total strong { font-weight: 600; }
+.context-usage-meter { position: relative; height: 4px; margin-top: 8px; border-radius: 2px; background: var(--border); }
+.context-usage-meter > span { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
+.context-usage-meter > i { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--text-dim); }
+.context-usage-legend, .context-usage-warning { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
+.context-usage-warning { color: var(--danger); }
+.context-usage-popover h3 { margin: 14px 0 4px; font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.context-usage-popover ul, .context-usage-popover dl { list-style: none; margin: 0; padding: 0; }
+.context-usage-popover li, .context-usage-popover dl > div { min-height: 24px; }
+.context-usage-popover small, .context-usage-popover dd { margin: 0; font-size: 13px; color: var(--text-mid); font-variant-numeric: tabular-nums; }
+.context-usage-popover [role="alert"] { margin: 10px 0; font-size: 12px; color: var(--danger); }
+@media (prefers-reduced-motion: reduce) {
+  .context-usage-popover button.is-loading svg { animation: none; }
+}
 @media (pointer: coarse) {
   .context-usage-trigger { width: 44px; height: 44px; }
   .context-usage-popover button { min-width: 44px; min-height: 44px; justify-content: center; }

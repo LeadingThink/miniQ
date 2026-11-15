@@ -21,6 +21,15 @@ export function formatContextTokens(tokens: number): string {
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(tokens);
 }
 
+/** Short form for headline figures, e.g. 386.3K or 1M. */
+export function formatCompactContextTokens(tokens: number): string {
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(tokens);
+}
+
+export function formatContextPercent(percent: number): string {
+  return `${Number(percent.toFixed(1))}%`;
+}
+
 /** Panel labels, in display order, keyed by the daemon's category ids. */
 export const contextUsageLabels: Record<ContextUsageCategory["id"], string> = {
   system: "系统提示词",

@@ -324,11 +324,14 @@ async fn context_usage_overlay_open(
 #[tauri::command]
 async fn context_usage_overlay_update(
     app: tauri::AppHandle,
+    bounds: browser::BrowserBounds,
     snapshot: serde_json::Value,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || context_usage_overlay::update(&app, snapshot))
-        .await
-        .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        context_usage_overlay::update(&app, bounds, snapshot)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]

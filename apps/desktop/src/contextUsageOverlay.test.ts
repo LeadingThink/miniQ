@@ -28,17 +28,17 @@ function rect(left: number, top: number, width: number, height: number): DOMRect
 }
 
 describe("contextUsageOverlayBounds", () => {
-  it("positions the overlay above and aligned to the trigger", () => {
-    expect(contextUsageOverlayBounds(rect(900, 700, 32, 32), 1200, 900)).toEqual({
-      x: 560,
-      y: 72,
-      width: 372,
-      height: 620,
+  it("sizes the overlay to the measured panel, above and aligned to the trigger", () => {
+    expect(contextUsageOverlayBounds(rect(900, 700, 32, 32), { width: 300, height: 399.2 }, 1200, 900)).toEqual({
+      x: 632,
+      y: 292,
+      width: 300,
+      height: 400,
     });
   });
 
   it("keeps the overlay inside a compact viewport", () => {
-    expect(contextUsageOverlayBounds(rect(5, 5, 10, 10), 320, 480)).toEqual({
+    expect(contextUsageOverlayBounds(rect(5, 5, 10, 10), { width: 300, height: 620 }, 320, 480)).toEqual({
       x: 12,
       y: 12,
       width: 296,
@@ -47,7 +47,7 @@ describe("contextUsageOverlayBounds", () => {
   });
 
   it("never returns negative dimensions or out-of-bounds coordinates", () => {
-    const bounds = contextUsageOverlayBounds(rect(0, 0, 1, 1), 10, 8);
+    const bounds = contextUsageOverlayBounds(rect(0, 0, 1, 1), { width: 300, height: 400 }, 10, 8);
     expect(bounds.width).toBeGreaterThan(0);
     expect(bounds.height).toBeGreaterThan(0);
     expect(bounds.x).toBeGreaterThanOrEqual(0);
@@ -73,12 +73,12 @@ describe("context usage native bridge", () => {
     const snapshot = { usage: null, loading: true, error: "暂不可用" };
 
     await expect(openContextUsageOverlay(bounds, snapshot)).resolves.toBe(true);
-    await updateContextUsageOverlay(snapshot);
+    await updateContextUsageOverlay(bounds, snapshot);
     await closeContextUsageOverlay();
 
     expect(native.invoke.mock.calls).toEqual([
       ["context_usage_overlay_open", { bounds, snapshot }],
-      ["context_usage_overlay_update", { snapshot }],
+      ["context_usage_overlay_update", { bounds, snapshot }],
       ["context_usage_overlay_close", {}],
     ]);
   });

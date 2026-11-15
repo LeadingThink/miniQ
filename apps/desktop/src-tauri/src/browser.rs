@@ -555,7 +555,7 @@ pub(crate) fn validate_bounds(bounds: BrowserBounds) -> Result<(), String> {
     Ok(())
 }
 
-fn resize(webview: &tauri::Webview, bounds: BrowserBounds) -> Result<(), String> {
+pub(crate) fn resize(webview: &tauri::Webview, bounds: BrowserBounds) -> Result<(), String> {
     validate_bounds(bounds)?;
     if bounds.width < 1.0 || bounds.height < 1.0 {
         return Ok(());

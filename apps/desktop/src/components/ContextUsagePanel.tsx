@@ -1,6 +1,8 @@
 import { RotateCw, X } from "lucide-react";
 import {
   contextUsageLabels,
+  formatCompactContextTokens,
+  formatContextPercent,
   formatContextTokens,
   type ContextUsage,
   type ContextUsageCategory,
@@ -14,6 +16,42 @@ const categoryOrder: ContextUsageCategory["id"][] = [
   "skills",
 ];
 
+function clampPercent(percent: number): number {
+  return Math.min(100, Math.max(0, percent));
+}
+
+function UsageDetails({ usage }: { usage: ContextUsage }) {
+  const capacity = usage.contextWindowTokens;
+  const warning = usage.estimatedTokens >= usage.autoCompactTokens;
+  const actual = usage.lastRequestActualTokens ?? null;
+  // Share of the model window when it is known; otherwise the raw estimate.
+  const share = (tokens: number) =>
+    capacity ? formatContextPercent((tokens / capacity) * 100) : formatCompactContextTokens(tokens);
+
+  return <>
+    <p className={warning ? "context-usage-warning" : "context-usage-legend"}>
+      {warning
+        ? "基础估算已达到自动压缩阈值，实际请求可能触发压缩。"
+        : `达到 ${formatCompactContextTokens(usage.autoCompactTokens)} 时自动压缩`}
+    </p>
+    <h3>估算构成</h3>
+    <ul>{categoryOrder.map((id) => {
+      const tokens = usage.categories?.find(entry => entry.id === id)?.tokens ?? null;
+      return <li key={id}>
+        <span>{contextUsageLabels[id]}</span>
+        {tokens === null
+          ? <small>未单独统计</small>
+          : <small title={`${formatContextTokens(tokens)} tokens`}>{share(tokens)}</small>}
+      </li>;
+    })}</ul>
+    <h3>最近请求</h3>
+    <dl>
+      {usage.lastRequestTokens !== null && <div><dt>本地估算</dt><dd>{formatContextTokens(usage.lastRequestTokens)}</dd></div>}
+      <div><dt>模型接口实际输入</dt><dd>{actual === null ? "暂无请求记录" : formatContextTokens(actual)}</dd></div>
+    </dl>
+  </>;
+}
+
 export function ContextUsagePanel(props: {
   usage: ContextUsage | null;
   loading: boolean;
@@ -21,35 +59,37 @@ export function ContextUsagePanel(props: {
   onRefresh: () => void;
   onClose: () => void;
 }) {
-  const percent = props.usage?.percentUsed ?? null;
-  const warning = !!props.usage && props.usage.estimatedTokens >= props.usage.autoCompactTokens;
-  const categories = props.usage?.categories ?? null;
-  const tokens = (id: ContextUsageCategory["id"]) =>
-    categories?.find(entry => entry.id === id)?.tokens ?? null;
-  const actual = props.usage?.lastRequestActualTokens ?? null;
+  const { usage } = props;
+  const percent = usage?.percentUsed ?? null;
+  const capacity = usage?.contextWindowTokens ?? null;
 
   return <>
-    <header><strong>上下文用量</strong><button type="button" aria-label="关闭上下文用量" onClick={props.onClose}><X size={16} /></button></header>
-    {props.error ? <><p role="alert">{props.error}</p><button type="button" onClick={props.onRefresh}>重试</button></> : <>
-      <div className="context-usage-total"><strong>{percent === null ? "—" : `${Number(percent.toFixed(1))}%`}</strong>
-        <span>{props.usage ? `估算已用 ${formatContextTokens(props.usage.estimatedTokens)} / ${props.usage.contextWindowTokens === null ? "容量未知" : formatContextTokens(props.usage.contextWindowTokens)} tokens` : "正在读取上下文…"}</span></div>
-      <div className="context-usage-meter" role="meter" aria-label="估算上下文占比" aria-valuemin={0} aria-valuemax={100}
-        aria-valuenow={percent ?? undefined} aria-valuetext={percent === null ? "容量未知" : `${percent.toFixed(1)}%`}>
-        <span style={{ width: `${percent === null ? 0 : Math.min(100, Math.max(0, percent))}%` }} />
+    <header>
+      <strong>上下文用量</strong>
+      <span className="context-usage-actions">
+        {!props.error && <button type="button" aria-label="刷新上下文用量" title="刷新" disabled={props.loading}
+          className={props.loading ? "is-loading" : undefined} onClick={props.onRefresh}><RotateCw size={14} /></button>}
+        <button type="button" aria-label="关闭上下文用量" title="关闭" onClick={props.onClose}><X size={15} /></button>
+      </span>
+    </header>
+    {props.error ? <>
+      <p role="alert">{props.error}</p>
+      <button type="button" className="context-usage-retry" onClick={props.onRefresh}>重试</button>
+    </> : <>
+      <div className="context-usage-total">
+        <span title={usage ? `估算已用 ${formatContextTokens(usage.estimatedTokens)} tokens` : undefined}>
+          {usage
+            ? `${formatCompactContextTokens(usage.estimatedTokens)} / ${capacity === null ? "容量未知" : formatCompactContextTokens(capacity)} tokens`
+            : "正在读取上下文…"}
+        </span>
+        <strong>{percent === null ? "—" : formatContextPercent(percent)}</strong>
       </div>
-      <ul>{categoryOrder.map((id, index) => {
-        const value = tokens(id);
-        return <li key={id}><i className={`context-category-${index}`} aria-hidden="true" />
-          <span>{contextUsageLabels[id]}</span>
-          <small>{value === null ? "未单独统计" : `${formatContextTokens(value)} tokens`}</small></li>;
-      })}</ul>
-      <p className="context-usage-note">按本轮请求估算的 token 数拆分，非计费 token。系统提示词与技能按提示词原文估算；工具与连接器按本轮实际下发的工具 schema 估算；对话消息为其余部分。</p>
-      {props.usage && <dl><div><dt>模型上下文容量</dt><dd>{props.usage.contextWindowTokens === null ? "未知" : `${formatContextTokens(props.usage.contextWindowTokens)} tokens`}</dd></div>
-        <div><dt>自动压缩阈值</dt><dd>{formatContextTokens(props.usage.autoCompactTokens)} tokens</dd></div>
-        {props.usage.lastRequestTokens !== null && <div><dt>最近请求估算</dt><dd>{formatContextTokens(props.usage.lastRequestTokens)} tokens</dd></div>}
-        <div><dt>模型接口实际输入</dt><dd>{actual === null ? "暂无请求记录" : `${formatContextTokens(actual)} tokens`}</dd></div></dl>}
-      {warning && <p className="context-usage-warning">基础估算已达到自动压缩阈值，实际请求可能触发压缩。</p>}
-      <footer><span>{props.loading ? "更新中…" : "容量由模型提供"}</span><button type="button" disabled={props.loading} onClick={props.onRefresh}><RotateCw size={13} />刷新</button></footer>
+      <div className="context-usage-meter" role="meter" aria-label="估算上下文占比" aria-valuemin={0} aria-valuemax={100}
+        aria-valuenow={percent ?? undefined} aria-valuetext={percent === null ? "容量未知" : formatContextPercent(percent)}>
+        <span style={{ width: `${percent === null ? 0 : clampPercent(percent)}%` }} />
+        {usage && capacity ? <i aria-hidden="true" style={{ left: `${clampPercent((usage.autoCompactTokens / capacity) * 100)}%` }} /> : null}
+      </div>
+      {usage && <UsageDetails usage={usage} />}
     </>}
   </>;
 }

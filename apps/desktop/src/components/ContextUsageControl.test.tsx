@@ -50,6 +50,10 @@ const mock = vi.hoisted(() => ({
   } as ContextUsageState,
 }));
 
+const native = vi.hoisted(() => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
+
 vi.mock("../hooks/useContextUsage", () => ({
   useContextUsage: () => ({ ...mock.state, refresh: mock.refresh }),
 }));
@@ -186,10 +190,11 @@ it("shows the estimated split per category and the provider-reported input", () 
   renderControl();
   fireEvent.click(screen.getByRole("button", { name: "上下文用量" }));
   const dialog = screen.getByRole("dialog", { name: "上下文用量" });
-  expect(dialog.textContent).toContain("600 tokens");
-  expect(dialog.textContent).toContain("300 tokens");
+  expect(dialog.textContent).toContain("1.2K / 8K tokens");
+  expect(within(dialog).getByText("7.5%").title).toBe("600 tokens");
+  expect(within(dialog).getByText("2.5%").title).toBe("200 tokens");
   expect(dialog.textContent).toContain("模型接口实际输入");
-  expect(dialog.textContent).toContain("1,050 tokens");
+  expect(within(dialog).getByText("1,050")).toBeTruthy();
 });
 
 it("reports categories and actual input as unknown instead of guessing", () => {
@@ -210,4 +215,19 @@ it("reports categories and actual input as unknown instead of guessing", () => {
   const dialog = screen.getByRole("dialog", { name: "上下文用量" });
   expect(within(dialog).getAllByText("未单独统计")).toHaveLength(5);
   expect(dialog.textContent).toContain("暂无请求记录");
+});
+
+it("sizes the native overlay to the measured panel instead of showing the DOM popover", async () => {
+  vi.stubGlobal("__TAURI_INTERNALS__", {});
+  native.invoke.mockClear();
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    { left: 0, top: 0, right: 300, bottom: 260, width: 300, height: 260, x: 0, y: 0, toJSON: () => ({}) },
+  );
+  renderControl();
+  fireEvent.click(screen.getByRole("button", { name: "上下文用量" }));
+  await vi.waitFor(() => expect(native.invoke).toHaveBeenCalledWith("context_usage_overlay_open", {
+    bounds: expect.objectContaining({ width: 300, height: 260 }),
+    snapshot: { usage: mock.state.usage, loading: false, error: null },
+  }));
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
