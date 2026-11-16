@@ -1,8 +1,6 @@
-/**
- * Shared helpers for the 800-character paste boundary, draft context chips,
- * and historical sent-message paste rendering.
- */
+/** Shared helpers for paste boundaries, draft context chips, and history rendering. */
 export const LARGE_PASTE_CHARS = 800;
+export const COLLAPSED_PASTE_MIN_CHARS = 501;
 
 export interface PendingPaste {
   /** Token kept in the draft, e.g. `[粘贴内容 4200 字]`. */
@@ -27,6 +25,11 @@ export function charCount(text: string): number {
 
 export function isLargePaste(text: string): boolean {
   return charCount(text) > LARGE_PASTE_CHARS;
+}
+
+export function shouldCollapsePaste(text: string): boolean {
+  const count = charCount(text);
+  return count >= COLLAPSED_PASTE_MIN_CHARS && count < LARGE_PASTE_CHARS;
 }
 
 export function nextContextPlaceholder(label: string, taken: readonly string[]): string {

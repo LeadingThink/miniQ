@@ -47,7 +47,7 @@ import {
   flushPendingTextEdits,
 } from "../pendingTextEdits";
 import { readDraft, storeDraft, readAttachments, storeAttachments, readPastes, storePastes } from "../composerDraft";
-import { charCount, expandPastes, isLargePaste, nextContextPlaceholder, type DraftContext, type PendingPaste } from "../largePaste";
+import { charCount, expandPastes, isLargePaste, nextContextPlaceholder, shouldCollapsePaste, type DraftContext, type PendingPaste } from "../largePaste";
 import { ComposerField as ComposerFieldView } from "./ComposerField";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { RemotePathDialog } from "./RemotePathDialog";
@@ -463,6 +463,18 @@ export function ComposerCard(props: {
     placeCaret(start + placeholder.length);
   };
 
+  const insertPlainPaste = (text: string) => {
+    const field = fieldRef.current;
+    const value = readComposerValue(field) || draftValueRef.current;
+    const area = activeTextarea(field);
+    const focused = area !== null && document.activeElement === area;
+    const start = focused ? readComposerCaret(field) : value.length;
+    const end = focused ? start + area.selectionEnd - area.selectionStart : value.length;
+    const next = `${value.slice(0, start)}${text}${value.slice(end)}`;
+    setDraft(next);
+    placeCaret(start + text.length);
+  };
+
   const receivePastedText = (text: string) => {
     const normalized = sanitizeTextInput(text.replace(/\r\n?/g, "\n")).value;
     if (!normalized.trim()) return;
@@ -472,9 +484,11 @@ export function ComposerCard(props: {
           type: "text/plain;charset=utf-8",
         }),
       ]);
-      return;
+    } else if (shouldCollapsePaste(normalized)) {
+      insertCollapsedPaste(normalized);
+    } else {
+      insertPlainPaste(normalized);
     }
-    insertCollapsedPaste(normalized);
   };
 
   // A paste made while the transcript owns the focus has no editor to land in.

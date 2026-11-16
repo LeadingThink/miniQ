@@ -27,18 +27,41 @@ function pasteOutside(target: Element, options: { text?: string; files?: File[] 
   return event;
 }
 
-it("collapses text copied from the conversation and opens it in an editor", () => {
+it("inserts short text copied from the conversation directly into the draft", () => {
   render(<ComposerCard {...props} draftKey="paste-outside-text" />);
   expect(document.activeElement).toBe(document.body);
   const event = pasteOutside(document.body, { text: "复制自上文的一段话" });
   expect(event.defaultPrevented).toBe(true);
   const input = screen.getByRole<HTMLTextAreaElement>("textbox");
+  expect(input.value).toBe("复制自上文的一段话");
+  expect(screen.queryByRole("button", { name: /展开粘贴内容/ })).toBeNull();
+  expect(window.localStorage.getItem("miniq.draft.paste-outside-text")).toContain("复制自上文的一段话");
+});
+
+it("inserts a paste of up to 500 characters directly into the draft", () => {
+  render(<ComposerCard {...props} draftKey="paste-500-characters" />);
+  const input = screen.getByRole<HTMLTextAreaElement>("textbox");
+  const text = "字".repeat(500);
+
+  fireEvent.paste(input, {
+    clipboardData: { items: [], files: [], getData: () => text },
+  });
+
+  expect(input.value).toBe(text);
+  expect(screen.queryByRole("button", { name: /展开粘贴内容/ })).toBeNull();
+});
+
+it("collapses a paste from 501 through 799 characters", () => {
+  render(<ComposerCard {...props} draftKey="paste-501-characters" />);
+  const input = screen.getByRole<HTMLTextAreaElement>("textbox");
+  const text = "字".repeat(501);
+
+  fireEvent.paste(input, {
+    clipboardData: { items: [], files: [], getData: () => text },
+  });
+
   expect(input.value).toBe("");
-  const chip = screen.getByRole("button", { name: "展开粘贴内容 9 字" });
-  fireEvent.click(chip);
-  expect((screen.getByRole("textbox", { name: "完整文本" }) as HTMLTextAreaElement).value)
-    .toBe("复制自上文的一段话");
-  expect(window.localStorage.getItem("miniq.draft.paste-outside-text")).toContain("[粘贴内容 9 字]");
+  expect(screen.getByRole("button", { name: "展开粘贴内容 501 字" })).toBeTruthy();
 });
 
 it("attaches a file pasted while the conversation was focused", async () => {
@@ -51,12 +74,10 @@ it("attaches a file pasted while the conversation was focused", async () => {
   expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("");
 });
 
-it("normalizes Windows line endings inside the collapsed paste", () => {
+it("normalizes Windows line endings inside a direct paste", () => {
   render(<ComposerCard {...props} draftKey="paste-crlf" />);
   pasteOutside(document.body, { text: "第一行\r\n第二行" });
-  fireEvent.click(screen.getByRole("button", { name: /展开粘贴内容/ }));
-  expect((screen.getByRole("textbox", { name: "完整文本" }) as HTMLTextAreaElement).value)
-    .toBe("第一行\n第二行");
+  expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("第一行\n第二行");
 });
 
 it("leaves a paste in another text field to that field", () => {
@@ -90,28 +111,28 @@ function readFile(file: File): Promise<string> {
   });
 }
 
-it("sends expanded text plus persisted display metadata for a collapsed paste", async () => {
+it("sends a collapsed paste with persisted display metadata", async () => {
   const onSend = vi.fn().mockResolvedValue(true);
   render(<ComposerCard {...props} draftKey="paste-send-metadata" onSend={onSend} />);
   const input = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "消息" });
   fireEvent.paste(input, {
-    clipboardData: { items: [], files: [], getData: () => "一段粘贴内容" },
+    clipboardData: { items: [], files: [], getData: () => "字".repeat(501) },
   });
 
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送消息" })));
 
   expect(onSend).toHaveBeenCalledWith(
-    "一段粘贴内容",
+    "字".repeat(501),
     [],
     false,
     {
-      content: "[粘贴内容 6 字]",
-      pastes: [{ placeholder: "[粘贴内容 6 字]", text: "一段粘贴内容", label: undefined }],
+      content: "[粘贴内容 501 字]",
+      pastes: [{ placeholder: "[粘贴内容 501 字]", text: "字".repeat(501), label: undefined }],
     },
   );
 });
 
-it("keeps text at the 800-character boundary as a collapsed editable paste", () => {
+it("inserts text at the 800-character boundary directly into the draft", () => {
   render(<ComposerCard {...props} draftKey="paste-800-characters" />);
   const input = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "消息" });
   const boundaryText = "字".repeat(800);
@@ -121,10 +142,7 @@ it("keeps text at the 800-character boundary as a collapsed editable paste", () 
   })).toBe(false);
 
   expect(fake.save).not.toHaveBeenCalled();
-  expect(input.value).toBe("");
-  fireEvent.click(screen.getByRole("button", { name: "展开粘贴内容 800 字" }));
-  expect((screen.getByRole("textbox", { name: "完整文本" }) as HTMLTextAreaElement).value)
-    .toBe(boundaryText);
+  expect(input.value).toBe(boundaryText);
 });
 
 it("turns text above 800 characters into one complete UTF-8 attachment", async () => {

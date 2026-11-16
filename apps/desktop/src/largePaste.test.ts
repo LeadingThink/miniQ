@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { expect, it } from "vitest";
 import {
-  LARGE_PASTE_CHARS, charCount, draftSegments, expandPastes, isLargePaste,
+  COLLAPSED_PASTE_MIN_CHARS, LARGE_PASTE_CHARS, charCount, draftSegments, expandPastes, isLargePaste,
+  shouldCollapsePaste,
   sentMessageSegments,
 } from "./largePaste";
 
@@ -14,6 +15,14 @@ it("collapses only pastes above the threshold", () => {
 it("counts characters rather than UTF-16 units", () => {
   expect(charCount("😀")).toBe(1);
   expect(isLargePaste("😀".repeat(LARGE_PASTE_CHARS + 1))).toBe(true);
+});
+
+it("collapses only the 501-799 character paste range", () => {
+  expect(shouldCollapsePaste("字".repeat(COLLAPSED_PASTE_MIN_CHARS - 1))).toBe(false);
+  expect(shouldCollapsePaste("字".repeat(COLLAPSED_PASTE_MIN_CHARS))).toBe(true);
+  expect(shouldCollapsePaste("字".repeat(LARGE_PASTE_CHARS - 1))).toBe(true);
+  expect(shouldCollapsePaste("字".repeat(LARGE_PASTE_CHARS))).toBe(false);
+  expect(shouldCollapsePaste("😀".repeat(COLLAPSED_PASTE_MIN_CHARS))).toBe(true);
 });
 
 it("expands every placeholder back into the full text", () => {
