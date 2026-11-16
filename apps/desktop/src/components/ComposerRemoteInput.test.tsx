@@ -287,6 +287,6 @@ it("cancels a waiting send when a transcript paste edits its text", async () => 
   fireEvent.paste(document.body, { clipboardData: { items: [], files: [], getData: () => "补充说明" } });
   await act(async () => finish(receipt("/project/inbox/截图.png")));
   expect(props.onSend).not.toHaveBeenCalled();
-  expect(readDraft("draft-A")).toBe("[粘贴内容 4 字]");
+  expect(readDraft("draft-A")).toBe("补充说明");
   expect(readAttachments("draft-A")).toEqual(["/project/inbox/截图.png"]);
 });
