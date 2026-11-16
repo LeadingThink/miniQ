@@ -1,29 +1,20 @@
-# Bundled desktop tools
+# Desktop tool availability
 
-The Windows, macOS (Apple Silicon and Intel), and Linux desktop packages include
-ripgrep 15.1.0. Desktop-launched daemons prepend the directory containing the
-bundled `rg` executable to their command environment's PATH. Shell commands,
-managed processes, terminals, and helper subprocesses inherit it. No changes to
-the user's system PATH or PowerShell profile are needed. The installed bundled
-version takes precedence over a system ripgrep.
+Desktop packages include the miniQ daemon sidecar but do not bundle ripgrep.
+Shell commands, managed processes, terminals, and helper subprocesses inherit
+the user's normal system `PATH`. If `rg` is installed there, read-only search
+commands can continue to use it; miniQ does not download or install it.
 
-`npm run prepare:ripgrep`, from `apps/desktop`, downloads the upstream release
-archive and verifies its pinned SHA-256 before extracting the executable and
-license files. Linux uses the static musl release to avoid adding a glibc
-requirement. Preparation uses Windows PowerShell with the system proxy settings
-on Windows, and `curl` on macOS and Linux; extraction uses the system `tar`.
-Tauri includes `rg` as an external binary alongside the desktop
-executable; the bundle also includes `COPYING`, `LICENSE-MIT`, and `UNLICENSE`
-under `licenses/ripgrep`. The application does not download tools at runtime.
+The Windows desktop app runs inside WebView2. Android uses Android WebView, and
+iOS uses WKWebView. None of these WebView layers depends on a bundled ripgrep
+binary, so removing the sidecar does not change the frontend or mobile entry
+points.
 
-Both Tauri development and production build hooks prepare ripgrep automatically.
-Cross builds set `MINIQ_DAEMON_TARGET` to the Rust target triple; the GitHub Actions
-build and release workflows already do so. Prepared binaries and license files
-are generated artifacts and are ignored by Git. To update ripgrep, update its
-version and all archive hashes in `apps/desktop/scripts/prepare-ripgrep.mjs`.
+On systems without `rg` in `PATH`, commands that explicitly invoke `rg` are
+unavailable. Other miniQ features and the remaining system tools such as
+`grep`, `find`, and `findstr` are unaffected.
 
-Run `npm run test:ripgrep` from `apps/desktop` and
-`cargo test --locked -p miniq-local runtime_path::` from the repository root.
-The daemon lifecycle workflow runs preparation and runtime PATH tests on Windows,
-macOS, and Linux. Standalone terminal archives retain their existing contents;
-this bundling applies to the desktop packages.
+Run `npm run test:desktop-bundle` from `apps/desktop` to verify that the daemon
+remains bundled and the ripgrep sidecar remains excluded. Run
+`cargo test --locked -p miniq-local runtime_path::` from the repository root to
+verify user PATH discovery.
