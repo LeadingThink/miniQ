@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use tauri::{
@@ -23,6 +24,14 @@ mod dialogs;
 mod navigation;
 
 const LABEL_PREFIX: &str = "miniq-browser-";
+
+/// The main window stacks child views in creation order. Overlay webviews keep
+/// this counter to notice when a browser view may have been attached above them.
+static CHILD_VIEW_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn child_view_generation() -> u64 {
+    CHILD_VIEW_GENERATION.load(Ordering::SeqCst)
+}
 
 /// One WKWebsiteDataStore shared by every embedded browser view (macOS 14+),
 /// so logins survive new tabs and restarts. Wry falls back to the default
@@ -760,6 +769,7 @@ pub fn open(
             initial_size(bounds),
         )
         .map_err(|error| error.to_string())?;
+    CHILD_VIEW_GENERATION.fetch_add(1, Ordering::SeqCst);
     #[cfg(target_os = "macos")]
     {
         let app = app.clone();

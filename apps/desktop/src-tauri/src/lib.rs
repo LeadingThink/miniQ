@@ -487,6 +487,7 @@ pub fn run() {
                 eprintln!("[miniq] could not install app menu: {error}");
             }
             setup_global_shortcut(app.handle());
+            context_usage_overlay::prewarm(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
