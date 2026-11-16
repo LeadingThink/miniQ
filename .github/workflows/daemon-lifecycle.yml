@@ -11,6 +11,7 @@ on:
       - 'crates/miniq-daemon/src/main.rs'
       - 'apps/desktop/src-tauri/src/daemon/**'
       - 'apps/desktop/src-tauri/src/daemon.rs'
+      - 'apps/desktop/scripts/prepare-ripgrep*'
       - 'apps/desktop/src-tauri/tauri.conf.json'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -34,9 +35,11 @@ jobs:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Test desktop bundle configuration
+      - name: Test bundled ripgrep preparation
         working-directory: apps/desktop
-        run: npm run test:desktop-bundle
+        run: |
+          npm run test:ripgrep
+          npm run prepare:ripgrep
       - name: Test native process identities, startup, shutdown and CLI integration
         run: cargo test --locked -p miniq-local -p miniq-cli
       - name: Test embedded terminal capabilities and native line editing
