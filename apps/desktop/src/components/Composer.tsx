@@ -60,6 +60,7 @@ import { useTouchComposerInput } from "../hooks/useTouchComposerInput";
 import { useDroppedFiles } from "../hooks/useDroppedFiles";
 import { usePastedInput } from "../hooks/usePastedInput";
 import { useAttachmentReads } from "../hooks/useAttachmentReads";
+import { parseBtwMessage } from "../sideConversation";
 import "./Composer.css";
 
 
@@ -142,6 +143,8 @@ export function ComposerCard(props: {
   approvalMode?: ApprovalMode;
   onApprovalModeChange?: (mode: ApprovalMode) => void;
   onSend: SendMessage;
+  /** Route /btw questions to the shell's existing side conversation. */
+  onSendSideMessage?: (content: string, attachments: string[]) => Promise<boolean>;
   onCancel?: () => void;
   onError?: (message: string) => void;
   /** Open a local attachment in the existing file workbench. */
@@ -541,7 +544,14 @@ export function ComposerCard(props: {
       await flushPendingTextEdits(paths);
       if (sendRequest.current !== request || sendBlockedRef.current) return;
       setWaitingUploads(false);
-      const accepted = pastedText
+      const sideMessage = parseBtwMessage(content);
+      if (sideMessage !== null && !props.onSendSideMessage) {
+        props.onError?.("先打开一个对话，再使用 /btw 侧边追问");
+        return;
+      }
+      const accepted = sideMessage !== null
+        ? await props.onSendSideMessage!(sideMessage, paths)
+        : pastedText
         ? await props.onSend(content, paths, goalMode, pastedText)
         : goalMode
           ? await props.onSend(content, paths, true)
@@ -809,7 +819,8 @@ export function ComposerCard(props: {
             }
           }}
           onKeyDown={(event) => {
-            if (slash.onKeyDown(event)) return;
+            const submittingBtw = event.key === "Enter" && parseBtwMessage(draft) !== null;
+            if (!submittingBtw && slash.onKeyDown(event)) return;
             if (mention.onKeyDown(event)) return;
             if (
               (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey &&

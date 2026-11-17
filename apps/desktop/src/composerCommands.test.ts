@@ -107,9 +107,17 @@ describe("composer app commands", () => {
     const commands = buildComposerSlashCommands(fixture(), {
       onRenameSession: vi.fn(),
     });
-    for (const id of ["pin", "archive", "rename", "distill", "review"]) {
+    for (const id of ["btw", "pin", "archive", "rename", "distill", "review"]) {
       expect(commands.some((item) => item.id === id)).toBe(false);
     }
+  });
+
+  it("offers /btw during the main task and inserts a question prefix", () => {
+    const app = withSession(fixture());
+    app.busy = true;
+    const btw = command(app, "btw");
+    expect(btw.disabled).not.toBe(true);
+    expect(btw.insertText).toBe("/btw ");
   });
 
   it("targets the current session for pin and archive actions", async () => {

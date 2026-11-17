@@ -49,6 +49,15 @@ function sessionCommands(
       app.feed.messages.some((message) => message.role === "assistant"));
   const commands: ComposerSlashCommand[] = [
     {
+      id: "btw",
+      name: "侧边追问",
+      description: "输入 /btw 问题，在侧边聊天中追问",
+      group: "会话",
+      keywords: ["btw", "side", "顺便问", "侧边聊天"],
+      icon: "context",
+      insertText: "/btw ",
+    },
+    {
       id: "pin",
       name: session.pinned ? "取消置顶" : "置顶会话",
       description: session.pinned

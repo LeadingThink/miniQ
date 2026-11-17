@@ -33,6 +33,8 @@ export interface ComposerSlashCommand {
 
 /** A standalone slash query, never a URL, absolute path or multiline message. */
 export function slashQuery(draft: string): string | null {
+  // Question text must reach normal submission, rather than the menu's Enter handler.
+  if (/^\/btw\s/i.test(draft)) return null;
   return /^\/[^/\n\r]*$/.test(draft) ? draft.slice(1) : null;
 }
 

@@ -53,7 +53,11 @@ export function MarkdownImage(props: {
       setError("图片路径无效");
       return;
     }
-    void readLocalFilePreview(path, workspacePath, JSON.parse(roots), { ...access, signal: controller.signal })
+    // Read the bytes even on remote clients: the Blob renderer needs content,
+    // rather than the signed-URL-only response used by media previews.
+    void readLocalFilePreview(path, workspacePath, JSON.parse(roots), {
+      ...access, signal: controller.signal, download: true,
+    }, access?.authorizedFiles ?? [])
       .then((file) => {
         if (cancelled) return;
         if (file.kind !== "image" && file.mimeType !== "image/svg+xml")

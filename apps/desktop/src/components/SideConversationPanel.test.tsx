@@ -41,15 +41,18 @@ afterEach(() => {
   delete (HTMLElement.prototype as Partial<HTMLElement>).releasePointerCapture;
 });
 
-const workspace = {
+const workspace: Workspace = {
   id: "workspace-current",
   name: "miniQ",
   path: "D:\\study\\miniQ",
-} as Workspace;
+  additionalPaths: [],
+  createdAt: "2026-11-16T00:00:00Z",
+  updatedAt: "2026-11-16T00:00:00Z",
+};
 
 function fixture() {
   const listeners = new Set<(event: DaemonEvent) => void>();
-  const session = { id: "side-session", workspaceId: workspace.id } as Session;
+  const session = { id: "side-session", workspaceId: workspace.id, workingDirectory: workspace.path } as Session;
   const fork: SessionForkInfo = {
     sessionId: session.id,
     parentSessionId: "main-session",
@@ -70,7 +73,7 @@ function fixture() {
     if (method === "session.fork") return session;
     if (method === "session.open") {
       opens += 1;
-      return opens === 1 ? { messages: [], fork } : { messages, fork };
+      return opens === 1 ? { session, messages: [], fork } : { session, messages, fork };
     }
     return {};
   });
