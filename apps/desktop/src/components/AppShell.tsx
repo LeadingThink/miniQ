@@ -64,7 +64,7 @@ import { SIDE_CHAT_OPEN_EVENT } from "../sessionMenuEvents";
 
 import { useAppWorkbench } from "../hooks/useAppWorkbench";
 import { AppWorkbench } from "./AppWorkbench";
-import { SideConversationPanel } from "./SideConversationPanel";
+import { SideConversationPanel, type SideConversationHandle } from "./SideConversationPanel";
 
 interface AppOnlyProps {
   app: MiniqAppController;
@@ -175,6 +175,7 @@ function AppOverlays({
 }
 
 interface WorkbenchPageProps extends AppOnlyProps {
+  onSendSideMessage: (content: string, attachments: string[]) => Promise<boolean>;
   slashCommands: ComposerSlashCommand[];
   onOpenFile: (target: LocalFileTarget) => void;
   onOpenUrl: (url: string) => void;
@@ -206,6 +207,7 @@ export function getSendBlockedReason(
 
 function SessionPage({
   app,
+  onSendSideMessage,
   slashCommands,
   onOpenFile,
   onOpenUrl,
@@ -438,6 +440,7 @@ function SessionPage({
           />
         }
         allowGoal
+        onSendSideMessage={onSendSideMessage}
         onSend={app.actions.sendMessage}
         onCancel={app.actions.cancelTurn}
         onOpenAttachment={(path) => {
@@ -454,6 +457,7 @@ function SessionPage({
 
 function MainPage({
   app,
+  onSendSideMessage,
   slashCommands,
   onOpenFile,
   onOpenUrl,
@@ -492,6 +496,7 @@ function MainPage({
       return app.catalog.currentSessionId ? (
         <SessionPage
           key={app.catalog.currentSessionId}
+          onSendSideMessage={onSendSideMessage}
           app={app}
           slashCommands={slashCommands}
           onOpenFile={onOpenFile}
@@ -529,6 +534,7 @@ export function AppShell({
     append: boolean;
   }>();
   const [sideConversationOpen, setSideConversationOpen] = useState(false);
+  const sideConversationRef = useRef<SideConversationHandle>(null);
   const [sideConversationSourceId, setSideConversationSourceId] = useState<
     string | null
   >(null);
@@ -606,6 +612,21 @@ export function AppShell({
   const toggleSideConversation = () => {
     if (sideConversationOpen) setSideConversationOpen(false);
     else openSideConversation();
+  };
+  const sendSideMessage = async (content: string, attachments: string[]) => {
+    const sourceSessionId = app.catalog.currentSessionId;
+    if (!sourceSessionId || !sideConversationRef.current) {
+      app.setError("先打开一个对话，再使用 /btw 侧边追问");
+      return false;
+    }
+    openSideConversation();
+    if (!content && attachments.length === 0) {
+      sideConversationRef.current.focus();
+      return true;
+    }
+    const accepted = await sideConversationRef.current.sendMessage({ sourceSessionId, content, attachments });
+    if (!accepted) app.setError("侧边追问未发送，请查看侧聊提示；主输入框草稿已保留");
+    return accepted;
   };
   const openSideConversationRef = useRef(openSideConversation);
   openSideConversationRef.current = openSideConversation;
@@ -700,6 +721,7 @@ export function AppShell({
         {active && (
           <MainPage
           app={app}
+          onSendSideMessage={sendSideMessage}
           slashCommands={slash.commands}
           onOpenUrl={workbench.openUrl}
           onOpenReview={() => workbench.select("review")}
@@ -716,6 +738,7 @@ export function AppShell({
       </div>
       {active && (
         <SideConversationPanel
+          ref={sideConversationRef}
           client={app.client}
           open={sideConversationOpen}
           workspace={

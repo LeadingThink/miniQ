@@ -27,6 +27,7 @@ import { splitMarkdownBlocks } from "../markdownBlocks";
 import { remarkQuotedFileLinks } from "../markdownFileLinks";
 import { fileReferenceAttributes, resolveMarkdownLinkTarget } from "../markdownLinkTarget";
 import { useLinkContextMenu } from "../hooks/useLinkContextMenu";
+import { useSessionFileAccess } from "../sessionFileAccess";
 
 function FileReference(props: {
   children: ReactNode;
@@ -201,8 +202,10 @@ export function Md(props: {
   onOpenFile?: (target: LocalFileTarget) => void;
   onOpenUrl?: (url: string) => void;
 }) {
-  const { workspacePath, referenceBasePath } = props;
   const allowLocalFiles = useContext(MarkdownLocalFilesContext);
+  const access = useSessionFileAccess();
+  const workspacePath = props.workspacePath ?? access?.workspacePath;
+  const referenceBasePath = props.referenceBasePath ?? workspacePath;
   const linkMenu = useLinkContextMenu(props);
   const callbacks = useRef({
     onOpenFile: props.onOpenFile,
@@ -222,11 +225,9 @@ export function Md(props: {
   );
   const hasFileHandler = Boolean(props.onOpenFile);
   const hasUrlHandler = Boolean(props.onOpenUrl);
-  const roots = props.previewAssets
-    ? JSON.stringify(props.previewAssets.workspacePaths)
-    : null;
+  const roots = JSON.stringify(props.previewAssets?.workspacePaths ?? access?.workspacePaths ?? []);
   const ImageRenderer = useMemo(() => {
-    if (!roots || !workspacePath || !referenceBasePath) return null;
+    if (!allowLocalFiles || !workspacePath || !referenceBasePath) return null;
     const workspacePaths: string[] = JSON.parse(roots);
     return function AssetImage({
       src,
@@ -244,7 +245,7 @@ export function Md(props: {
         />
       );
     };
-  }, [roots, workspacePath, referenceBasePath]);
+  }, [allowLocalFiles, roots, workspacePath, referenceBasePath]);
   // Stable event bridges still dispatch to the latest session's callbacks, so
   // the renderer configuration only changes with real rendering options.
   const options = useMemo((): MarkdownOptions => ({

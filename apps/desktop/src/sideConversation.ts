@@ -5,6 +5,12 @@ import type { Session } from "./types";
  *  three idle hours ends them. */
 export const SIDE_CONVERSATION_IDLE_MS = 3 * 60 * 60 * 1000;
 
+/** Only a leading standalone command routes a message away from the main chat. */
+export function parseBtwMessage(content: string): string | null {
+  const match = /^\/btw(?:\s+([\s\S]*))?$/i.exec(content.trim());
+  return match ? (match[1] ?? "").trim() : null;
+}
+
 const SIDE_CONVERSATION_STORAGE_PREFIX = "miniq.sideConversation.";
 
 export interface SideConversationState {
