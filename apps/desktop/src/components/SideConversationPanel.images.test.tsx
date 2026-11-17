@@ -28,8 +28,17 @@ it.each([false, true])("reads side-chat images with its own session and working 
   const call = vi.fn(async () => ({
     session: { id: "side", workspaceId: "w", workingDirectory: "/work/task" },
     messages: streaming ? [] : [{ id: "reply", sessionId: "side", role: "assistant", content: markdown, createdAt: "2026-11-16" }],
+    toolCalls: [], artifacts: [], plan: [], turnPlans: [], queue: [],
+    approvals: [], questions: [], streamingText: "", streamingReasoning: "",
+    turnProgress: null, goal: null, lastTurn: null, latestTurnTiming: null,
+    processSummaries: [],
   }));
-  const client = { mode: "remote", call, onEvent: (fn: typeof listener) => { listener = fn; return () => {}; } } as unknown as RpcClient;
+  const client = {
+    mode: "remote", call,
+    onEvent: (fn: typeof listener) => { listener = fn; return () => {}; },
+    onStatus: () => () => {},
+    onResync: () => () => {},
+  } as unknown as RpcClient;
   const workspace: Workspace = {
     id: "w", name: "工作区", path: "/work", additionalPaths: ["/attached"],
     createdAt: "2026-11-16T00:00:00Z", updatedAt: "2026-11-16T00:00:00Z",

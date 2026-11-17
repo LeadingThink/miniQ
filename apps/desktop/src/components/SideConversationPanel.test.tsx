@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DaemonEvent, Message, Session, SessionForkInfo, Workspace } from "../types";
+import type { DaemonEvent, Message, Question, Session, SessionForkInfo, Workspace } from "../types";
 import { SideConversationPanel } from "./SideConversationPanel";
 
 vi.mock("../runtime", () => ({ isTauriRuntime: () => true }));
@@ -50,6 +50,17 @@ const workspace: Workspace = {
   updatedAt: "2026-11-16T00:00:00Z",
 };
 
+function sideSnapshot(session: Session, overrides: Record<string, unknown> = {}) {
+  return {
+    session, messages: [],
+    toolCalls: [], artifacts: [], plan: [], turnPlans: [], queue: [],
+    approvals: [], questions: [], streamingText: "", streamingReasoning: "",
+    turnProgress: null, goal: null, lastTurn: null, latestTurnTiming: null,
+    processSummaries: [],
+    ...overrides,
+  };
+}
+
 function fixture() {
   const listeners = new Set<(event: DaemonEvent) => void>();
   const session = { id: "side-session", workspaceId: workspace.id, workingDirectory: workspace.path } as Session;
@@ -69,11 +80,12 @@ function fixture() {
     createdAt: new Date().toISOString(),
   }];
   let opens = 0;
+  const snapshot = (items: Message[]) => sideSnapshot(session, { messages: items, fork });
   const call = vi.fn(async (method: string) => {
     if (method === "session.fork") return session;
     if (method === "session.open") {
       opens += 1;
-      return opens === 1 ? { session, messages: [], fork } : { session, messages, fork };
+      return opens === 1 ? snapshot([]) : snapshot(messages);
     }
     return {};
   });
@@ -85,6 +97,8 @@ function fixture() {
         listeners.add(listener);
         return () => listeners.delete(listener);
       },
+      onStatus: () => () => {},
+      onResync: () => () => {},
     },
     emit: (event: DaemonEvent) => listeners.forEach((listener) => listener(event)),
   };
@@ -110,6 +124,10 @@ describe("SideConversationPanel", () => {
     }));
     expect(await screen.findByText("这是侧边聊天回复")).toBeTruthy();
     expect(await screen.findByText(/继承「主对话」/)).toBeTruthy();
+    expect(document.querySelector(".side-conversation-transcript .message-entry.assistant .bubble.assistant")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "重新生成" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "修改消息" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "复制消息" }).length).toBeGreaterThan(0);
   });
 
   it("sends attached images with the side message", async () => {
@@ -214,6 +232,84 @@ describe("SideConversationPanel", () => {
     expect((screen.getByRole("textbox", { name: "侧边聊天内容" }) as HTMLTextAreaElement).disabled).toBe(true);
     expect(screen.getByText("先在主对话里打开一个会话。")).toBeTruthy();
   });
+
+  it("renders model questions through the shared transcript and resolves them", async () => {
+    const session = { id: "side-session", workspaceId: workspace.id, workingDirectory: workspace.path, status: "running" } as Session;
+    const question: Question = {
+      id: "question-1", sessionId: session.id, toolCallId: "tool-1",
+      prompt: "选择哪种方案？", header: "确认方案", options: [], multiSelect: false,
+      createdAt: new Date().toISOString(),
+    };
+    const listeners = new Set<(event: DaemonEvent) => void>();
+    const call = vi.fn(async (method: string) => method === "session.open"
+      ? sideSnapshot(session, { questions: [question] })
+      : {});
+    const client = {
+      call,
+      onEvent: (listener: (event: DaemonEvent) => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      onStatus: () => () => {},
+      onResync: () => () => {},
+    };
+    localStorage.setItem("miniq.sideConversation.local", JSON.stringify({
+      sessionId: session.id, workspaceId: workspace.id, sourceSessionId: "main-session", lastActivityAt: Date.now(),
+    }));
+    render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session" onClose={() => {}} />);
+
+    expect(await screen.findByText("选择哪种方案？")).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "你的回答" }), { target: { value: "第二种方案" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "确认回答" })));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("question.resolve", {
+      questionId: "question-1", answer: "第二种方案",
+    }));
+  });
+
+  it("renders pending approvals and resolves them", async () => {
+    const session = { id: "side-session", workspaceId: workspace.id, workingDirectory: workspace.path, status: "running" } as Session;
+    const approval = {
+      id: "approval-1", sessionId: session.id, toolCallId: "tool-1", status: "pending",
+      createdAt: new Date().toISOString(), riskLevel: "medium", reason: "需要读取工作区文件",
+    };
+    const listeners = new Set<(event: DaemonEvent) => void>();
+    const call = vi.fn(async (method: string) => method === "session.open"
+      ? sideSnapshot(session, { approvals: [{ approval, toolName: "shell_run", input: { command: "ls" } }] })
+      : {});
+    const client = {
+      call,
+      onEvent: (listener: (event: DaemonEvent) => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      onStatus: () => () => {},
+      onResync: () => () => {},
+    };
+    localStorage.setItem("miniq.sideConversation.local", JSON.stringify({
+      sessionId: session.id, workspaceId: workspace.id, sourceSessionId: "main-session", lastActivityAt: Date.now(),
+    }));
+    render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session" onClose={() => {}} />);
+
+    expect(await screen.findByRole("region", { name: "待审批操作" })).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "允许一次" })));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("approval.resolve", {
+      approvalId: "approval-1", decision: "approve",
+    }));
+  });
+
+  it("carries the active file preview into the side message", async () => {
+    const { client, call } = fixture();
+    const currentFilePath = "D:\\study\\miniQ\\report.md";
+    render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session"
+      currentFilePath={currentFilePath} onClose={() => {}} />);
+
+    expect(await screen.findByText("report.md")).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "侧边聊天内容" }), { target: { value: "看看当前文件里的图片" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送侧边聊天" }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("session.sendMessage", expect.objectContaining({
+      message: expect.objectContaining({ attachments: [currentFilePath] }),
+    })));
+  });
 });
 
 
@@ -228,12 +324,12 @@ it("streams side-chat thinking and replaces it with a durable message", async ()
     emit({ type: "session_status_changed", sessionId: "side-session", status: "running" });
     emit({ type: "assistant_reasoning_delta", sessionId: "side-session", messageId: "next", delta: "比较两个方案" });
   });
-  expect(screen.getByRole("region", { name: "思考内容" }).textContent).toBe("比较两个方案");
+  await waitFor(() => expect(screen.getByRole("region", { name: "思考内容" }).textContent).toBe("比较两个方案"));
   act(() => emit({ type: "message_created", sessionId: "side-session", message: {
     id: "next", sessionId: "side-session", role: "assistant", content: "已完成比较", reasoning: "比较两个方案", createdAt: "2026-11-06",
   } }));
-  expect(screen.getByText("已完成比较")).toBeTruthy();
-  const toggle = screen.getByRole("button", { name: "深度思考" });
+  expect(await screen.findByText("已完成比较")).toBeTruthy();
+  const toggle = await screen.findByRole("button", { name: "深度思考" });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(toggle);
   expect(screen.getByRole("region", { name: "思考内容" }).textContent).toBe("比较两个方案");

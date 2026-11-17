@@ -745,6 +745,9 @@ export function AppShell({
             app.catalog.currentWorkspace ?? app.catalog.selectedWorkspace
           }
           sourceSessionId={sideConversationSourceId}
+          currentFilePath={app.preview.state.open ? app.preview.state.target?.path ?? null : null}
+          onOpenFile={workbench.openFile}
+          onOpenUrl={workbench.openUrl}
           onClose={() => setSideConversationOpen(false)}
         onSideSessionChange={async (sessionId) => {
           setSideConversationSessionId(sessionId);

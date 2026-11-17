@@ -25,7 +25,13 @@ it("opens the real side chat from /btw and sends against the current main sessio
   const side = { id: "side", workspaceId: "w", workingDirectory: "/work", title: "侧聊", status: "idle" };
   const call = vi.fn(async (method: string) => {
     if (method === "session.fork") return side;
-    if (method === "session.open") return { session: side, messages: [] };
+    if (method === "session.open") return {
+      session: side, messages: [],
+      toolCalls: [], artifacts: [], plan: [], turnPlans: [], queue: [],
+      approvals: [], questions: [], streamingText: "", streamingReasoning: "",
+      turnProgress: null, goal: null, lastTurn: null, latestTurnTiming: null,
+      processSummaries: [],
+    };
     if (method === "agent.list") return { agents: [] };
     if (method === "skill.list") return { skills: [] };
     return {};

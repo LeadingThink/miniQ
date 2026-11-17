@@ -88,8 +88,20 @@ it("sends through the real side panel, reuses its session, and preserves its dra
   const ref = createRef<SideConversationHandle>();
   let listener = (_event: DaemonEvent) => {};
   const session = { id: "side", workspaceId: "w", workingDirectory: "/work" };
-  const call = vi.fn(async (method: string) => method === "session.fork" ? session : { session, messages: [] });
-  const client = { call, onEvent: (fn: typeof listener) => { listener = fn; return () => {}; } } as unknown as RpcClient;
+  const snapshot = {
+    session, messages: [],
+    toolCalls: [], artifacts: [], plan: [], turnPlans: [], queue: [],
+    approvals: [], questions: [], streamingText: "", streamingReasoning: "",
+    turnProgress: null, goal: null, lastTurn: null, latestTurnTiming: null,
+    processSummaries: [],
+  };
+  const call = vi.fn(async (method: string) => method === "session.fork" ? session : snapshot);
+  const client = {
+    call,
+    onEvent: (fn: typeof listener) => { listener = fn; return () => {}; },
+    onStatus: () => () => {},
+    onResync: () => () => {},
+  } as unknown as RpcClient;
   const workspace: Workspace = { id: "w", path: "/work", name: "项目", additionalPaths: [], createdAt: "now", updatedAt: "now" };
   render(<SideConversationPanel ref={ref} client={client} open workspace={workspace} sourceSessionId="main" onClose={() => {}} />);
   const input = screen.getByRole<HTMLTextAreaElement>("textbox");

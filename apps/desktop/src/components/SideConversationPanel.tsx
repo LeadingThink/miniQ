@@ -1,9 +1,11 @@
-import { ArrowUp, Loader2, MessageSquareText, Paperclip, Trash2, X } from "lucide-react";
-import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { ArrowUp, FileText, Loader2, MessageSquareText, Paperclip, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { canSendComposer } from "../composerInput";
 import { errorMessage } from "../errorMessage";
 import { useDroppedFiles } from "../hooks/useDroppedFiles";
-import { savePastedFile } from "../localFiles";
+import { useSessionFeed, type LoadedSessionFeed } from "../hooks/useSessionFeed";
+import { savePastedFile, type LocalFileTarget } from "../localFiles";
+import { groupTimeline, createTimelineItemsWithArtifacts } from "../timelineModel";
 import { isTauriRuntime } from "../runtime";
 import { SessionFileAccess } from "../sessionFileAccess";
 import type { RpcClient } from "../rpc";
@@ -11,9 +13,8 @@ import { createSideConversationState, clearStoredSideConversation, EMPTY_SIDE_CO
 import type { Message, Session, SessionForkInfo, Workspace } from "../types";
 import { uploadRemoteFile } from "../remoteTransfer";
 import { AttachmentPreview } from "./AttachmentPreview";
-import { MessageAttachmentPreview } from "./MessageAttachmentPreview";
-import { Md } from "./Md";
-import { DeepThinking } from "./DeepThinking";
+import { PendingApprovalBar } from "./PendingApprovalBar";
+import { TimelineEntries } from "./TimelineEntries";
 import { WorkbenchResizer } from "./WorkbenchResizer";
 import "./SideConversationPanel.css";
 
@@ -23,6 +24,10 @@ interface Props {
   open: boolean;
   workspace: Workspace | null;
   sourceSessionId: string | null;
+  /** Active file preview, automatically carried into side-chat messages. */
+  currentFilePath?: string | null;
+  onOpenFile?: (target: LocalFileTarget) => void;
+  onOpenUrl?: (url: string) => void;
   onClose: () => void;
   onSideSessionChange?: (sessionId: string | null) => void | Promise<void>;
   idleMs?: number;
@@ -33,7 +38,7 @@ export interface SideConversationHandle {
   focus: () => void;
 }
 
-interface SessionSnapshot { session: Session; messages: Message[]; streamingText?: string; streamingReasoning?: string; fork?: SessionForkInfo }
+interface SessionSnapshot extends LoadedSessionFeed { session: Session; fork?: SessionForkInfo }
 
 const SIDE_WIDTH_KEY = "miniq.sideConversationWidth";
 const SIDE_WIDTH_DEFAULT = 380;
@@ -52,14 +57,17 @@ function uniquePaths(current: string[], incoming: string[]): string[] {
   return [...new Set([...current, ...incoming])];
 }
 
-export function SideConversationPanel({ ref, client, open, workspace, sourceSessionId, onClose, onSideSessionChange, idleMs = SIDE_CONVERSATION_IDLE_MS }: Props) {
+function fileName(path: string): string {
+  return path.split(/[\\/]/).at(-1) || path;
+}
+
+export function SideConversationPanel({ ref, client, open, workspace, sourceSessionId, currentFilePath, onOpenFile, onOpenUrl, onClose, onSideSessionChange, idleMs = SIDE_CONVERSATION_IDLE_MS }: Props) {
   const [conversation, setConversation] = useState<SideConversationState>(EMPTY_SIDE_CONVERSATION);
   const [sideSession, setSideSession] = useState<Session | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [streamingText, setStreamingText] = useState("");
-  const [streamingReasoning, setStreamingReasoning] = useState("");
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
+  const [contextFiles, setContextFiles] = useState<string[]>(() => currentFilePath ? [currentFilePath] : []);
+  const [pendingMessage, setPendingMessage] = useState<Message | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forkInfo, setForkInfo] = useState<SessionForkInfo | null>(null);
@@ -70,6 +78,8 @@ export function SideConversationPanel({ ref, client, open, workspace, sourceSess
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
+  const contextFilesRef = useRef(contextFiles);
+  contextFilesRef.current = contextFiles;
   const busyRef = useRef(busy);
   busyRef.current = busy;
   const fileInput = useRef<HTMLInputElement>(null);
@@ -77,19 +87,66 @@ export function SideConversationPanel({ ref, client, open, workspace, sourceSess
   const workspacePaths = useMemo(() => workspace
     ? [workspace.path, ...workspace.additionalPaths]
     : [], [workspace]);
+  const noRefresh = useCallback(async () => {}, []);
+  const onFeedStatus = useCallback((sessionId: string, status: Session["status"]) => {
+    if (sessionId !== conversationRef.current.sessionId) return;
+    busyRef.current = status === "running" || status === "cancelling";
+    setBusy(busyRef.current);
+  }, []);
+  const refreshRef = useRef<(sessionId: string) => Promise<void>>(async () => {});
+  const onFeedCompleted = useCallback((sessionId: string) => {
+    if (sessionId !== conversationRef.current.sessionId) return;
+    busyRef.current = false;
+    setBusy(false);
+    void refreshRef.current(sessionId).catch((cause) => setError(errorMessage(cause)));
+  }, []);
+  const onFeedError = useCallback((sessionId: string, message: string | null) => {
+    if (sessionId === conversationRef.current.sessionId && message) setError(message);
+  }, []);
+  const feed = useSessionFeed({
+    client,
+    currentSessionId: conversation.sessionId,
+    refreshSessions: noRefresh,
+    onSessionStatusChanged: onFeedStatus,
+    onSessionCompleted: onFeedCompleted,
+    onError: onFeedError,
+  });
+  const feedRef = useRef(feed);
+  feedRef.current = feed;
+  const feedSession = useRef<string | null>(null);
+  const contextSeed = useRef<string | null>(currentFilePath ?? null);
   useEffect(() => {
     if (open) textareaRef.current?.focus();
   }, [open]);
 
+  useEffect(() => {
+    const previous = contextSeed.current;
+    if (previous && previous !== currentFilePath) {
+      setContextFiles((files) => files.filter((file) => file !== previous));
+    }
+    contextSeed.current = currentFilePath ?? null;
+    if (currentFilePath) {
+      setContextFiles((files) => files.includes(currentFilePath) ? files : [...files, currentFilePath]);
+    }
+  }, [currentFilePath]);
+
   const refresh = async (sessionId: string) => {
     const snapshot = await client.call<SessionSnapshot>("session.open", { sessionId, limit: 50, view: "visible" });
     if (conversationRef.current.sessionId !== sessionId) return;
+    const changedSession = feedSession.current !== sessionId;
+    if (changedSession) {
+      feedSession.current = sessionId;
+      feedRef.current.reset(sessionId);
+    }
+    feedRef.current.load(sessionId, snapshot);
     setSideSession(snapshot.session);
-    setMessages(snapshot.messages ?? []);
-    setStreamingText(snapshot.streamingText ?? "");
-    setStreamingReasoning(snapshot.streamingReasoning ?? "");
+    const running = snapshot.session.status === "running" || snapshot.session.status === "cancelling";
+    if (running) busyRef.current = true;
+    else if (changedSession || !busyRef.current) busyRef.current = false;
+    setBusy(busyRef.current);
     if (snapshot.fork) setForkInfo(snapshot.fork);
   };
+  refreshRef.current = refresh;
   const release = async () => {
     const current = conversationRef.current;
     if (!current.sessionId) return;
@@ -98,38 +155,12 @@ export function SideConversationPanel({ ref, client, open, workspace, sourceSess
       conversationRef.current = released;
       setConversation(released);
       setSideSession(null);
-      setMessages([]); setStreamingText(""); setStreamingReasoning(""); setBusy(false); setError(null); setForkInfo(null); setAttachments([]);
+      feedSession.current = null;
+      feedRef.current.reset(null);
+      setPendingMessage(null); setBusy(false); setError(null); setForkInfo(null); setAttachments([]);
       await onSideSessionChange?.(null);
     } catch (cause) { setError(errorMessage(cause)); }
   };
-
-  // Hiding the panel, switching main conversations or quitting must not delete the
-  // side chat: only the delete button or the idle deadline ends it.
-  useEffect(() => client.onEvent((event) => {
-    const sessionId = conversationRef.current.sessionId;
-    if (!sessionId) return;
-    if ("sessionId" in event && event.sessionId === sessionId) {
-      if (event.type === "assistant_delta") setStreamingText((text) => text + event.delta);
-      if (event.type === "assistant_replaced") setStreamingText(event.text);
-      if (event.type === "assistant_reasoning_delta") setStreamingReasoning((text) => text + event.delta);
-      if (event.type === "assistant_reasoning_replaced") setStreamingReasoning(event.text);
-      if (event.type === "message_created") {
-        setMessages((messages) => messages.some((message) => message.id === event.message.id) ? messages : [...messages, event.message]);
-        if (event.message.role === "assistant") { setStreamingText(""); setStreamingReasoning(""); }
-      }
-    }
-    if (event.type === "session_status_changed") {
-      if (event.sessionId !== sessionId) return;
-      busyRef.current = event.status === "running" || event.status === "cancelling";
-      setBusy(busyRef.current);
-    }
-    if (event.type === "turn_completed" || event.type === "turn_failed") {
-      if (event.sessionId !== sessionId) return;
-      busyRef.current = false;
-      setBusy(false);
-      void refresh(sessionId).catch((cause) => setError(errorMessage(cause)));
-    }
-  }), [client]);
 
   // Expired records are cleaned even when the panel never reopens, so abandoned
   // side sessions cannot pile up on the desktop.
@@ -153,6 +184,9 @@ export function SideConversationPanel({ ref, client, open, workspace, sourceSess
       conversationRef.current = EMPTY_SIDE_CONVERSATION;
       setConversation(EMPTY_SIDE_CONVERSATION);
       setSideSession(null);
+      feedSession.current = null;
+      feedRef.current.reset(null);
+      setPendingMessage(null);
       onSideSessionChange?.(null);
     });
   }, [client, storageKey, open]);
@@ -214,11 +248,11 @@ export function SideConversationPanel({ ref, client, open, workspace, sourceSess
 
   const sendMessage = async (content: string, files: string[], source: string | null): Promise<boolean> => {
     if (busyRef.current) { setError("侧边聊天正在处理，请稍后重试"); return false; }
-    if (!canSendComposer(content, files) || !workspace) return false;
+    const outgoingFiles = uniquePaths(files, contextFilesRef.current);
+    if (!canSendComposer(content, outgoingFiles) || !workspace) return false;
     if (!source) { setError("先打开一个对话，再开始侧边聊天"); return false; }
     busyRef.current = true;
     setBusy(true); setError(null);
-    let optimisticId: string | null = null;
     try {
       let current = conversationRef.current;
       if (!current.sessionId) {
@@ -238,21 +272,22 @@ export function SideConversationPanel({ ref, client, open, workspace, sourceSess
         setConversation(current);
         setSideSession(session);
         onSideSessionChange?.(session.id);
-        const snapshot = await client.call<SessionSnapshot>("session.open", { sessionId: session.id, limit: 50, view: "visible" });
-        if (snapshot.fork) setForkInfo(snapshot.fork);
+        await refresh(session.id);
       }
       const optimistic: Message = { id: `side-user-${Date.now()}`, sessionId: current.sessionId!, role: "user", content, createdAt: new Date().toISOString() };
-      optimisticId = optimistic.id;
-      setMessages((items) => [...items, optimistic]);
-      await client.call("session.sendMessage", { sessionId: current.sessionId, message: { role: "user", content, attachments: files }, rejectIfBusy: true });
+      busyRef.current = true;
+      setBusy(true);
+      setPendingMessage(optimistic);
+      await client.call("session.sendMessage", { sessionId: current.sessionId, message: { role: "user", content, attachments: outgoingFiles }, rejectIfBusy: true });
       const activeConversation = { ...current, lastActivityAt: Date.now() };
       conversationRef.current = activeConversation;
       setConversation(activeConversation);
       // Once accepted, a snapshot failure must not invite resending the same question.
       await refresh(current.sessionId!).catch((cause) => setError(errorMessage(cause)));
+      setPendingMessage(null);
       return true;
     } catch (cause) {
-      if (optimisticId) setMessages((items) => items.filter((item) => item.id !== optimisticId));
+      setPendingMessage(null);
       busyRef.current = false;
       setBusy(false); setError(errorMessage(cause));
       return false;
@@ -266,9 +301,36 @@ export function SideConversationPanel({ ref, client, open, workspace, sourceSess
   };
 
   useImperativeHandle(ref, () => ({
-    sendMessage: (request) => sendMessage(request.content, request.attachments, request.sourceSessionId),
+    sendMessage: (request) => sendMessage(
+      request.content,
+      uniquePaths(request.attachments, contextFilesRef.current),
+      request.sourceSessionId,
+    ),
     focus: () => textareaRef.current?.focus(),
   }));
+
+  const pendingVisible = pendingMessage && !feed.messages.some((message) =>
+    message.role === "user" &&
+    message.content === pendingMessage.content &&
+    message.createdAt >= pendingMessage.createdAt
+  ) ? pendingMessage : null;
+  useEffect(() => {
+    if (pendingMessage && !pendingVisible) setPendingMessage(null);
+  }, [pendingMessage, pendingVisible]);
+  const messages = useMemo(
+    () => pendingVisible ? [...feed.messages, pendingVisible] : feed.messages,
+    [feed.messages, pendingVisible],
+  );
+  const items = useMemo(
+    () => groupTimeline(createTimelineItemsWithArtifacts(messages, feed.toolCalls, feed.artifacts)),
+    [messages, feed.toolCalls, feed.artifacts],
+  );
+  const resolveQuestion = async (questionId: string, answer: string) => {
+    await client.call("question.resolve", { questionId, answer });
+  };
+  const resolveApproval = async (approvalId: string, decision: string) => {
+    await client.call("approval.resolve", { approvalId, decision });
+  };
 
   const commitWidth = (nextWidth: number) => {
     setDragWidth(null);
@@ -301,34 +363,58 @@ export function SideConversationPanel({ ref, client, open, workspace, sourceSess
         <button type="button" aria-label="关闭侧边聊天" title="关闭" onClick={onClose}><X size={17} /></button>
       </span>
     </header>
-    <p className="side-conversation-context" title={workspace?.path}>
+    <p className="side-conversation-context" title={workspacePath ?? workspace?.path}>
       {workspace
-        ? `${workspace.name} · ${forkInfo?.parentTitle ? `继承「${forkInfo.parentTitle}」` : "继承主对话上下文"}`
+        ? `${workspace.name} · 工作目录：${workspacePath ?? workspace.path}${forkInfo?.parentTitle ? ` · 继承「${forkInfo.parentTitle}」` : ""}`
         : "请先选择项目"}
     </p>
     <div className="side-conversation-messages" aria-live="polite">
-      {messages.length === 0 && !streamingText && !streamingReasoning && <p className="side-conversation-empty">
+      {messages.length === 0 && !feed.streamingText && !feed.streamingReasoning && <p className="side-conversation-empty">
         {forkInfo
           ? `已继承 ${forkInfo.inheritedMessageCount} 条上下文，可以开始追问。`
           : sourceSessionId ? "可在这里快速追问，不打断主会话。" : "先在主对话里打开一个会话。"}
       </p>}
-      {messages.filter((message) => message.role === "user" || message.role === "assistant").map((message) => <article key={message.id} data-role={message.role}>
-        <span>{message.role === "user" ? "你" : "miniQ"}</span>
-        {message.role === "assistant" && <DeepThinking text={message.reasoning} />}<Md workspacePath={workspacePath}>{message.content}</Md>
-        {!!message.attachments?.length && (
-          <div className="message-attachments">
-            {message.attachments.map((attachment) => (
-              <MessageAttachmentPreview key={attachment.path} attachment={attachment} />
-            ))}
-          </div>
-        )}
-      </article>)}
-      {(streamingText || streamingReasoning) && <article data-role="assistant"><span>miniQ</span>
-        <DeepThinking text={streamingReasoning} streaming={busy && !streamingText} /><Md workspacePath={workspacePath} streaming>{streamingText}</Md></article>}
-      {busy && <p className="side-conversation-running" role="status"><Loader2 size={14} /> 正在处理</p>}
+      <div className="side-conversation-transcript">
+        <TimelineEntries
+          compact
+          client={client}
+          items={items}
+          messages={messages}
+          goal={feed.goal}
+          expandGroups
+          onError={setError}
+          questions={feed.questions}
+          turnPlans={feed.turnPlans}
+          streamingText={feed.streamingText}
+          streamingReasoning={feed.streamingReasoning}
+          latestTurnTiming={feed.latestTurnTiming}
+          busy={busy}
+          progress={feed.turnProgress}
+          onResolveQuestion={resolveQuestion}
+          onRollback={() => undefined}
+          onOpenFile={onOpenFile ?? (() => undefined)}
+          onOpenAttachment={onOpenFile}
+          onOpenUrl={onOpenUrl ?? (() => undefined)}
+          onRewrite={async () => false}
+          workspacePath={workspacePath}
+          workspacePaths={workspacePaths}
+        />
+      </div>
+      {feed.questions.length > 0
+        ? <p className="side-conversation-running" role="status"><MessageSquareText size={14} /> 等待回答</p>
+        : busy && <p className="side-conversation-running" role="status"><Loader2 size={14} /> 正在处理</p>}
     </div>
+    <PendingApprovalBar approvals={feed.approvals} onResolve={resolveApproval} />
     {error && <p className="side-conversation-error" role="alert">{error}</p>}
     <form onSubmit={(event) => { event.preventDefault(); void send(); }}>
+      {contextFiles.length > 0 && <div className="attach-row side-conversation-context-files" aria-label="随消息发送的上下文文件">
+        {contextFiles.map((path) => <span key={path} className="side-conversation-context-file" title={path}>
+          <FileText size={12} aria-hidden="true" />
+          <span>{fileName(path)}</span>
+          <button type="button" aria-label={`移除上下文文件 ${fileName(path)}`} title="移除上下文文件"
+            onClick={() => setContextFiles((files) => files.filter((file) => file !== path))}><X size={12} /></button>
+        </span>)}
+      </div>}
       {attachments.length > 0 && <div className="attach-row">
         {attachments.map((path) => <AttachmentPreview key={path} path={path} sending={busy} onRemove={() => setAttachments((items) => items.filter((item) => item !== path))} />)}
       </div>}

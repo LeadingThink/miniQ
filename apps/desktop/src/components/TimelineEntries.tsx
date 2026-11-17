@@ -134,6 +134,8 @@ export function TimelineEntries(props: {
   showActivity?: boolean;
   progress?: TurnProgress | null;
   busy: boolean;
+  /** Side chats reuse this transcript without main-session editing or fork actions. */
+  compact?: boolean;
   onResolveQuestion: TimelineProps["onResolveQuestion"];
   onRollback: TimelineProps["onRollback"];
   onOpenFile: TimelineProps["onOpenFile"];
@@ -315,7 +317,7 @@ export function TimelineEntries(props: {
     listRef,
     keys: turnKeys,
     // Search and filter results are short and stepped through element by element.
-    enabled: !props.expandGroups && turns.length >= WINDOW_MIN_TURNS,
+    enabled: !props.compact && !props.expandGroups && turns.length >= WINDOW_MIN_TURNS,
   });
   const windowState = useRef({ turns, turnWindow, processes });
   windowState.current = { turns, turnWindow, processes };
@@ -482,13 +484,13 @@ export function TimelineEntries(props: {
               <div className="message-footer">
                 <MessageTime at={item.message.createdAt} />
                 <div className="message-actions">
-                  {item.message.id === goalMessageId && (
+                  {!props.compact && item.message.id === goalMessageId && (
                     <span className="message-goal-marker">
                       <Target size={13} aria-hidden="true" />
                       设为目标
                     </span>
                   )}
-                  {editingMessageId === item.message.id ? (
+                  {!props.compact && editingMessageId === item.message.id ? (
                     <>
                       <button
                         type="button"
@@ -524,7 +526,7 @@ export function TimelineEntries(props: {
                         content={item.message.content}
                         onError={bridge.reportError}
                       />
-                      {hasRewrite && <button
+                      {!props.compact && hasRewrite && <button
                         type="button"
                         className="msg-action"
                         title="修改消息"
@@ -604,7 +606,8 @@ export function TimelineEntries(props: {
                     content={item.message.content}
                     onError={bridge.reportError}
                   />
-                      {props.client &&
+                      {!props.compact &&
+                        props.client &&
                         item.message.sessionId &&
                         !runningTurnMessageIds?.has(item.message.id) && (
                     <button
@@ -629,7 +632,7 @@ export function TimelineEntries(props: {
                       <ScanSearch size={15} />
                     </button>
                   )}
-                  {props.client && canSpeak && (
+                  {!props.compact && props.client && canSpeak && (
                     <SpeakButton
                       client={props.client}
                       text={item.message.content}
@@ -637,7 +640,7 @@ export function TimelineEntries(props: {
                       onError={bridge.reportError}
                     />
                   )}
-                  {hasRewrite && <button
+                  {!props.compact && hasRewrite && <button
                     type="button"
                     className="msg-action"
                     title="重新生成"
@@ -652,7 +655,7 @@ export function TimelineEntries(props: {
                   >
                     <RefreshCw size={15} />
                   </button>}
-                  {hasFork && (
+                  {!props.compact && hasFork && (
                     <button
                       type="button"
                       className="msg-action"
@@ -683,7 +686,8 @@ export function TimelineEntries(props: {
                 </div>
                   </div>
                 )}
-                {finalReply &&
+                {!props.compact &&
+                  finalReply &&
                   props.client &&
                   reviewTarget &&
                   reviewTarget.messageId === item.message.id &&
@@ -715,9 +719,9 @@ export function TimelineEntries(props: {
         ) : (
             <ToolSegment
               calls={item.calls}
-              expanded={props.expandGroups}
+              expanded={props.compact ? false : props.expandGroups}
               client={props.client}
-              onRollback={bridge.rollback}
+              onRollback={props.compact ? undefined : bridge.rollback}
             />
         )}
         </Fragment>
@@ -747,12 +751,14 @@ export function TimelineEntries(props: {
             )
         : undefined;
       const changes =
+        !props.compact &&
         turn.userMessageId &&
         !(isLast && props.busy) &&
         turnHasFileWrites(turn, stats) ? (
           <TurnChangesCard turnId={turn.userMessageId} />
         ) : null;
       const collapse =
+        !props.compact &&
         settled &&
         !props.expandGroups &&
         (process.length > 0 ||
@@ -760,7 +766,9 @@ export function TimelineEntries(props: {
           planNode !== null ||
           changes !== null);
       const live =
-        settled || props.expandGroups ? undefined : liveTurnContent(turn);
+        settled || props.expandGroups || props.compact
+          ? undefined
+          : liveTurnContent(turn);
       const separatorAt = props.expandGroups
         ? undefined
         : separators.get(turn.key);
@@ -833,6 +841,7 @@ export function TimelineEntries(props: {
     props.workspacePath,
     props.workspacePaths,
     props.expandGroups,
+    props.compact,
     props.client,
     editingMessageId,
     draft,
