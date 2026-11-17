@@ -131,6 +131,8 @@ export function ComposerCard(props: {
   onVoiceFocusApplied?: (id: number) => void;
   /** Persist unsent drafts under this key (restored on remount). */
   draftKey?: string;
+  /** Cloud chat can reuse the input without offering local file attachments. */
+  attachmentsEnabled?: boolean;
   /** Replace the draft on an explicit user-selected starter action. */
   draftRequest?: { id: number; content?: string; context?: DraftContext; append?: boolean };
   onDraftRequestApplied?: () => void;
@@ -165,7 +167,7 @@ export function ComposerCard(props: {
   const remoteUploadKey = props.sessionId ? `session:${props.sessionId}` : props.workspaceId ? `workspace:${props.workspaceId}` : "";
   const uploadScope = useRef({ client: props.client, scopeKey: remoteUploadKey, draftKey: props.draftKey });
   uploadScope.current = { client: props.client, scopeKey: remoteUploadKey, draftKey: props.draftKey };
-  const canAttach = isTauriRuntime() || !!remoteHost;
+  const canAttach = props.attachmentsEnabled !== false && (isTauriRuntime() || !!remoteHost);
   const [remoteAttachment, setRemoteAttachmentState] = useState(false);
   const remoteAttachmentRef = useRef(remoteAttachment);
   const setRemoteAttachment = (value: typeof remoteAttachment) => {
@@ -394,6 +396,7 @@ export function ComposerCard(props: {
     }
   };
   const receiveDroppedFiles = (paths: string[]) => {
+    if (props.attachmentsEnabled === false) { props.onError?.("此会话暂不支持上传附件"); return; }
     if (remoteHost) void uploadFiles({ paths: [...new Set(paths)] });
     else addAttachments(paths);
   };
@@ -421,6 +424,7 @@ export function ComposerCard(props: {
   /** Uploads remote clipboard files or saves local files before attaching. */
   const attachPastedFiles = async (files: File[]) => {
     if (sendingRef.current || files.length === 0) return;
+    if (props.attachmentsEnabled === false) { props.onError?.("此会话暂不支持上传附件"); return; }
     if (remoteHost) {
       await uploadFiles(files);
       return;
@@ -478,7 +482,7 @@ export function ComposerCard(props: {
   const receivePastedText = (text: string) => {
     const normalized = sanitizeTextInput(text.replace(/\r\n?/g, "\n")).value;
     if (!normalized.trim()) return;
-    if (isLargePaste(normalized)) {
+    if (isLargePaste(normalized) && props.attachmentsEnabled !== false) {
       void attachPastedFiles([
         new File([normalized], "已粘贴的文本.txt", {
           type: "text/plain;charset=utf-8",

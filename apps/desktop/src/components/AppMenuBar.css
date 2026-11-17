@@ -28,7 +28,60 @@
   font-weight: 650;
   letter-spacing: -0.025em;
 }
-.app-menubar-brand img { width: 24px; height: 24px; object-fit: contain; }
+.app-menubar .platform-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 9px 0 6px;
+  border-radius: 9px;
+  color: var(--text);
+  cursor: pointer;
+}
+.platform-switcher > img { width: 24px; height: 24px; object-fit: contain; flex-shrink: 0; }
+.platform-switcher > svg { color: var(--text-mid); }
+.app-menubar .platform-switcher[aria-expanded="true"] { background: var(--bg-hover); }
+.platform-switcher-menu.ui-menu {
+  box-sizing: border-box;
+  width: 260px;
+  min-width: 0;
+  max-width: calc(100vw - 16px);
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 14%);
+}
+.platform-switcher-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 13px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.platform-switcher-menu button:hover,
+.platform-switcher-menu button:focus-visible { background: var(--bg-hover); }
+.platform-switcher-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.platform-switcher-menu button > span { display: grid; gap: 4px; }
+.platform-switcher-menu button > svg { flex-shrink: 0; color: var(--text-mid); }
+.platform-switcher-menu strong { font-size: 15px; font-weight: 500; line-height: 1.35; }
+.platform-switcher-menu small { color: var(--text-mid); font-size: 12px; line-height: 1.4; }
+.platform-switcher-user {
+  margin: 5px 13px 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+  color: var(--text-mid);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
 .app-menubar-nav { display: flex; align-items: center; gap: 2px; }
 .app-menubar button { border: 0; background: transparent; color: inherit; font: inherit; }
 .app-menubar .app-menubar-trigger { height: 30px; padding: 0 12px; border-radius: 5px; font-size: 13px; }
@@ -43,5 +96,5 @@
 .window-controls button { display: grid; place-items: center; width: 46px; border-radius: 0; }
 .window-controls .window-close:hover { background: #c42b1c; color: #fff; }
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
-  .app-menubar, .app-menubar-dropdown { display: none; }
+  .app-menubar, .app-menubar-dropdown, .platform-switcher-menu { display: none; }
 }

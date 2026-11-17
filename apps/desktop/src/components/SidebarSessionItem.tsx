@@ -15,14 +15,14 @@ export function SidebarSessionItem(props: {
   current: boolean;
   contextLabel?: string;
   onSelect: (sessionId: string) => void;
-  onSeen: (sessionId: string) => void;
+  onSeen?: (sessionId: string) => void;
   unread: boolean;
-  onDelete: (sessionId: string) => void;
+  onDelete?: (sessionId: string) => void;
   onDeleteStart?: (sessionId: string) => void;
   onDeleteUndo?: (sessionId: string) => void;
-  onRename: (sessionId: string, title: string) => void;
-  onSetPinned: (sessionId: string, pinned: boolean) => void;
-  onSetArchived: (sessionId: string, archived: boolean) => void;
+  onRename?: (sessionId: string, title: string) => void;
+  onSetPinned?: (sessionId: string, pinned: boolean) => void;
+  onSetArchived?: (sessionId: string, archived: boolean) => void;
   onMarkUnread?: (sessionId: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -61,7 +61,7 @@ export function SidebarSessionItem(props: {
     const trimmed = renameValue.trim();
     setRenaming(false);
     if (trimmed && trimmed !== props.session.title) {
-      props.onRename(props.session.id, trimmed);
+      props.onRename?.(props.session.id, trimmed);
     } else {
       setRenameValue(props.session.title);
     }
@@ -107,7 +107,7 @@ export function SidebarSessionItem(props: {
           aria-label={`${props.session.title}${unread || props.session.status !== "idle" ? `，${statusText}` : ""}`}
           aria-describedby={props.contextLabel ? contextId : undefined}
           onClick={() => {
-            props.onSeen(props.session.id);
+            props.onSeen?.(props.session.id);
             props.onSelect(props.session.id);
           }}
         >
@@ -170,6 +170,7 @@ export function SidebarSessionItem(props: {
           <button
             type="button"
             className="dropdown-item"
+            disabled={!props.onRename}
             onClick={(event) => {
               event.stopPropagation();
               setMenuOpen(false);
@@ -184,10 +185,11 @@ export function SidebarSessionItem(props: {
           <button
             type="button"
             className="dropdown-item"
+            disabled={!props.onSetPinned}
             onClick={(event) => {
               event.stopPropagation();
               setMenuOpen(false);
-              props.onSetPinned(props.session.id, !props.session.pinned);
+              props.onSetPinned?.(props.session.id, !props.session.pinned);
             }}
           >
             <Pin size={13} />
@@ -200,7 +202,7 @@ export function SidebarSessionItem(props: {
               onClick={(event) => {
                 event.stopPropagation();
                 setMenuOpen(false);
-                if (props.unread) props.onSeen(props.session.id);
+                if (props.unread) props.onSeen?.(props.session.id);
                 else props.onMarkUnread?.(props.session.id);
               }}
             >
@@ -211,12 +213,14 @@ export function SidebarSessionItem(props: {
           <button
             type="button"
             className="dropdown-item"
+            disabled={!props.onSetArchived}
             onClick={(event) => {
               event.stopPropagation();
               setMenuOpen(false);
               const sessionId = props.session.id;
               const archived = !props.session.archived;
               const onSetArchived = props.onSetArchived;
+              if (!onSetArchived) return;
               onSetArchived(sessionId, archived);
               if (archived) {
                 showUndoToast(toast, {
@@ -233,11 +237,13 @@ export function SidebarSessionItem(props: {
           <button
             type="button"
             className="dropdown-item danger"
+            disabled={!props.onDelete}
             onClick={(event) => {
               event.stopPropagation();
               setMenuOpen(false);
               const sessionId = props.session.id;
               const onDelete = props.onDelete;
+              if (!onDelete) return;
               const wasCurrent = props.current;
               setPendingDelete(true);
               if (wasCurrent) props.onDeleteStart?.(sessionId);

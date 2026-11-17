@@ -23,6 +23,10 @@ mod dialogs;
 #[path = "browser_navigation.rs"]
 mod navigation;
 
+#[path = "browser_viewport.rs"]
+mod viewport;
+pub(crate) use viewport::viewport_bounds;
+
 const LABEL_PREFIX: &str = "miniq-browser-";
 
 /// The main window stacks child views in creation order. Overlay webviews keep
@@ -576,49 +580,6 @@ pub(crate) fn resize(webview: &tauri::Webview, bounds: BrowserBounds) -> Result<
             size: LogicalSize::new(bounds.width, bounds.height).into(),
         })
         .map_err(|error| error.to_string())
-}
-
-pub(crate) fn viewport_bounds(app: &tauri::AppHandle, bounds: BrowserBounds) -> Result<BrowserBounds, String> {
-    #[cfg(target_os = "macos")]
-    {
-        let main = app
-            .get_webview("main")
-            .ok_or_else(|| "找不到 miniQ 主页面".to_string())?;
-        let scale = main
-            .window()
-            .scale_factor()
-            .map_err(|error| error.to_string())?;
-        let origin = main
-            .bounds()
-            .map_err(|error| error.to_string())?
-            .position
-            .to_logical::<f64>(scale);
-        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-        main.with_webview(move |platform| {
-            let view: &objc2_web_kit::WKWebView = unsafe { &*platform.inner().cast() };
-            let safe_area = view.safeAreaInsets();
-            let _ = sender.send((safe_area.left, safe_area.top));
-        })
-        .map_err(|error| error.to_string())?;
-        // Wry runs with_webview immediately on the main thread and dispatches
-        // it there for worker callers, matching its synchronous bounds getter.
-        let (left, top) = receiver
-            .recv_timeout(std::time::Duration::from_secs(5))
-            .map_err(|_| "无法读取主页面显示区域".to_string())?;
-        // DOM client rects start below WKWebView's safe area. Child WebViews
-        // use the window content view, including that area. Read the actual
-        // insets each time so titlebars/fullscreen changes stay aligned.
-        Ok(BrowserBounds {
-            x: origin.x + left + bounds.x,
-            y: origin.y + top + bounds.y,
-            ..bounds
-        })
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = app;
-        Ok(bounds)
-    }
 }
 
 fn initial_size(bounds: BrowserBounds) -> LogicalSize<f64> {

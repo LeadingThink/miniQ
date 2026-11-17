@@ -9,8 +9,6 @@ import {
   MessageSquareText,
   MoreHorizontal,
   Palette,
-  PanelLeftClose,
-  PanelLeftOpen,
   PanelRight,
   Server,
   Settings,
@@ -28,6 +26,7 @@ import type { LocalFileTarget } from "../localFiles";
 import { menuPosition } from "../menuPosition";
 import { moveMenuIndex } from "../menuNavigation";
 import "./AppStatus.css";
+import { AppToolbar } from "./AppToolbar";
 import { REMOTE_CONNECTION_DETAILS_EVENT, RemoteConnectionStatus } from "./RemoteConnectionStatus";
 import { RemoteDeviceBarContext } from "../remoteDeviceBar";
 import { isBillingError } from "../errorMessage";
@@ -63,7 +62,6 @@ export function AppStatusBar(props: {
     !app.busy &&
     app.feed.messages.some((message) => message.role === "assistant"),
   );
-  const sidebarLabel = `${app.navigation.sidebarCollapsed ? "显示" : "隐藏"}侧栏`;
   const browserLabel = remote ? "查看桌面网页记录" : "打开内置浏览器";
   const reviewFiles = app.review.data.files.length;
   const toolCalls = app.feed.toolCalls ?? [];
@@ -119,24 +117,9 @@ export function AppStatusBar(props: {
   ];
 
   return (
-    <div className="statusbar app-toolbar" data-tauri-drag-region>
-      <button
-        type="button"
-        className="statusbar-icon-button app-toolbar-sidebar"
-        data-tooltip={`${sidebarLabel}（⌘/Ctrl+B）`}
-        title={`${sidebarLabel}（⌘/Ctrl+B）`}
-        aria-label={sidebarLabel}
-        onClick={() =>
-          app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed)
-        }
-      >
-        {app.navigation.sidebarCollapsed ? (
-          <PanelLeftOpen size={16} />
-        ) : (
-          <PanelLeftClose size={16} />
-        )}
-      </button>
-      <div className="app-toolbar-title" data-tauri-drag-region>
+    <AppToolbar sidebarCollapsed={app.navigation.sidebarCollapsed}
+      onToggleSidebar={() => app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed)}
+      title={<>
         {remote ? (
           <RemoteConnectionStatus app={app} onToggleReview={props.onToggleReview} />
         ) : (
@@ -165,8 +148,8 @@ export function AppStatusBar(props: {
           </>
         )}
         {!mobile && sessionMenu}
-      </div>
-      <div className="app-toolbar-actions">
+      </>}
+      actions={<>
         {mobile && sessionMenu}
         {props.onToggleSideConversation && (
           <button type="button" className={`statusbar-icon-button side-conversation-trigger${props.sideConversationOpen ? " active" : ""}`}
@@ -212,8 +195,8 @@ export function AppStatusBar(props: {
           </button>
         )}
         <OverflowMenu items={menuItems} status={remote ? undefined : connectionLabel} connected={connected} />
-      </div>
-    </div>
+      </>}
+    />
   );
 }
 

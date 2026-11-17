@@ -5,6 +5,7 @@ import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { AppSidebar } from "./AppSidebar";
 
 vi.mock("./Sidebar", () => ({ Sidebar: (props: {
+  onClose: () => void;
   onSelectWorkspace: (id: string) => void;
   onSelectSession: (id: string) => void;
   onCreateSession: (id: string) => void;
@@ -12,6 +13,7 @@ vi.mock("./Sidebar", () => ({ Sidebar: (props: {
   onDeleteSessionStart: (id: string) => void;
   onDeleteSessionUndo: (id: string) => void;
 }) => <div>
+  <button onClick={props.onClose}>收起侧栏</button>
   <button onClick={() => props.onSelectWorkspace("project")}>展开项目</button>
   <button onClick={() => props.onSelectSession("session")}>打开会话</button>
   <button onClick={() => props.onCreateSession("project")}>创建会话</button>
@@ -38,6 +40,14 @@ function controller() {
 }
 
 describe("AppSidebar mobile navigation", () => {
+  it("closes the drawer using its own dismiss action", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    const app = controller();
+    render(<AppSidebar app={app} />);
+    fireEvent.click(screen.getByRole("button", { name: "收起侧栏" }));
+    expect(app.navigation.setSidebarCollapsed).toHaveBeenCalledWith(true);
+  });
+
   it("closes from the exposed conversation and removes the dismiss target when collapsed", () => {
     vi.stubGlobal("matchMedia", () => ({ matches: true }));
     const app = controller();

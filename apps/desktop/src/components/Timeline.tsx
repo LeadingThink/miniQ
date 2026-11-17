@@ -98,7 +98,8 @@ export interface TimelineProps {
   onRemoveQueued: QueueActions["onRemove"];
   onUpdateQueued: QueueActions["onUpdate"];
   onMoveQueued?: QueueActions["onMove"];
-  onRewrite: (
+  renderMessageSupplement?: (message: Message) => ReactNode;
+  onRewrite?: (
     messageId: string,
     content: string,
     attachments?: string[],
@@ -107,6 +108,8 @@ export interface TimelineProps {
   /** Stop the running turn so an edit or regenerate can replace it. */
   onStopTurn?: () => Promise<void>;
   onError: (message: string) => void;
+  /** API-backed conversations fetch all pages before exporting. */
+  onReadExportHistory?: (signal: AbortSignal) => Promise<{ messages: Message[]; toolCalls: ToolCall[] }>;
 }
 
 export function Timeline(props: TimelineProps) {
@@ -144,7 +147,9 @@ export function Timeline(props: TimelineProps) {
     setExporting(true);
     try {
       const history =
-        props.client && props.sessionId
+        props.onReadExportHistory
+          ? await props.onReadExportHistory(request.signal)
+          : props.client && props.sessionId
           ? await readExportHistory(
               props.client,
               props.sessionId,
@@ -422,7 +427,7 @@ export function Timeline(props: TimelineProps) {
           summary={props.summary}
           onStep={searching ? navigation.step : undefined}
           onSearchOpen={
-            isMobileLayout() ? () => setSearchSheetOpen(true) : undefined
+            isMobileLayout() && props.client ? () => setSearchSheetOpen(true) : undefined
           }
           navigator={
             searching && !historySearch.error ? (
@@ -556,6 +561,7 @@ export function Timeline(props: TimelineProps) {
           client={props.client}
           items={items}
           messages={props.messages}
+          renderMessageSupplement={props.renderMessageSupplement}
           goal={props.goal}
           expandGroups={filter !== "all" || !!query}
           onError={props.onError}

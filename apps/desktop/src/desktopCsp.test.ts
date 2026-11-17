@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
-it("allows renderer-generated CSS in packaged apps without relaxing scripts", () => {
+it("allows renderer CSS and cloud history in packaged apps without relaxing scripts", () => {
   const { app } = JSON.parse(
     readFileSync(
       new URL("../src-tauri/tauri.conf.json", import.meta.url),
@@ -30,5 +30,9 @@ it("allows renderer-generated CSS in packaged apps without relaxing scripts", ()
   );
   // Wallpaper loops are fetched from the CDN and played back as blob URLs.
   expect(directives.get("connect-src")).toContain("https://oss.zaiwen.top");
+  // The native history reader shares the authenticated API and displays remote images.
+  expect(directives.get("connect-src")).toContain("https://back.zaiwenai.com");
+  expect(directives.get("connect-src")).not.toContain("https:");
+  expect(directives.get("img-src")).toContain("https:");
   expect(directives.get("media-src")).toEqual(["blob:", "https://*.qiniucs.com"]);
 });

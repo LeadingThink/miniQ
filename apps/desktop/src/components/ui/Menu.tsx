@@ -31,11 +31,12 @@ export interface MenuProps {
 }
 
 const MenuFamily = createContext<string | null>(null);
+const menuItemSelector = ":is([role='menuitem'], [role='menuitemradio'])";
 
 function menuItems(root: HTMLElement | null) {
   if (!root) return [];
   return Array.from(
-    root.querySelectorAll<HTMLElement>("[role='menuitem']:not([disabled]):not([aria-disabled='true'])"),
+    root.querySelectorAll<HTMLElement>(`${menuItemSelector}:not([disabled]):not([aria-disabled='true'])`),
   );
 }
 
@@ -111,7 +112,7 @@ export function Menu(props: MenuProps) {
       onMouseLeave={props.onMouseLeave}
       onContextMenu={(event) => event.preventDefault()}
       onClick={(event) => {
-        const item = (event.target as HTMLElement).closest("[role='menuitem']");
+        const item = (event.target as HTMLElement).closest(menuItemSelector);
         if (item && !item.hasAttribute("disabled") && item.getAttribute("aria-haspopup") !== "menu") close();
       }}
     >

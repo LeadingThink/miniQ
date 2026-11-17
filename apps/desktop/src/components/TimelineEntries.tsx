@@ -11,6 +11,7 @@ import {
 import {
   Fragment,
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -70,6 +71,7 @@ import { SessionReviewPanel } from "./SessionReviewDialog";
 import { InterimReply } from "./InterimReply";
 import { SentMessageContent } from "./SentMessageContent";
 import { SentMessageEditor } from "./SentMessageEditor";
+import { MarkdownLocalFilesContext } from "../markdownPolicy";
 
 /** An edit or regenerate that waits for the user to confirm stopping the run. */
 interface PendingRewrite {
@@ -138,6 +140,7 @@ export function TimelineEntries(props: {
   onOpenAttachment?: TimelineProps["onOpenAttachment"];
   onOpenUrl: TimelineProps["onOpenUrl"];
   onRewrite: TimelineProps["onRewrite"];
+  renderMessageSupplement?: TimelineProps["renderMessageSupplement"];
   onFork?: TimelineProps["onFork"];
   onStopTurn?: TimelineProps["onStopTurn"];
   workspacePath?: string | null;
@@ -148,6 +151,7 @@ export function TimelineEntries(props: {
   /** A fold finished loading for `locateRecord`, whether or not the record was found. */
   onLocated?: () => void;
 }) {
+  const allowLocalFiles = useContext(MarkdownLocalFilesContext);
   const [pendingRewrite, setPendingRewrite] = useState<PendingRewrite | null>(
     null,
   );
@@ -211,7 +215,7 @@ export function TimelineEntries(props: {
     setSaving(true);
     try {
       if (stopFirst) await props.onStopTurn?.();
-      const sent = await props.onRewrite(
+      const sent = await props.onRewrite?.(
         message.id,
         content,
         message.attachments?.map((attachment) => attachment.path),
@@ -294,6 +298,7 @@ export function TimelineEntries(props: {
     [],
   );
   const hasFork = Boolean(props.onFork);
+  const hasRewrite = Boolean(props.onRewrite);
   const canSpeak = voiceCapabilities.capabilities.speak;
   // Streaming tokens only change the live tail. Keeping each turn's content
   // element identity stable lets React skip every completed message on each
@@ -472,6 +477,7 @@ export function TimelineEntries(props: {
                 ) : item.message.content ? (
                   <SentMessageContent content={item.message.content} pastedText={item.message.pastedText} />
                 ) : null}
+                {props.renderMessageSupplement?.(item.message)}
               </div>
               <div className="message-footer">
                 <MessageTime at={item.message.createdAt} />
@@ -518,7 +524,7 @@ export function TimelineEntries(props: {
                         content={item.message.content}
                         onError={bridge.reportError}
                       />
-                      <button
+                      {hasRewrite && <button
                         type="button"
                         className="msg-action"
                         title="修改消息"
@@ -526,7 +532,7 @@ export function TimelineEntries(props: {
                         onClick={() => bridge.startEditing(item.message)}
                       >
                         <Pencil size={15} />
-                      </button>
+                      </button>}
                     </>
                   )}
                 </div>
@@ -547,6 +553,7 @@ export function TimelineEntries(props: {
               >
                 {item.message.content}
               </Md>
+              {props.renderMessageSupplement?.(item.message)}
             </div>
           ) : item.message.assistantKind === "interim" ? (
               <InterimReply
@@ -571,12 +578,13 @@ export function TimelineEntries(props: {
                 >
                   {item.message.content}
                 </Md>
+                {props.renderMessageSupplement?.(item.message)}
               </div>
-                {replyFileArtifacts(
+                {(allowLocalFiles ? replyFileArtifacts(
                   item.message,
                   props.workspacePath,
                   artifactPaths,
-                ).map((artifact) => (
+                ) : []).map((artifact) => (
                 <ArtifactCard
                   key={artifact.id}
                   artifact={artifact}
@@ -629,7 +637,7 @@ export function TimelineEntries(props: {
                       onError={bridge.reportError}
                     />
                   )}
-                  <button
+                  {hasRewrite && <button
                     type="button"
                     className="msg-action"
                     title="重新生成"
@@ -643,7 +651,7 @@ export function TimelineEntries(props: {
                         }
                   >
                     <RefreshCw size={15} />
-                  </button>
+                  </button>}
                   {hasFork && (
                     <button
                       type="button"
@@ -835,6 +843,9 @@ export function TimelineEntries(props: {
     turnPlanEnds,
     runningAnchor,
     hasFork,
+    hasRewrite,
+    allowLocalFiles,
+    props.renderMessageSupplement,
     canSpeak,
     bridge,
     turns,

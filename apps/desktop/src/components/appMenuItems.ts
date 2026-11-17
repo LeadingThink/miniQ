@@ -7,6 +7,7 @@ export interface AppMenuItem {
   label: string;
   shortcut?: string;
   disabled?: boolean;
+  navigates?: boolean;
   run: () => void | Promise<unknown>;
 }
 
@@ -20,8 +21,8 @@ export function appMenuItems(app: MiniqAppController | null, restoreEditor: () =
   const hasSession = !!app?.catalog.currentSession;
   return [
     [
-      [command("新对话", "newChat"), { label: "打开项目文件夹…", disabled: !app || app.client.mode === "remote", run: () => app?.actions.openWorkspace() },
-        { label: "导入会话…", disabled: !app, run: () => app?.navigation.setShowExternalImport(true) }],
+      [command("新对话", "newChat"), { label: "打开项目文件夹…", navigates: true, disabled: !app || app.client.mode === "remote", run: () => app?.actions.openWorkspace() },
+        { label: "导入会话…", navigates: true, disabled: !app, run: () => app?.navigation.setShowExternalImport(true) }],
       [command("设置…", "settings")],
     ],
     [
@@ -31,8 +32,8 @@ export function appMenuItems(app: MiniqAppController | null, restoreEditor: () =
     ],
     [
       [command(app?.navigation.sidebarCollapsed ? "显示侧栏" : "隐藏侧栏", "toggleSidebar"), command("搜索与命令面板", "palette")],
-      [{ label: "已安排", disabled: !app, run: () => app?.navigation.setPage("schedule") },
-        { label: "技能与连接器", disabled: !app, run: () => app?.navigation.setPage("skills") }],
+      [{ label: "已安排", navigates: true, disabled: !app, run: () => app?.navigation.setPage("schedule") },
+        { label: "技能与连接器", navigates: true, disabled: !app, run: () => app?.navigation.setPage("skills") }],
       [command("上一个会话", "prevSession", !hasSession), command("下一个会话", "nextSession", !hasSession)],
     ],
     [

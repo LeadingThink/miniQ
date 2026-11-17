@@ -12,6 +12,24 @@ afterEach(() => { cleanup(); window.localStorage.clear(); vi.clearAllMocks(); })
 
 const props = { busy: false, placeholder: "消息", onSend: vi.fn() };
 
+it("disables local attachments for a cloud composer and sends long pasted text without losing content", async () => {
+  const onSend = vi.fn().mockResolvedValue(true), onError = vi.fn();
+  render(<ComposerCard {...props} attachmentsEnabled={false} onSend={onSend} onError={onError} />);
+  const input = screen.getByRole<HTMLTextAreaElement>("textbox");
+  fireEvent.paste(input, { clipboardData: {
+    files: [new File(["private"], "local.txt", { type: "text/plain" })], items: [], getData: () => "",
+  } });
+  expect(onError).toHaveBeenCalledWith("此会话暂不支持上传附件");
+  expect(fake.save).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "附加文件" })).toBeNull();
+  const text = "完整文字🌍".repeat(400);
+  fireEvent.paste(input, { clipboardData: { files: [], items: [], getData: () => text } });
+  expect(input.value).toBe(text);
+  fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+  await waitFor(() => expect(onSend).toHaveBeenCalledWith(text, []));
+  expect(fake.save).not.toHaveBeenCalled();
+});
+
 /** A paste dispatched while the transcript, not the composer, owns the focus. */
 function pasteOutside(target: Element, options: { text?: string; files?: File[] }) {
   const files = options.files ?? [];

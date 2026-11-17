@@ -20,13 +20,13 @@ import "./SessionMenu.css";
 interface Props {
   session: Session;
   messages: Message[];
-  onRename: (title: string) => void | Promise<void>;
-  onTogglePin: () => void;
-  onNewSideChat: () => void;
+  onRename?: (title: string) => void | Promise<void>;
+  onTogglePin?: () => void;
+  onNewSideChat?: () => void;
   onSearch: () => void;
   onSummary?: () => void;
-  onFork: (anchorMessageId: string) => void | Promise<unknown>;
-  onArchive: () => void;
+  onFork?: (anchorMessageId: string) => void | Promise<unknown>;
+  onArchive?: () => void;
 }
 
 const FORK_SUBMENU_WIDTH = 264;
@@ -152,6 +152,7 @@ export function SessionMenu({
   }, [renaming]);
 
   useEffect(() => {
+    if (!onRename) return;
     const start = () => {
       setTitle(session.title);
       setOpen(true);
@@ -159,7 +160,7 @@ export function SessionMenu({
     };
     window.addEventListener(SESSION_RENAME_EVENT, start);
     return () => window.removeEventListener(SESSION_RENAME_EVENT, start);
-  }, [session.title]);
+  }, [session.title, onRename]);
 
   const openForkSubmenu = () => {
     const rect = forkItem.current?.getBoundingClientRect();
@@ -176,9 +177,9 @@ export function SessionMenu({
     setRenaming(false);
   };
 
-  const run = (action: () => void | Promise<unknown>) => {
+  const run = (action?: () => void | Promise<unknown>) => {
     closeAll();
-    void action();
+    void action?.();
   };
 
   const submitRename = async () => {
@@ -187,7 +188,7 @@ export function SessionMenu({
       setRenaming(false);
       return;
     }
-    await onRename(next);
+    await onRename?.(next);
     setOpen(false);
     setRenaming(false);
   };
@@ -261,6 +262,7 @@ export function SessionMenu({
                 type="button"
                 className="session-menu-item"
                 role="menuitem"
+                disabled={!onRename}
                 onClick={() => {
                   setTitle(session.title);
                   setRenaming(true);
@@ -274,6 +276,7 @@ export function SessionMenu({
                 type="button"
                 className="session-menu-item"
                 role="menuitem"
+                disabled={!onTogglePin}
                 onClick={() => run(onTogglePin)}
               >
                 <Pin className="session-menu-icon" size={15} />
@@ -297,6 +300,7 @@ export function SessionMenu({
                 type="button"
                 className="session-menu-item"
                 role="menuitem"
+                disabled={!onNewSideChat}
                 onClick={() => run(onNewSideChat)}
               >
                 <MessageSquarePlus className="session-menu-icon" size={15} />
@@ -310,6 +314,7 @@ export function SessionMenu({
                 role="menuitem"
                 aria-haspopup="menu"
                 aria-expanded={submenuOpen}
+                disabled={!onFork}
                 onClick={() => {
                   if (submenuOpen) setSubmenuOpen(false);
                   else openForkSubmenu();
@@ -326,6 +331,7 @@ export function SessionMenu({
                 type="button"
                 className="session-menu-item"
                 role="menuitem"
+                disabled={!onArchive}
                 onClick={() => run(onArchive)}
               >
                 <Archive className="session-menu-icon" size={15} />
@@ -353,7 +359,7 @@ export function SessionMenu({
               type="button"
               className="session-menu-item session-menu-reply"
               role="menuitem"
-              onClick={() => run(() => onFork(message.id))}
+              onClick={() => run(() => onFork?.(message.id))}
             >
               <GitBranch className="session-menu-icon" size={14} />
               <span className="session-menu-label">{replyLabel(message)}</span>

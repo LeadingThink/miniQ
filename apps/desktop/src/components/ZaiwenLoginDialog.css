@@ -1,0 +1,10 @@
+.zaiwen-login-form { display: grid; gap: 14px; min-width: min(360px, 72vw); }
+.zaiwen-login-form label { display: grid; gap: 6px; color: var(--text-mid); font-size: 13px; }
+.zaiwen-login-form input { min-height: 38px; border: 1px solid var(--hairline-strong, var(--hairline)); border-radius: 8px; padding: 0 11px; background: var(--bg); color: var(--text); font: inherit; }
+.zaiwen-code-row { display: flex; gap: 8px; }
+.zaiwen-code-row input { min-width: 0; flex: 1; }
+.zaiwen-code-row button { flex: 0 0 auto; border: 1px solid var(--hairline); border-radius: 8px; padding: 0 10px; background: var(--bg-hover); color: var(--text); font: inherit; cursor: pointer; }
+.zaiwen-code-row button:disabled { cursor: default; opacity: .55; }
+.zaiwen-consent { display: flex !important; grid-template-columns: none; align-items: center; gap: 7px !important; }
+.zaiwen-consent input { min-height: auto; width: auto; }
+.zaiwen-login-form [role="alert"] { margin: 0; color: var(--danger, #c33); font-size: 13px; }

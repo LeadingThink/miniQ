@@ -6,13 +6,22 @@ import { Menu, MenuItem, MenuSeparator } from "./ui/Menu";
 import { Dialog } from "./ui/Dialog";
 import { Button } from "./ui/Button";
 import { WindowControls } from "./WindowControls";
-import { appMenuItems } from "./appMenuItems";
+import { appMenuItems, type AppMenuItem } from "./appMenuItems";
+import { PlatformSwitcher, type AppPlatform } from "./PlatformSwitcher";
+import { useNativeMenu } from "../hooks/useNativeMenu";
+import { isTauriRuntime } from "../runtime";
 import { version } from "../../package.json";
 import "./AppMenuBar.css";
 
 const LABELS = ["文件", "编辑", "视图", "帮助"];
 
-export function AppMenuBar({ app }: { app: MiniqAppController | null }) {
+export function AppMenuBar({ app, platform = "miniq", onPlatformChange, zaiwenUser, onNavigate }: {
+  app: MiniqAppController | null;
+  platform?: AppPlatform;
+  onPlatformChange?: (platform: AppPlatform) => void;
+  zaiwenUser?: string;
+  onNavigate?: () => void;
+}) {
   const [open, setOpen] = useState<number | null>(null);
   const [focused, setFocused] = useState(0);
   const [about, setAbout] = useState(false);
@@ -22,8 +31,24 @@ export function AppMenuBar({ app }: { app: MiniqAppController | null }) {
   const restoreEditor = useRef<() => void>(() => undefined);
   const close = useCallback(() => setOpen(null), []);
   const reportError = useCallback((message: string) => app?.setError(message), [app?.setError]);
+  const popup = useNativeMenu(reportError);
   const groups = appMenuItems(app, () => restoreEditor.current(), () => setAbout(true));
-  const show = (index: number) => { anchor.current = buttons.current[index]; setFocused(index); setOpen(index); };
+  const run = (item: AppMenuItem) => {
+    if (item.navigates) onNavigate?.();
+    return item.run();
+  };
+  const show = (index: number) => {
+    anchor.current = buttons.current[index];
+    setFocused(index);
+    if (isTauriRuntime() && anchor.current) {
+      void popup({ items: groups[index].flatMap((group, groupIndex) => [
+        ...(groupIndex ? [{ item: "Separator" as const }] : []),
+        ...group.map((item) => ({ text: item.label, enabled: !item.disabled, action: () => {
+          void Promise.resolve().then(() => run(item)).catch((error) => reportError(String(error)));
+        } })),
+      ]) }, anchor.current);
+    } else setOpen(index);
+  };
   const navigate = (event: KeyboardEvent, index: number, inMenu = false) => {
     const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
     if (offset || (!inMenu && ["Home", "End"].includes(event.key))) {
@@ -40,10 +65,7 @@ export function AppMenuBar({ app }: { app: MiniqAppController | null }) {
   };
   return <>
     <header className="app-menubar" data-tauri-drag-region>
-      <div className="app-menubar-brand" data-tauri-drag-region>
-        <img src="./miniq-icon.png" alt="" draggable={false} data-tauri-drag-region />
-        <span data-tauri-drag-region>miniQ</span>
-      </div>
+      <PlatformSwitcher platform={platform} onPlatformChange={onPlatformChange} zaiwenUser={zaiwenUser} />
       {!isMacDesktop() && <nav role="menubar" aria-label="应用菜单" className="app-menubar-nav"
         onMouseDownCapture={() => { if (open === null) restoreEditor.current = captureEditingTarget(); }}
         onFocusCapture={(event) => {
@@ -72,7 +94,7 @@ export function AppMenuBar({ app }: { app: MiniqAppController | null }) {
         {index > 0 && <MenuSeparator />}
         {group.map((item) => <MenuItem key={item.label} shortcut={item.shortcut} disabled={item.disabled} onClick={() => {
           // The menu restores its trigger first; commands then focus their own destination.
-          queueMicrotask(() => { void Promise.resolve().then(item.run).catch((error) => reportError(String(error))); });
+          queueMicrotask(() => { void Promise.resolve().then(() => run(item)).catch((error) => reportError(String(error))); });
         }}>{item.label}</MenuItem>)}
       </Fragment>)}
     </Menu>}

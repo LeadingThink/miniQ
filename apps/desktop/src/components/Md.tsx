@@ -1,5 +1,6 @@
 import { FileText } from "lucide-react";
-import { isValidElement, memo, useMemo, useRef } from "react";
+import { isValidElement, memo, useContext, useMemo, useRef } from "react";
+import { MarkdownLocalFilesContext, webMarkdownUrl } from "../markdownPolicy";
 import { MarkdownImage } from "./MarkdownImage";
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock";
 import type {
@@ -201,6 +202,7 @@ export function Md(props: {
   onOpenUrl?: (url: string) => void;
 }) {
   const { workspacePath, referenceBasePath } = props;
+  const allowLocalFiles = useContext(MarkdownLocalFilesContext);
   const linkMenu = useLinkContextMenu(props);
   const callbacks = useRef({
     onOpenFile: props.onOpenFile,
@@ -247,7 +249,7 @@ export function Md(props: {
   // the renderer configuration only changes with real rendering options.
   const options = useMemo((): MarkdownOptions => ({
     components: {
-      a: (linkProps) => (
+      a: (linkProps) => !allowLocalFiles && !linkProps.href ? <span>{linkProps.children}</span> : (
         <MarkdownLink
           {...linkProps}
           workspacePath={workspacePath}
@@ -256,7 +258,7 @@ export function Md(props: {
           onOpenUrl={hasUrlHandler ? handlers.openUrl : undefined}
         />
       ),
-      code: (codeProps) => (
+      code: (codeProps) => !allowLocalFiles ? <code className={codeProps.className}>{codeProps.children}</code> : (
         <MarkdownCode
           {...codeProps}
           workspacePath={workspacePath}
@@ -269,9 +271,10 @@ export function Md(props: {
       ...(ImageRenderer ? { img: ImageRenderer } : {}),
     },
     remarkPlugins: props.headingAnchors ? HEADING_REMARK_PLUGINS : REMARK_PLUGINS,
+    urlTransform: allowLocalFiles ? localFileUrlTransform : webMarkdownUrl,
   }), [
     workspacePath, referenceBasePath, props.headingAnchors,
-    ImageRenderer, handlers, hasFileHandler, hasUrlHandler,
+    ImageRenderer, handlers, hasFileHandler, hasUrlHandler, allowLocalFiles,
   ]);
   const source = normalizeMathDelimiters(props.children);
   if (props.streaming) {
@@ -294,6 +297,7 @@ type PluggableList = NonNullable<MarkdownRendererOptions["remarkPlugins"]>;
 interface MarkdownOptions {
   components: Components;
   remarkPlugins: PluggableList;
+  urlTransform: (value: string) => string;
 }
 
 const REMARK_PLUGINS: PluggableList = [remarkGfm, remarkMath, remarkQuotedFileLinks];
@@ -305,7 +309,7 @@ const REHYPE_PLUGINS: PluggableList = [[rehypeKatex, { strict: false, throwOnErr
 const MarkdownBlock = memo(function MarkdownBlock({ source, options }: { source: string; options: MarkdownOptions }) {
   return (
     <ReactMarkdown
-      urlTransform={localFileUrlTransform}
+      urlTransform={options.urlTransform}
       components={options.components}
       rehypePlugins={REHYPE_PLUGINS}
       remarkPlugins={options.remarkPlugins}
