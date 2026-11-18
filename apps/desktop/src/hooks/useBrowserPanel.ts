@@ -466,6 +466,7 @@ export function useBrowserPanel(
       try {
         const state = await currentBrowser(viewId);
         if (!disposed && request === sequence.current && state) {
+          setError((previous) => previous?.startsWith("无法同步浏览器状态：") ? null : previous);
           if (state.loadError) {
             navigationTarget.current = state.url;
             if (/^https?:\/\//i.test(state.url)) accept(state.url);

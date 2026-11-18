@@ -38,17 +38,19 @@ import { initializeNativeMenuBridge } from "./nativeMenuBridge";
 const App = React.lazy(() => import("./App"));
 const CompanionWindow = React.lazy(() => import("./components/CompanionWindow"));
 const ContextUsageOverlay = React.lazy(() => import("./components/ContextUsageOverlay"));
+const PlatformOverlay = React.lazy(() => import("./components/PlatformOverlay"));
+const isPlatformOverlay = new URLSearchParams(window.location.search).has("platform-overlay");
 const isCompanion = new URLSearchParams(window.location.search).has("companion");
 const isContextUsageOverlay = new URLSearchParams(window.location.search).has("context-usage-overlay");
 
 initializeAppearance();
 initializeFontScale();
-if (!isCompanion && !isContextUsageOverlay && !isNativeMobileApp()) {
+if (!isCompanion && !isContextUsageOverlay && !isPlatformOverlay && !isNativeMobileApp()) {
   initializeBackground();
   initializeRotation();
 }
-if (isCompanion || isContextUsageOverlay) {
-  document.documentElement.dataset.companion = isCompanion ? "true" : "context-usage-overlay";
+if (isCompanion || isContextUsageOverlay || isPlatformOverlay) {
+  document.documentElement.dataset.companion = isCompanion ? "true" : isPlatformOverlay ? "platform-overlay" : "context-usage-overlay";
   document.documentElement.style.background = "transparent";
   document.body.style.background = "transparent";
 } else {
@@ -62,7 +64,7 @@ if (isCompanion || isContextUsageOverlay) {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <React.Suspense fallback={null}>
-      {isCompanion ? <CompanionWindow /> : isContextUsageOverlay ? <ContextUsageOverlay /> : <ToastProvider>
+      {isCompanion ? <CompanionWindow /> : isContextUsageOverlay ? <ContextUsageOverlay /> : isPlatformOverlay ? <PlatformOverlay /> : <ToastProvider>
         <LivingBackground />
         <App />
       </ToastProvider>}

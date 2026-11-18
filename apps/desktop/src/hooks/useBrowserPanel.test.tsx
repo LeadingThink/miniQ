@@ -733,3 +733,20 @@ it("auto-loads an agent-owned popup tab but not a plain agent tab", async () => 
   await waitFor(() => expect(popup.result.current.pending).toBe(false));
   expect(openBrowser).toHaveBeenCalledWith("https://popup.test/", expect.any(Object), "popup-view", false);
 });
+
+it("clears recovered status synchronization errors without hiding unrelated action errors", async () => {
+  vi.useFakeTimers();
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  vi.mocked(currentBrowser).mockRejectedValueOnce(new Error("temporary IPC failure"));
+  const { result } = renderHook(() => useBrowserPanel("https://example.test/", surface()));
+  await act(async () => {});
+  await act(() => vi.advanceTimersByTimeAsync(1500));
+  expect(result.current.error).toBe("无法同步浏览器状态：temporary IPC failure");
+  expect(result.current.loadError).toBeNull();
+  vi.mocked(currentBrowser).mockResolvedValue({ url: "https://example.test/" });
+  await act(() => vi.advanceTimersByTimeAsync(1500));
+  expect(result.current.error).toBeNull();
+  act(() => result.current.setError("下载失败"));
+  await act(() => vi.advanceTimersByTimeAsync(1500));
+  expect(result.current.error).toBe("下载失败");
+});

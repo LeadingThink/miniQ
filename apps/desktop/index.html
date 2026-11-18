@@ -70,8 +70,10 @@
     <!-- Embedded surfaces (companion, context-usage overlay) load this page
          too; drop the splash before first paint so it never flashes there. -->
     <script>
-      if (/[?&](companion|context-usage-overlay)(=|&|$)/.test(location.search)) {
+      if (/[?&](companion|context-usage-overlay|platform-overlay)(=|&|$)/.test(location.search)) {
         document.getElementById("splash").remove();
+        document.documentElement.style.background = "transparent";
+        document.body.style.background = "transparent";
       }
     </script>
     <div id="root"></div>

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type TouchEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type TouchEvent } from "react";
 import {
   FolderPlus,
   Archive,
@@ -51,8 +51,6 @@ export interface SidebarHostGroup {
 }
 
 interface SidebarProps {
-  conversationItems?: (query: string, filter: SidebarFilter) => ReactNode;
-  conversationCounts?: Partial<Record<SidebarFilter, number>>;
   hostGroups?: SidebarHostGroup[];
   onClose?: () => void;
   workspaces: Workspace[];
@@ -190,8 +188,7 @@ export function Sidebar(props: SidebarProps) {
     if (selected?.archived) setShowArchived(true);
   }, [props.currentSessionId, props.sessions]);
   const archivedSessions = navigation.archived;
-  const counts = { ...navigation.counts };
-  for (const filter of Object.keys(counts) as SidebarFilter[]) counts[filter] += props.conversationCounts?.[filter] ?? 0;
+  const counts = navigation.counts;
   const archiveOpen = showArchived || navigation.filtering;
   const updateDividerVisible = props.updateSupported && updateNeedsAttention(props.updateState);
   const updateNoticeVisible = mobile || updateDividerVisible;
@@ -235,14 +232,13 @@ export function Sidebar(props: SidebarProps) {
       </button>}
       </div>
 
-      {(props.workspaces.length > 0 || props.conversationItems) && <SidebarFilters query={query} filter={filter} counts={counts}
+      {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={counts}
         workspaceCount={navigation.groups.length} onQuery={setQuery} onFilter={setFilter}
         showQuery={!mobile} onMarkAllRead={props.onMarkAllRead} onCollapseAll={() => {
           setQuery(""); setFilter("all"); setCollapseAllVersion((value) => value + 1);
         }} />}
       <div ref={scrollRef} className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
         <div ref={contentRef}>
-        {props.conversationItems?.(query, filter)}
         <SidebarAttention sessions={props.sessions} unreadSessionIds={props.unreadSessionIds} workspaceLabels={workspaceLabels} onSelectSession={props.onSelectSession} onClose={props.onClose} />
         {props.hostGroups?.filter((host) => !navigation.groups.some(({ workspace }) => host.workspaceIds.includes(workspace.id))).map((host) => <HostHeading key={host.key} host={host} />)}
         {navigation.groups.map(({ workspace, sessions }, index) => (
@@ -278,7 +274,7 @@ export function Sidebar(props: SidebarProps) {
           />
           </Fragment>
         ))}
-        {!props.conversationItems && props.workspaces.length === 0 && (!props.hostGroups?.length || props.hostGroups.every((host) => host.catalogStatus === "ready" && !host.catalogError && !host.error && host.state === "connected")) && (
+        {props.workspaces.length === 0 && (!props.hostGroups?.length || props.hostGroups.every((host) => host.catalogStatus === "ready" && !host.catalogError && !host.error && host.state === "connected")) && (
           <EmptyState
             compact
             className="sidebar-empty"
@@ -287,7 +283,7 @@ export function Sidebar(props: SidebarProps) {
             description="点击新对话选择或创建一个项目开始协作"
           />
         )}
-        {!props.conversationItems && navigation.filtering && navigation.groups.length === 0 && archivedSessions.length === 0 && (
+        {navigation.filtering && navigation.groups.length === 0 && archivedSessions.length === 0 && (
           <EmptyState
             compact
             live

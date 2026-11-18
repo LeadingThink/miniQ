@@ -1,21 +1,15 @@
 import { Sidebar, type SidebarHostGroup } from "./Sidebar";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { isMobileLayout } from "../mobileViewport";
-import type { ComponentProps } from "react";
 
-export function AppSidebar({ app, hostGroups, onCreateSession, conversationItems, conversationCounts, onNavigate }: {
+export function AppSidebar({ app, hostGroups, onCreateSession }: {
   app: MiniqAppController;
   hostGroups?: SidebarHostGroup[];
   onCreateSession?: (key: string) => void;
-  conversationItems?: ComponentProps<typeof Sidebar>["conversationItems"];
-  conversationCounts?: ComponentProps<typeof Sidebar>["conversationCounts"];
-  onNavigate?: () => void;
 }) {
   const closeMobileSidebar = () => { if (isMobileLayout()) app.navigation.setSidebarCollapsed(true); };
   return <>
       <Sidebar
-        conversationItems={conversationItems}
-        conversationCounts={conversationCounts}
         hostGroups={hostGroups}
         onClose={closeMobileSidebar}
         workspaces={app.catalog.workspaces}
@@ -24,38 +18,31 @@ export function AppSidebar({ app, hostGroups, onCreateSession, conversationItems
         currentSessionId={app.catalog.currentSessionId}
         selectedWorkspaceId={app.catalog.selectedWorkspace?.id ?? null}
         onNewChat={() => {
-          onNavigate?.();
           app.actions.newChat();
           closeMobileSidebar();
         }}
         onShowSearch={() => {
-          onNavigate?.();
           app.navigation.setShowSearch(true);
           closeMobileSidebar();
         }}
         onShowSchedule={() => {
-          onNavigate?.();
           app.navigation.setPage("schedule");
           closeMobileSidebar();
         }}
         onImportSessions={() => {
-          onNavigate?.();
           app.navigation.setShowExternalImport(true);
           closeMobileSidebar();
         }}
         onSelectWorkspace={(workspaceId) => {
-          onNavigate?.();
           // Expanding a project is navigation within the drawer, not leaving it.
           app.actions.selectWorkspace(workspaceId);
         }}
         extensionsActive={app.navigation.page === "skills" || app.navigation.page === "mcp" || app.navigation.page === "plugins"}
         onShowSkills={() => {
-          onNavigate?.();
           app.navigation.setPage("skills");
           closeMobileSidebar();
         }}
         onCreateSession={(workspaceId) => {
-          onNavigate?.();
           if (onCreateSession) onCreateSession(workspaceId);
           else void app.actions.createSession(workspaceId).catch((cause) => app.setError(cause instanceof Error ? cause.message : String(cause)));
           closeMobileSidebar();
@@ -66,9 +53,8 @@ export function AppSidebar({ app, hostGroups, onCreateSession, conversationItems
         onRenameWorkspace={(workspaceId, name) =>
           void app.actions.renameWorkspace(workspaceId, name)
         }
-        onEditWorkspace={(id) => { onNavigate?.(); app.navigation.setEditingWorkspaceId(id); }}
+        onEditWorkspace={(id) => { app.navigation.setEditingWorkspaceId(id); }}
         onSelectSession={(sessionId) => {
-          onNavigate?.();
           closeMobileSidebar();
           void app.actions.openSession(sessionId);
         }}
@@ -78,8 +64,8 @@ export function AppSidebar({ app, hostGroups, onCreateSession, conversationItems
         onDeleteSession={(sessionId) =>
           void app.actions.deleteSession(sessionId)
         }
-        onDeleteSessionStart={() => { onNavigate?.(); app.actions.newChat(); }}
-        onDeleteSessionUndo={(sessionId) => { onNavigate?.(); void app.actions.openSession(sessionId); }}
+        onDeleteSessionStart={() => { app.actions.newChat(); }}
+        onDeleteSessionUndo={(sessionId) => { void app.actions.openSession(sessionId); }}
         onRenameSession={(sessionId, title) =>
           void app.actions.renameSession(sessionId, title)
         }
@@ -90,7 +76,6 @@ export function AppSidebar({ app, hostGroups, onCreateSession, conversationItems
           void app.actions.setSessionArchived(sessionId, archived)
         }
         onShowSettings={() => {
-          onNavigate?.();
           app.navigation.setShowSettings(true);
           closeMobileSidebar();
         }}

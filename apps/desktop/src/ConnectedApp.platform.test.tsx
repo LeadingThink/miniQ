@@ -1,75 +1,242 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useEffect, type ReactNode } from "react";
+import { useEffect } from "react";
 import ConnectedApp from "./ConnectedApp";
-import { listZaiwenConversations, listZaiwenMessages } from "./zaiwenHistory";
+import { browserAction, closeBrowser, openBrowser, resizeBrowser, setBrowserVisible } from "./browserWorkbench";
+import { isTauriRuntime } from "./runtime";
+import { openLinkWindow } from "./linkActions";
+import type { PlatformOverlaySnapshot } from "./platformOverlay";
+import PlatformOverlay from "./components/PlatformOverlay";
 
 const state = vi.hoisted(() => ({
-  panel: vi.fn(), mount: vi.fn(), unmount: vi.fn(), restore: vi.fn(),
+  mount: vi.fn(), unmount: vi.fn(), host: null as string | null,
+  invoke: vi.fn(),
+  listeners: new Map<string, (event: { payload: unknown }) => void>(),
   controller: {
     client: { mode: "local" }, catalog: {}, setError: vi.fn(),
     navigation: {}, actions: {}, updater: {},
   },
 }));
-const session = { token: "test-token", user: { uid: "test-user", nick: "user" } };
-vi.mock("./runtime", () => ({ isTauriRuntime: () => true }));
-vi.mock("./desktopHost", () => ({ useDesktopHost: () => ({ host: null, sidebarCollapsed: false }) }));
+vi.mock("./runtime", () => ({ isTauriRuntime: vi.fn(() => true) }));
+vi.mock("./desktopHost", () => ({ useDesktopHost: () => ({ host: state.host, sidebarCollapsed: false }) }));
 vi.mock("./hooks/useMiniqApp", () => ({ useMiniqApp: () => state.controller }));
-vi.mock("./components/UnifiedSidebar", () => ({ UnifiedSidebar: ({ conversationItems }: { conversationItems?: (query: string, filter: "all") => ReactNode }) => <aside className="sidebar" aria-label="本地会话">{conversationItems?.("", "all")}</aside> }));
+vi.mock("./components/UnifiedSidebar", () => ({ UnifiedSidebar: () => <aside aria-label="miniQ 会话" /> }));
 vi.mock("./components/WindowControls", () => ({ WindowControls: () => null }));
-vi.mock("./components/AppShell", () => ({ AppShell: () => {
+vi.mock("./components/AppShell", () => ({ AppShell: ({ active }: { active: boolean }) => {
   useEffect(() => { state.mount(); return state.unmount; }, []);
-  return <section aria-label="miniQ 工作台" />;
+  return <section aria-label="miniQ 工作台" data-active={String(active)}><input aria-label="本地草稿" /></section>;
 } }));
-vi.mock("./components/ZaiwenLoginDialog", () => ({ ZaiwenLoginDialog: () => null }));
-vi.mock("./zaiwenHistory", async (original) => ({
-  ...await original<typeof import("./zaiwenHistory")>(),
-  listZaiwenConversations: vi.fn().mockResolvedValue({ items: [{ id: "cloud", title: "云端会话", created: 1700000000 }], total: 1, cursor: null }),
-  listZaiwenMessages: vi.fn().mockResolvedValue({ items: [{ id: "m", content: "云端消息", role: "assistant", created: 1700000000 }], total: 1, cursor: null }),
+vi.mock("./linkActions", () => ({ openLinkWindow: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: state.invoke }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async (name, handler) => {
+  state.listeners.set(name, handler);
+  return () => state.listeners.delete(name);
+}) }));
+vi.mock("./browserWorkbench", async (original) => ({
+  ...await original<typeof import("./browserWorkbench")>(),
+  openBrowser: vi.fn(async (url: string) => ({ url })),
+  closeBrowser: vi.fn(async () => {}),
+  resizeBrowser: vi.fn(async () => {}),
+  setBrowserVisible: vi.fn(async () => {}),
+  currentBrowser: vi.fn(async () => null),
+  browserAction: vi.fn(async () => null),
 }));
-vi.mock("./zaiwenAuth", async (original) => ({
-  ...await original<typeof import("./zaiwenAuth")>(),
-  getZaiwenSession: () => ({ token: "test-token", user: { uid: "test-user", nick: "user" } }),
-  restoreZaiwenSession: state.restore,
-}));
-vi.mock("./zaiwenChat", () => ({ listZaiwenChatModels: vi.fn().mockResolvedValue([{ key: "model" }]) }));
-vi.mock("./hooks/useBrowserPanel", () => ({ useBrowserPanel: state.panel }));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  state.restore.mockResolvedValue(session);
+  state.invoke.mockResolvedValue(undefined);
+  state.host = null;
+  state.listeners.clear();
+  localStorage.clear();
+  delete window.__MINIQ_PLATFORM__;
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function () {
+    return { x: 0, y: 44, width: 1200, height: 756, top: 44, left: 0, right: 1200, bottom: 800, toJSON: () => ({}) };
+  });
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  vi.stubGlobal("fetch", vi.fn(() => { throw new Error("miniQ must not request main-site conversations"); }));
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(async () => {
+  cleanup();
+  await act(async () => {});
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
-it.each(["Win32", "MacIntel", "Linux x86_64"])("retains the local sidebar and adds native cloud conversations without a site WebView on %s", async (platform) => {
+async function openPlatformMenu() {
+  const before = state.invoke.mock.calls.filter(([name]) => name === "platform_overlay_open").length;
+  fireEvent.click(screen.getByRole("button", { name: /^(miniQ|在问)$/ }));
+  await waitFor(() => expect(state.invoke.mock.calls.filter(([name]) => name === "platform_overlay_open")).toHaveLength(before + 1));
+  const call = state.invoke.mock.calls.filter(([name]) => name === "platform_overlay_open").at(-1)!;
+  return call[1].snapshot as PlatformOverlaySnapshot;
+}
+
+async function selectNativePlatform(_snapshot: PlatformOverlaySnapshot, name: "在问" | "miniQ") {
+  await waitFor(() => expect(state.listeners.has("platform-overlay://action")).toBe(true));
+  await act(async () => state.listeners.get("platform-overlay://action")!({ payload: name === "在问" ? "zaiwen" : "miniq" }));
+}
+
+async function switchTo(name: "在问" | "miniQ") {
+  if (isTauriRuntime()) {
+    await selectNativePlatform(await openPlatformMenu(), name);
+    return;
+  }
+  fireEvent.click(screen.getByRole("button", { name: name === "在问" ? "miniQ" : "在问" }));
+  fireEvent.click(screen.getByRole("menuitemradio", { name }));
+}
+
+it.each(["Win32", "MacIntel", "Linux x86_64"])("opens the full main site immediately without a miniQ login or conversation list on %s", async (platform) => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
   const { container } = render(<ConnectedApp theme="jade" onThemeChange={() => {}} />);
-  expect(listZaiwenConversations).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: /miniQ/ }));
-  fireEvent.click(screen.getByRole("menuitemradio", { name: /在问/ }));
-  fireEvent.click(await screen.findByRole("button", { name: "云端会话" }));
-  // The real conversation UI is lazy-loaded, including its Markdown dependencies.
-  await screen.findByText("云端消息", undefined, { timeout: 5000 });
-  const main = screen.getByRole("main", { name: "在问会话" });
-  expect(container.querySelectorAll(".sidebar")).toHaveLength(1);
-  expect(screen.getByLabelText("本地会话")).toBeTruthy();
-  expect(state.mount).toHaveBeenCalledOnce();
-
-  fireEvent.click(screen.getByRole("button", { name: "在问" }));
-  expect(screen.getByRole("menu", { name: "选择平台" })).toBeTruthy();
-  expect(screen.getByRole("main", { name: "在问会话" })).toBe(main);
-  fireEvent.click(screen.getByRole("menuitemradio", { name: /在问/ }));
-  expect(screen.queryByRole("menu", { name: "选择平台" })).toBeNull();
-  expect(state.restore).toHaveBeenCalledOnce();
-  expect(listZaiwenConversations).toHaveBeenCalledOnce();
-  expect(listZaiwenMessages).toHaveBeenCalledOnce();
-  expect(state.panel).not.toHaveBeenCalled();
+  const draft = screen.getByRole<HTMLInputElement>("textbox", { name: "本地草稿" });
+  fireEvent.change(draft, { target: { value: "保留我的本地草稿" } });
+  expect(openBrowser).not.toHaveBeenCalled();
+  await switchTo("在问");
+  await screen.findByRole("main", { name: "在问主站" });
+  await waitFor(() => expect(openBrowser).toHaveBeenCalledOnce());
+  const [, bounds, viewId, visible] = vi.mocked(openBrowser).mock.calls[0];
+  expect(viewId).toBe("zaiwen-site");
+  expect(openBrowser).toHaveBeenCalledWith("https://chat.zaiwenai.com/", bounds, viewId, false);
+  expect(bounds).toEqual({ x: 0, y: 44, width: 1200, height: 756 });
+  expect(visible).toBe(false);
+  expect(resizeBrowser).toHaveBeenCalledWith(bounds, viewId);
+  await waitFor(() => expect(setBrowserVisible).toHaveBeenLastCalledWith(viewId, true));
+  expect(container.querySelector(".app")?.getAttribute("inert")).toBe("");
+  expect(screen.queryByRole("complementary", { name: "miniQ 会话" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "本地草稿" })).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(container.querySelector("iframe")).toBeNull();
+  expect(state.mount).toHaveBeenCalledOnce();
+  expect(screen.getByLabelText("miniQ 工作台").getAttribute("data-active")).toBe("false");
+  expect(fetch).not.toHaveBeenCalled();
 
-  fireEvent.click(screen.getByRole("button", { name: "在问" }));
-  fireEvent.click(screen.getByRole("menuitemradio", { name: /miniQ/ }));
-  expect(screen.getByLabelText("本地会话")).toBeTruthy();
-  expect(screen.queryByRole("main", { name: "在问会话" })).toBeNull();
+  const page = screen.getByRole("main", { name: "在问主站" });
+  const visibilityChanges = vi.mocked(setBrowserVisible).mock.calls.length;
+  const items = await openPlatformMenu();
+  expect(screen.queryByRole("menu", { name: "选择平台" })).toBeNull();
+  expect(setBrowserVisible).toHaveBeenCalledTimes(visibilityChanges);
+  await selectNativePlatform(items, "在问");
+  expect(setBrowserVisible).toHaveBeenCalledTimes(visibilityChanges);
+  expect(screen.getByRole("main", { name: "在问主站" })).toBe(page);
+  expect(openBrowser).toHaveBeenCalledOnce();
+  expect(browserAction).not.toHaveBeenCalled();
+
+  await switchTo("miniQ");
+  await waitFor(() => expect(setBrowserVisible).toHaveBeenLastCalledWith(viewId, false));
+  expect(screen.queryByRole("main", { name: "在问主站" })).toBeNull();
+  expect(screen.getByRole("complementary", { name: "miniQ 会话" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "本地草稿" })).toBe(draft);
+  expect(draft.value).toBe("保留我的本地草稿");
+  expect(screen.getByLabelText("miniQ 工作台").getAttribute("data-active")).toBe("true");
+  expect(closeBrowser).not.toHaveBeenCalled();
   expect(state.unmount).not.toHaveBeenCalled();
+
+  await switchTo("在问");
+  await waitFor(() => expect(setBrowserVisible).toHaveBeenLastCalledWith(viewId, true));
+  expect(screen.getByRole("main", { name: "在问主站" })).toBe(page);
+  expect(openBrowser).toHaveBeenCalledOnce();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("keeps the chosen SSH workspace mounted while the site is visible", async () => {
+  state.host = "ssh-host";
+  render(<ConnectedApp theme="jade" onThemeChange={() => {}} />);
+  const draft = screen.getByRole<HTMLInputElement>("textbox", { name: "本地草稿" });
+  fireEvent.change(draft, { target: { value: "服务器上的草稿" } });
+  await switchTo("在问");
+  await screen.findByRole("main", { name: "在问主站" });
+  expect(screen.getAllByLabelText("miniQ 工作台").every((node) => node.getAttribute("data-active") === "false")).toBe(true);
+  await switchTo("miniQ");
+  expect(screen.getByRole("textbox", { name: "本地草稿" })).toBe(draft);
+  expect(draft.value).toBe("服务器上的草稿");
+  expect(state.mount).toHaveBeenCalledTimes(2);
+  expect(state.unmount).not.toHaveBeenCalled();
+});
+
+it("switches both ways through real overlay clicks, the IPC bridge and main-window events", async () => {
+  state.invoke.mockImplementation(async (command: string, args: { action?: string }) => {
+    if (command === "platform_overlay_action") {
+      state.listeners.get("platform-overlay://action")?.({ payload: args.action });
+    }
+  });
+  render(<ConnectedApp theme="jade" onThemeChange={() => {}} />);
+  window.__MINIQ_PLATFORM__ = await openPlatformMenu();
+  const siteMenu = render(<PlatformOverlay />);
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "在问" }));
+  await screen.findByRole("main", { name: "在问主站" });
+  await waitFor(() => expect(openBrowser).toHaveBeenCalledOnce());
+  const viewId = vi.mocked(openBrowser).mock.calls[0][2];
+  await waitFor(() => expect(setBrowserVisible).toHaveBeenLastCalledWith(viewId, true));
+  siteMenu.unmount();
+
+  window.__MINIQ_PLATFORM__ = await openPlatformMenu();
+  const miniqMenu = render(<PlatformOverlay />);
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "miniQ" }));
+  await screen.findByRole("textbox", { name: "本地草稿" });
+  await waitFor(() => expect(setBrowserVisible).toHaveBeenLastCalledWith(viewId, false));
+  expect(state.invoke.mock.calls.filter(([name]) => name === "platform_overlay_action")).toEqual([
+    ["platform_overlay_action", { action: "zaiwen" }],
+    ["platform_overlay_action", { action: "miniq" }],
+  ]);
+  expect(openBrowser).toHaveBeenCalledOnce();
+  expect(closeBrowser).not.toHaveBeenCalled();
+  miniqMenu.unmount();
+});
+
+it("keeps the main site visible throughout native menu cancellation", async () => {
+  render(<ConnectedApp theme="jade" onThemeChange={() => {}} />);
+  await switchTo("在问");
+  await waitFor(() => expect(openBrowser).toHaveBeenCalledOnce());
+  const viewId = vi.mocked(openBrowser).mock.calls[0][2];
+  await waitFor(() => expect(setBrowserVisible).toHaveBeenLastCalledWith(viewId, true));
+  const visibilityChanges = vi.mocked(setBrowserVisible).mock.calls.length;
+  await openPlatformMenu();
+  expect(setBrowserVisible).toHaveBeenCalledTimes(visibilityChanges);
+  expect(screen.getByRole("main", { name: "在问主站" })).toBeTruthy();
+  await act(async () => state.listeners.get("platform-overlay://action")!({ payload: "close" }));
+  await waitFor(() => expect(state.invoke).toHaveBeenCalledWith("platform_overlay_close", {}));
+  expect(setBrowserVisible).toHaveBeenCalledTimes(visibilityChanges);
+  expect(screen.getByRole("button", { name: "在问" })).toBeTruthy();
+  expect(openBrowser).toHaveBeenCalledOnce();
+  expect(closeBrowser).not.toHaveBeenCalled();
+});
+
+it("renders the actual main-site page in web preview and preserves the frame on return", async () => {
+  vi.mocked(isTauriRuntime).mockReturnValue(false);
+  render(<ConnectedApp theme="jade" onThemeChange={() => {}} />);
+  await switchTo("在问");
+  await waitFor(() => expect(openBrowser).toHaveBeenCalledOnce());
+  await act(async () => {});
+  const frame = await screen.findByTitle("在问主站网页");
+  expect(frame.getAttribute("src")).toBe("https://chat.zaiwenai.com/");
+  await switchTo("miniQ");
+  await switchTo("在问");
+  expect(screen.getByTitle("在问主站网页")).toBe(frame);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("reports native page failures and retries the failed site URL", async () => {
+  vi.mocked(openBrowser).mockResolvedValueOnce({ url: "https://chat.zaiwenai.com/", loadError: { code: "OFFLINE", message: "网络不可用" } });
+  render(<ConnectedApp theme="jade" onThemeChange={() => {}} />);
+  await switchTo("在问");
+  await screen.findByText("无法打开在问主站");
+  expect(screen.getByRole("alert").textContent).toContain("网络不可用");
+  expect(screen.getByRole("alert").textContent).toContain("OFFLINE");
+  fireEvent.click(screen.getByRole("button", { name: "重试打开在问" }));
+  await waitFor(() => expect(openBrowser).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(openBrowser).mock.calls[1][0]).toBe("https://chat.zaiwenai.com/");
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+});
+
+it("opens main-site popup links and closes the native surface when the app unmounts", async () => {
+  const { unmount } = render(<ConnectedApp theme="jade" onThemeChange={() => {}} />);
+  await switchTo("在问");
+  await waitFor(() => expect(openBrowser).toHaveBeenCalledOnce());
+  const viewId = vi.mocked(openBrowser).mock.calls[0][2];
+  await waitFor(() => expect(state.listeners.has("browser://new-window")).toBe(true));
+  await act(async () => state.listeners.get("browser://new-window")!({ payload: { viewId, url: "https://chat.zaiwenai.com/help" } }));
+  expect(openLinkWindow).toHaveBeenCalledExactlyOnceWith("https://chat.zaiwenai.com/help");
+  unmount();
+  await waitFor(() => expect(closeBrowser).toHaveBeenCalledExactlyOnceWith(viewId));
 });

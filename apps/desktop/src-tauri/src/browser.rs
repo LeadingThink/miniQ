@@ -37,6 +37,10 @@ pub(crate) fn child_view_generation() -> u64 {
     CHILD_VIEW_GENERATION.load(Ordering::SeqCst)
 }
 
+pub(crate) fn child_view_attached() -> u64 {
+    CHILD_VIEW_GENERATION.fetch_add(1, Ordering::SeqCst) + 1
+}
+
 /// One WKWebsiteDataStore shared by every embedded browser view (macOS 14+),
 /// so logins survive new tabs and restarts. Wry falls back to the default
 /// persistent store on older macOS. Never change it: that logs everyone out.
@@ -417,11 +421,14 @@ pub fn reveal_download(app: &tauri::AppHandle, path: &str) -> Result<(), String>
         .map_err(|error| error.to_string())
 }
 
-/// Never call `Webview::url()` on macOS: wry unwraps WKWebView's nil URL after
-/// a failed load and aborts the whole app. Read the optional URL directly.
+/// Native load callbacks already maintain the navigation state. Sample the
+/// committed URL asynchronously for SPA history changes, without making every
+/// status poll wait on the UI thread (which pauses while native menus run).
+/// Never call `Webview::url()` on macOS: wry unwraps a nil URL after failed loads.
 #[cfg(target_os = "macos")]
-async fn committed_url(webview: &tauri::Webview) -> Result<Option<String>, String> {
-    let (sender, receiver) = tokio::sync::oneshot::channel();
+fn committed_url(webview: &tauri::Webview, label: &str) -> Result<Option<String>, String> {
+    let generation = navigation::sample_generation(label);
+    let label = label.to_owned();
     webview
         .with_webview(move |platform| {
             let view: &objc2_web_kit::WKWebView = unsafe { &*platform.inner().cast() };
@@ -429,18 +436,14 @@ async fn committed_url(webview: &tauri::Webview) -> Result<Option<String>, Strin
                 .and_then(|url| url.absoluteString())
                 .map(|value| value.to_string())
                 .filter(|value| !value.is_empty());
-            let _ = sender.send(url);
+            navigation::sample_committed(&label, generation, url.as_deref());
         })
         .map_err(|error| error.to_string())?;
-    let url = tokio::time::timeout(std::time::Duration::from_secs(5), receiver)
-        .await
-        .map_err(|_| "读取内置浏览器地址超时".to_string())?
-        .map_err(|_| "内置浏览器地址通道已关闭".to_string())?;
-    Ok(url)
+    Ok(None)
 }
 
 #[cfg(not(target_os = "macos"))]
-async fn committed_url(webview: &tauri::Webview) -> Result<Option<String>, String> {
+fn committed_url(webview: &tauri::Webview, _label: &str) -> Result<Option<String>, String> {
     Ok(webview
         .url()
         .ok()
@@ -448,12 +451,12 @@ async fn committed_url(webview: &tauri::Webview) -> Result<Option<String>, Strin
         .filter(|url| !url.is_empty()))
 }
 
-async fn browser_state(
+fn browser_state(
     webview: &tauri::Webview,
     label: &str,
     zoom: Option<f64>,
 ) -> Result<BrowserState, String> {
-    let (url, load_error) = navigation::snapshot(label, committed_url(webview).await?);
+    let (url, load_error) = navigation::snapshot(label, committed_url(webview, label)?);
     Ok(BrowserState {
         url: url.ok_or_else(|| "内置浏览器尚未加载任何页面".to_string())?,
         zoom,
@@ -650,6 +653,9 @@ pub fn open(
     #[cfg(not(any(target_os = "macos", windows)))]
     let initial_url = url.clone();
     let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(initial_url));
+    if view_id == "zaiwen-site" {
+        builder = builder.initialization_script(include_str!("zaiwen_site.js"));
+    }
     if let Some(user_agent) = EMBEDDED_BROWSER_USER_AGENT {
         builder = builder.user_agent(user_agent);
     }
@@ -730,7 +736,7 @@ pub fn open(
             initial_size(bounds),
         )
         .map_err(|error| error.to_string())?;
-    CHILD_VIEW_GENERATION.fetch_add(1, Ordering::SeqCst);
+    child_view_attached();
     #[cfg(target_os = "macos")]
     {
         let app = app.clone();
@@ -831,7 +837,7 @@ pub async fn action(
         _ => return Err(format!("未知浏览器操作: {action}")),
     }
     .map_err(|error| error.to_string())?;
-    browser_state(&webview, &label, Some(current_zoom(&label))).await
+    browser_state(&webview, &label, Some(current_zoom(&label)))
 }
 
 pub async fn current(app: &tauri::AppHandle, view_id: &str) -> Result<BrowserState, String> {
@@ -839,7 +845,7 @@ pub async fn current(app: &tauri::AppHandle, view_id: &str) -> Result<BrowserSta
     let webview = app
         .get_webview(&label)
         .ok_or_else(|| "内置浏览器尚未打开".to_string())?;
-    browser_state(&webview, &label, None).await
+    browser_state(&webview, &label, None)
 }
 
 pub fn close(app: &tauri::AppHandle, view_id: &str) -> Result<(), String> {

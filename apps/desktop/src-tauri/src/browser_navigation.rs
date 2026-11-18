@@ -12,6 +12,8 @@ pub(super) struct LoadError {
 #[derive(Default)]
 struct NavigationState {
     requested: String,
+    committed: Option<String>,
+    generation: u64,
     previous: Option<String>,
     active: Option<u64>,
     active_url: Option<String>,
@@ -22,6 +24,7 @@ struct NavigationState {
 impl NavigationState {
     fn request(&mut self, url: &str) {
         self.remember(url);
+        self.generation += 1;
         self.active = None;
         self.error = None;
         self.pending = true;
@@ -29,6 +32,7 @@ impl NavigationState {
 
     fn remember(&mut self, url: &str) {
         if self.requested != url {
+            self.generation += 1;
             self.previous = Some(std::mem::replace(&mut self.requested, url.to_owned()));
         }
     }
@@ -65,11 +69,24 @@ impl NavigationState {
     }
 
     fn reported_url(&self, committed: Option<String>) -> Option<String> {
+        let committed = committed.or_else(|| self.committed.clone());
         let requested = Some(self.requested.clone()).filter(|url| !url.is_empty());
         if self.error.is_some() || self.pending {
             requested.or(committed)
         } else {
             committed.or(requested)
+        }
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    fn sample_committed(&mut self, generation: u64, url: Option<&str>) {
+        // A delayed sample must never overwrite a newer target or a failure.
+        if !self.pending && self.error.is_none() && generation == self.generation {
+            if let Some(url) =
+                url.filter(|url| url.starts_with("https://") || url.starts_with("http://"))
+            {
+                self.committed = Some(url.to_owned());
+            }
         }
     }
 }
@@ -88,6 +105,24 @@ pub(super) fn request(label: &str, url: &str) {
 pub(super) fn remember(label: &str, url: &str) {
     if let Ok(mut states) = states().lock() {
         states.entry(label.into()).or_default().remember(url);
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn sample_generation(label: &str) -> Option<u64> {
+    states()
+        .lock()
+        .ok()?
+        .get(label)
+        .map(|state| state.generation)
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn sample_committed(label: &str, generation: Option<u64>, url: Option<&str>) {
+    if let Ok(mut states) = states().lock() {
+        if let (Some(state), Some(generation)) = (states.get_mut(label), generation) {
+            state.sample_committed(generation, url);
+        }
     }
 }
 
@@ -150,6 +185,7 @@ pub(super) fn page_load(
         if phase == "finished" {
             if let Some(url) = url {
                 state.remember(&url);
+                state.committed = Some(url);
             }
         }
         Some(super::PageLoadPayload {
@@ -237,7 +273,9 @@ mod macos {
         runtime::{AnyClass, AnyObject, ClassBuilder, Sel},
         sel,
     };
-    use objc2_foundation::{NSError, NSString, NSURL};
+    use objc2_foundation::NSError;
+    #[cfg(test)]
+    use objc2_foundation::{NSString, NSURL};
     use objc2_web_kit::{WKNavigation, WKWebView};
 
     struct Classes {
@@ -614,6 +652,35 @@ mod tests {
         assert!(state.error.is_none());
         // A redirect failure with the current target is still accepted.
         assert!(state.failed(1, refused(), Some("https://new.example/")));
+    }
+
+    #[test]
+    fn committed_samples_follow_spa_history_without_overwriting_navigation_or_errors() {
+        let mut state = NavigationState::default();
+        state.request("https://chat.zaiwenai.com/");
+        state.started(1);
+        state.sample_committed(state.generation, Some("https://old.example/"));
+        assert_eq!(
+            state.reported_url(None).as_deref(),
+            Some("https://chat.zaiwenai.com/")
+        );
+        assert!(state.finished(1));
+        let old_generation = state.generation;
+        for url in [
+            "https://chat.zaiwenai.com/chat/123",
+            "https://chat.zaiwenai.com/chat/456",
+        ] {
+            state.sample_committed(state.generation, Some(url));
+            assert_eq!(state.reported_url(None).as_deref(), Some(url));
+        }
+        state.request(FAILED);
+        state.sample_committed(old_generation, Some("https://stale.example/"));
+        assert_eq!(state.reported_url(None).as_deref(), Some(FAILED));
+        state.started(2);
+        assert!(state.failed(2, refused(), None));
+        state.sample_committed(state.generation, Some("https://old.example/"));
+        assert_eq!(state.reported_url(None).as_deref(), Some(FAILED));
+        assert_eq!(state.error, Some(refused()));
     }
 
     #[test]

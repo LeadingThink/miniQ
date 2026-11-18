@@ -1,0 +1,14 @@
+.zaiwen-site,
+.zaiwen-site-surface {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.zaiwen-site { flex-direction: column; background: var(--bg); }
+.zaiwen-site-surface > iframe { width: 100%; flex: 1; border: 0; }
+.zaiwen-site-surface > [role="status"] { margin: auto; color: var(--text-mid); }
+.zaiwen-site-error { padding: 24px; color: var(--text-mid); overflow: auto; overflow-wrap: anywhere; }
+.zaiwen-site-error h2 { color: var(--text); }
+.zaiwen-site-error button { display: block; margin-top: 12px; }

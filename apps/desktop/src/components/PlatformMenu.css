@@ -1,0 +1,46 @@
+.platform-switcher-menu.ui-menu {
+  box-sizing: border-box;
+  width: 280px;
+  min-width: 0;
+  max-width: calc(100vw - 16px);
+  padding: 6px;
+  border-radius: 18px;
+  background: var(--bg);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 14%);
+}
+.platform-switcher-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 13px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.platform-switcher-menu button:hover,
+.platform-switcher-menu button:focus-visible { background: var(--bg-hover); }
+.platform-switcher-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.platform-switcher-menu button > span { display: grid; gap: 4px; }
+.platform-switcher-menu button > svg { flex-shrink: 0; color: var(--text-mid); }
+.platform-switcher-menu strong { font-size: 15px; font-weight: 500; line-height: 1.35; }
+.platform-switcher-menu small { color: var(--text-mid); font-size: 12px; line-height: 1.4; }
+
+html[data-companion="platform-overlay"],
+html[data-companion="platform-overlay"] body,
+html[data-companion="platform-overlay"] #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent !important;
+}
+.platform-overlay-anchor { position: fixed; }
+html[data-companion="platform-overlay"] .platform-switcher-menu { animation: none; }
+.platform-overlay-error { margin: 8px 13px; color: var(--danger); font-size: 12px; }

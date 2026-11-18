@@ -19,6 +19,8 @@ export interface MenuProps {
   open: boolean;
   anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
+  /** Native overlays send one action which also dismisses their host view. */
+  closeOnSelect?: boolean;
   label: string;
   className?: string;
   /** Open at a viewport point (context menus); focus still returns to the anchor. */
@@ -112,6 +114,7 @@ export function Menu(props: MenuProps) {
       onMouseLeave={props.onMouseLeave}
       onContextMenu={(event) => event.preventDefault()}
       onClick={(event) => {
+        if (props.closeOnSelect === false) return;
         const item = (event.target as HTMLElement).closest(menuItemSelector);
         if (item && !item.hasAttribute("disabled") && item.getAttribute("aria-haspopup") !== "menu") close();
       }}

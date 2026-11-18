@@ -4,18 +4,25 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { COMMAND_EVENT } from "../shortcuts";
 import { AppMenuBar } from "./AppMenuBar";
+import { listen } from "@tauri-apps/api/event";
 
 const native = vi.hoisted(() => ({
   enabled: false,
+  invoke: vi.fn(),
+  handler: undefined as ((event: { payload: string }) => void) | undefined,
   create: vi.fn(),
   popup: vi.fn(async () => {}),
   close: vi.fn(async () => {}),
 }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async (_name, handler) => { native.handler = handler; return () => {}; }) }));
 vi.mock("../runtime", () => ({ isTauriRuntime: () => native.enabled }));
 vi.mock("@tauri-apps/api/menu", () => ({ Menu: { new: native.create } }));
 vi.mock("./WindowControls", () => ({ WindowControls: () => null }));
 beforeEach(() => {
   native.enabled = false;
+  native.handler = undefined;
+  native.invoke.mockResolvedValue(undefined);
   vi.clearAllMocks();
   native.create.mockResolvedValue({ popup: native.popup, close: native.close });
 });
@@ -40,45 +47,69 @@ it("offers the miniQ and 在问 platform switcher", () => {
   render(<AppMenuBar app={controller()} onPlatformChange={onPlatformChange} />);
   fireEvent.click(screen.getByRole("button", { name: /miniQ/ }));
   expect(screen.getByRole("menu", { name: "选择平台" })).toBeTruthy();
-  expect(screen.getByText("查看在问账号的会话")).toBeTruthy();
+  expect(screen.getByText("创作、学习和探索")).toBeTruthy();
   fireEvent.click(screen.getByRole("menuitemradio", { name: /在问/ }));
   expect(onPlatformChange).toHaveBeenCalledWith("zaiwen");
 });
 
-it("uses the same two-line platform menu on desktop and keeps the current platform selection inert", () => {
+it("opens the styled native overlay above child WebViews and keeps the current selection inert", async () => {
   native.enabled = true;
   const onPlatformChange = vi.fn();
-  render(<AppMenuBar app={controller()} platform="zaiwen" zaiwenUser="user" onPlatformChange={onPlatformChange} />);
-  fireEvent.click(screen.getByRole("button", { name: /在问/ }));
-  const menu = screen.getByRole("menu", { name: "选择平台" });
-  const current = within(menu).getByRole("menuitemradio", { name: "在问", description: "查看在问账号的会话" });
-  expect(current.getAttribute("aria-checked")).toBe("true");
-  expect(current.querySelector("strong")?.textContent).toBe("在问");
-  expect(current.querySelector("small")?.textContent).toBe("查看在问账号的会话");
-  expect(within(menu).getByText("已登录：user")).toBeTruthy();
-  expect(screen.queryByText("在问主站")).toBeNull();
+  render(<AppMenuBar app={controller()} platform="zaiwen" onPlatformChange={onPlatformChange} />);
+  const trigger = screen.getByRole("button", { name: "在问" });
+  fireEvent.click(trigger);
+  await waitFor(() => expect(native.invoke).toHaveBeenCalledWith("platform_overlay_open", {
+    bounds: { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
+    snapshot: expect.objectContaining({ platform: "zaiwen", anchor: expect.any(Object), requestId: expect.any(String) }),
+  }));
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
   expect(native.create).not.toHaveBeenCalled();
-  fireEvent.click(current);
+  expect(screen.queryByRole("menu", { name: "选择平台" })).toBeNull();
+  await waitFor(() => expect(native.handler).toBeTypeOf("function"));
+  await act(async () => native.handler?.({ payload: "zaiwen" }));
   expect(onPlatformChange).not.toHaveBeenCalled();
-  expect(screen.queryByRole("menu", { name: "选择平台" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "在问" }));
-  fireEvent.click(screen.getByRole("menuitemradio", { name: /miniQ/ }));
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(trigger);
+  await act(async () => native.handler?.({ payload: "miniq" }));
   expect(onPlatformChange).toHaveBeenCalledExactlyOnceWith("miniq");
+});
+
+it("opens the styled overlay from the keyboard and reports creation failures", async () => {
+  native.enabled = true;
+  native.invoke.mockRejectedValueOnce(new Error("overlay failed"));
+  render(<AppMenuBar app={controller()} />);
+  fireEvent.keyDown(screen.getByRole("button", { name: "miniQ" }), { key: "ArrowDown" });
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("overlay failed"));
   expect(screen.queryByRole("menu", { name: "选择平台" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "miniQ" }));
+  await waitFor(() => expect(native.invoke.mock.calls.filter(([name]) => name === "platform_overlay_open")).toHaveLength(2));
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("keeps the native action listener subscribed across parent updates and uses the latest callback", async () => {
+  native.enabled = true;
+  const initialChange = vi.fn();
+  const latestChange = vi.fn();
+  const view = render(<AppMenuBar app={controller()} onPlatformChange={initialChange} />);
+  await waitFor(() => expect(native.handler).toBeTypeOf("function"));
+  const subscriptions = vi.mocked(listen).mock.calls.length;
+  view.rerender(<AppMenuBar app={controller()} onPlatformChange={latestChange} />);
+  expect(vi.mocked(listen)).toHaveBeenCalledTimes(subscriptions);
+  await act(async () => native.handler?.({ payload: "zaiwen" }));
+  expect(initialChange).not.toHaveBeenCalled();
+  expect(latestChange).toHaveBeenCalledExactlyOnceWith("zaiwen");
 });
 
 it("uses native popups for application menus", async () => {
   native.enabled = true;
   const app = controller();
-  const onNavigate = vi.fn();
-  render(<AppMenuBar app={app} platform="zaiwen" onNavigate={onNavigate} />);
+  render(<AppMenuBar app={app} />);
   fireEvent.click(screen.getByRole("menuitem", { name: "文件" }));
   await waitFor(() => expect(native.popup).toHaveBeenCalledOnce());
   expect(screen.queryByRole("menu", { name: "文件" })).toBeNull();
   const items = native.create.mock.calls[0][0].items;
   await act(async () => items.find((item: { text: string }) => item.text === "打开项目文件夹…").action());
   expect(app.actions.openWorkspace).toHaveBeenCalledOnce();
-  expect(onNavigate).toHaveBeenCalledOnce();
 });
 
 it("navigates platform choices with the keyboard and closes on Escape and outside clicks", () => {
@@ -170,13 +201,11 @@ it("opens the about dialog after menu focus restoration", async () => {
 
 it("opens project and page actions using the active controller", async () => {
   const app = controller();
-  const onNavigate = vi.fn();
-  render(<AppMenuBar app={app} onNavigate={onNavigate} />);
+  render(<AppMenuBar app={app} />);
   fireEvent.click(screen.getByRole("menuitem", { name: "文件" }));
   await act(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "打开项目文件夹…" })); });
   expect(app.actions.openWorkspace).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByRole("menuitem", { name: "视图" }));
   await act(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "已安排" })); });
   expect(app.navigation.setPage).toHaveBeenCalledWith("schedule");
-  expect(onNavigate).toHaveBeenCalledTimes(2);
 });

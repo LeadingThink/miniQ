@@ -23,7 +23,6 @@ import {
 import type { RpcClient } from "../rpc";
 import type { ModelPerformanceResult } from "../modelPerformance";
 import type { useSessionModel } from "../hooks/useSessionModel";
-import type { SessionModelCatalog } from "../sessionModelCatalog";
 import { ModelPerformanceIndicator } from "./ModelPerformanceIndicator";
 import { SessionModelSurface } from "./SessionModelSurface";
 import { modelPickerRightBoundary } from "./SessionModelSurface";
@@ -66,13 +65,11 @@ export function SessionModelControls({
   client,
   model,
   busy,
-  catalog,
   placement = "above",
 }: {
   client: RpcClient;
   model: ReturnType<typeof useSessionModel>;
   busy: boolean;
-  catalog?: SessionModelCatalog;
   placement?: "above" | "below";
 }) {
   const [open, setOpen] = useState(false);
@@ -216,14 +213,14 @@ export function SessionModelControls({
     setLoading(true);
     setCatalogError(null);
     setPerformance(null);
-    void (catalog ? catalog.performance?.() ?? Promise.resolve(null) : client.call<ModelPerformanceResult>("model.performance"))
+    void client.call<ModelPerformanceResult>("model.performance")
       .then((result) => {
         if (!stale) setPerformance(result);
       })
       .catch(() => {
         if (!stale) setPerformance(null);
       });
-    void (catalog ? catalog.list() : client.call<{ models: string[] }>("model.list"))
+    void client.call<{ models: string[] }>("model.list")
       .then((result) => {
         if (stale) return;
         const nextModels = Array.isArray(result.models) ? result.models : [];
@@ -243,7 +240,7 @@ export function SessionModelControls({
     return () => {
       stale = true;
     };
-  }, [client, catalog, open, attempt, model.settings.model, model.effective?.model]);
+  }, [client, open, attempt, model.settings.model, model.effective?.model]);
 
   // 悬停的模型决定右侧档位菜单；描述按模型缓存，来回划过不发请求。
   const describeTarget = open ? hovered || selectedModel : (model.effective?.model ?? "");
@@ -263,9 +260,9 @@ export function SessionModelControls({
     setDescription(null);
     setDescriptionError(null);
     const protocol = open ? "auto" : (model.effective?.apiProtocol ?? "auto");
-    void (catalog ? catalog.describe(describeTarget, protocol) : client.call<ModelDescription>("model.describe", {
+    void client.call<ModelDescription>("model.describe", {
       model: describeTarget, apiProtocol: protocol,
-    }))
+    })
       .then((value) => {
         descriptions.current.set(describeTarget, value);
         if (!stale) {
@@ -282,7 +279,7 @@ export function SessionModelControls({
     return () => {
       stale = true;
     };
-  }, [client, catalog, describeTarget, model.effective?.apiProtocol, open, attempt]);
+  }, [client, describeTarget, model.effective?.apiProtocol, open, attempt]);
 
   const applySelection = async (
     id: string | null,
@@ -302,9 +299,9 @@ export function SessionModelControls({
     try {
       await model.update({
         ...DEFAULT_MODEL_SETTINGS,
-        model: catalog?.defaultModel ?? DEFAULT_MODEL_ID,
+        model: DEFAULT_MODEL_ID,
       });
-      setSelectedModel(catalog?.defaultModel ?? DEFAULT_MODEL_ID);
+      setSelectedModel(DEFAULT_MODEL_ID);
       setSelectedEffort(null);
       setQuery("");
       setOpen(false);

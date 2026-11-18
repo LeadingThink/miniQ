@@ -3,14 +3,9 @@ import { useDesktopHost } from "../desktopHost";
 import { hostKey, scopedKey } from "../hostWorkspace";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import type { Session } from "../types";
-import type { ComponentProps } from "react";
 
-export function UnifiedSidebar({ app, conversationItems, conversationCounts, onNavigate, cloudSelected = false }: {
+export function UnifiedSidebar({ app }: {
   app: MiniqAppController;
-  conversationItems?: ComponentProps<typeof AppSidebar>["conversationItems"];
-  conversationCounts?: ComponentProps<typeof AppSidebar>["conversationCounts"];
-  onNavigate?: () => void;
-  cloudSelected?: boolean;
 }) {
   const desktop = useDesktopHost()!;
   const catalogs = Object.values(desktop.catalogs);
@@ -45,7 +40,7 @@ export function UnifiedSidebar({ app, conversationItems, conversationCounts, onN
   const virtual: MiniqAppController = {
     ...app,
     catalog: { ...app.catalog, workspaces, sessions,
-      currentSessionId: !cloudSelected && app.catalog.currentSessionId ? scopedKey(desktop.host, app.catalog.currentSessionId) : null,
+      currentSessionId: app.catalog.currentSessionId ? scopedKey(desktop.host, app.catalog.currentSessionId) : null,
       selectedWorkspace: app.catalog.selectedWorkspace ? { ...app.catalog.selectedWorkspace, id: scopedKey(app.client.sshHost, app.catalog.selectedWorkspace.id) } : app.catalog.selectedWorkspace,
     },
     unreadSessionIds: new Set(catalogs.flatMap((catalog) => [...catalog.unreadSessionIds].map((id) => scopedKey(catalog.hostId, id)))),
@@ -64,13 +59,13 @@ export function UnifiedSidebar({ app, conversationItems, conversationCounts, onN
       setSessionArchived: (key, archived) => mutate(key, "session.setArchived", "sessionId", { archived }),
     },
   };
-  return <AppSidebar app={virtual} conversationItems={conversationItems} conversationCounts={conversationCounts} onNavigate={onNavigate} onCreateSession={(key) => void createSession(key)} hostGroups={catalogs.map((catalog) => ({
+  return <AppSidebar app={virtual} onCreateSession={(key) => void createSession(key)} hostGroups={catalogs.map((catalog) => ({
     key: hostKey(catalog.hostId), label: catalog.hostId === null ? (desktop.root.mode === "remote" ? "远程桌面" : "本机") : catalog.label,
     local: catalog.hostId === null && desktop.root.mode !== "remote",
     catalogStatus: catalog.catalogStatus, catalogError: catalog.catalogError,
     onRetry: () => { void desktop.refreshCatalog(catalog.hostId).catch((cause) => desktop.reportHostError(catalog.hostId, cause)); },
     state: catalog.state, error: catalog.error, selected: catalog.hostId === desktop.host,
     workspaceIds: catalog.workspaces.map((workspace) => scopedKey(catalog.hostId, workspace.id)),
-    onSelect: () => { onNavigate?.(); void desktop.selectHost(catalog.hostId); },
+    onSelect: () => { void desktop.selectHost(catalog.hostId); },
   }))} />;
 }

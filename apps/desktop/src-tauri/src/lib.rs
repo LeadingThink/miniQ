@@ -6,8 +6,9 @@ mod account_transport;
 mod app_menu;
 mod apple_speech;
 mod browser;
-mod context_usage_overlay;
+mod child_overlay;
 mod companion;
+mod context_usage_overlay;
 mod daemon;
 mod data_directory;
 mod dragged_image;
@@ -22,6 +23,7 @@ mod link_download;
 mod local_file;
 mod local_upload;
 mod office_preview;
+mod platform_overlay;
 mod task_sound;
 mod terminal_install;
 mod terminal_open;
@@ -401,10 +403,13 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(|invoke| {
             let webview_label = invoke.message.webview_ref().label();
-            if webview_label == "context-usage-overlay" {
+            if webview_label == "context-usage-overlay"
+                || (webview_label == "platform-overlay"
+                    && !platform_overlay::allowed_command(webview_label, invoke.message.command()))
+            {
                 invoke
                     .resolver
-                    .reject("Commands are unavailable to the context usage overlay");
+                    .reject("Commands are unavailable to overlay webviews");
                 return true;
             }
             if webview_label == "companion"
@@ -462,6 +467,9 @@ pub fn run() {
                 context_usage_overlay_open,
                 context_usage_overlay_update,
                 context_usage_overlay_close,
+                platform_overlay::platform_overlay_open,
+                platform_overlay::platform_overlay_close,
+                platform_overlay::platform_overlay_action,
                 browser_reveal_download,
                 open_microphone_settings,
                 apple_speech::apple_speech_available,
