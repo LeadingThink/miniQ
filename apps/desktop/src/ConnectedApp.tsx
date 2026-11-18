@@ -2,15 +2,20 @@ import { AppShell } from "./components/AppShell";
 import { useMiniqApp } from "./hooks/useMiniqApp";
 import { SessionFileAccess } from "./sessionFileAccess";
 import type { ThemeId } from "./theme";
-import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { lazy, memo, Suspense, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useDesktopHost } from "./desktopHost";
 import { hostKey } from "./hostWorkspace";
+import { UnifiedSidebar } from "./components/UnifiedSidebar";
 import { AppMenuBar } from "./components/AppMenuBar";
 import type { MiniqAppController } from "./hooks/useMiniqApp";
 import { ZaiwenLoginDialog } from "./components/ZaiwenLoginDialog";
 import { getZaiwenSession, restoreZaiwenSession, type ZaiwenSession } from "./zaiwenAuth";
 import type { AppPlatform } from "./components/PlatformSwitcher";
-import { ZaiwenSiteView } from "./components/ZaiwenSiteView";
+import { useZaiwenHistory } from "./hooks/useZaiwenHistory";
+import { ZaiwenConversationList } from "./components/ZaiwenConversationList";
+import { isMobileLayout } from "./mobileViewport";
+
+const ZaiwenConversation = lazy(async () => ({ default: (await import("./components/ZaiwenConversation")).ZaiwenConversation }));
 
 export default function ConnectedApp(props: {
   theme: ThemeId;
@@ -23,7 +28,8 @@ export default function ConnectedApp(props: {
   const [loginOpen, setLoginOpen] = useState(false);
   const switchRequest = useRef(0);
   const cloud = platform === "zaiwen";
-  const viewingCloud = cloud && !!zaiwenSession;
+  const history = useZaiwenHistory(zaiwenSession, !!desktop && cloud);
+  const viewingCloud = cloud && !!history.selected;
   const switchPlatform = useCallback((next: AppPlatform) => {
     const request = ++switchRequest.current;
     if (next === "miniq") { setLoginOpen(false); setPlatform("miniq"); return; }
@@ -36,12 +42,21 @@ export default function ConnectedApp(props: {
     });
   }, []);
   if (!desktop) return <HostContent {...props} />;
+  const setSidebarCollapsed = (collapsed: boolean) => controller?.navigation.setSidebarCollapsed(collapsed);
+  const showLocal = () => history.select(null);
   return <div className="desktop-workspace">
-    <AppMenuBar app={controller} platform={platform} onPlatformChange={switchPlatform} zaiwenUser={zaiwenSession?.user.nick || zaiwenSession?.user.phone} />
+    <AppMenuBar app={viewingCloud && controller ? { ...controller, catalog: { ...controller.catalog, currentSession: null, currentSessionId: null } } : controller} onNavigate={showLocal} platform={platform} onPlatformChange={switchPlatform} zaiwenUser={zaiwenSession?.user.nick || zaiwenSession?.user.phone} />
     <div className={`app ${desktop.sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-      {zaiwenSession && <ZaiwenSiteView session={zaiwenSession} active={viewingCloud} />}
-      <div style={{ display: desktop.host === null && !viewingCloud ? "contents" : "none" }} inert={viewingCloud}>
-        <HostContent {...props} active={!viewingCloud && desktop.host === null} publish={setController} />
+      {controller && <UnifiedSidebar app={controller} cloudSelected={viewingCloud} onNavigate={showLocal}
+        conversationCounts={cloud ? { all: history.conversations.items.length, pinned: history.conversations.items.filter((item) => item.pinned).length } : undefined}
+        conversationItems={cloud ? (query, filter) => <ZaiwenConversationList session={zaiwenSession} history={history} query={query} filter={filter}
+          onLogin={() => setLoginOpen(true)} onSelect={() => { if (isMobileLayout()) setSidebarCollapsed(true); }} /> : undefined} />}
+      {viewingCloud && zaiwenSession && <Suspense fallback={<main className="main" role="status">正在打开会话…</main>}>
+        <ZaiwenConversation key={JSON.stringify([zaiwenSession.user.uid, zaiwenSession.token, history.selected!.id])} session={zaiwenSession} history={history} app={controller!} onNavigate={showLocal} onLogin={() => setLoginOpen(true)}
+          onToggleSidebar={() => setSidebarCollapsed(!desktop.sidebarCollapsed)} />
+      </Suspense>}
+      <div style={{ display: desktop.host === null && !viewingCloud ? "contents" : "none" }} inert={desktop.host !== null || viewingCloud}>
+        <HostContent {...props} active={desktop.host === null && !viewingCloud} publish={setController} />
       </div>
       {desktop.host !== null && <div style={{ display: viewingCloud ? "none" : "contents" }} inert={viewingCloud}>
         <HostContent key={hostKey(desktop.host)} {...props} active={!viewingCloud} publish={setController} />
