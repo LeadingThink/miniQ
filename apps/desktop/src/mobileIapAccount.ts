@@ -33,13 +33,15 @@ export class IapApiError extends Error {
  * Do not patch fetch globally: model streaming must continue to use web fetch.
  * Login JWTs are never copied into JS storage or used as model API Keys.
  */
-export async function oneApiRequest(path: string, body?: unknown): Promise<unknown> {
+export async function oneApiRequest(path: string, body?: unknown, mainSiteSession?: string): Promise<unknown> {
   if (isTauriRuntime()) {
     const response = await invoke<{ status: number; data: unknown }>("desktop_account_request", {
-      request: { baseUrl: DESKTOP_API_BASE_URL, path, method: body === undefined ? "GET" : "POST", body: body ?? null },
+      request: { baseUrl: DESKTOP_API_BASE_URL, path, method: body === undefined ? "GET" : "POST", body: body ?? null,
+        ...(mainSiteSession === undefined ? {} : { mainSiteSession }) },
     }).catch(() => { throw new Error("无法连接账户服务，请检查网络后重试。"); });
     return handleAccountResponse(response.status, response.data);
   }
+  if (mainSiteSession !== undefined) throw new Error("主站 API Key 导入仅支持桌面本机。");
   if (!Capacitor.isNativePlatform()) throw new Error("请在手机 App 中使用账户服务。");
   let response;
   try {
@@ -131,16 +133,16 @@ function parseKey(value: unknown): OneApiKey {
     is_active: value.is_active, expire_time: value.expire_time };
 }
 
-export async function loadOneApiKeys(page: number): Promise<OneApiKeysPage> {
-  const value = await oneApiRequest(`/keys?page=${page}&page_size=10`);
+export async function loadOneApiKeys(page: number, mainSiteSession?: string): Promise<OneApiKeysPage> {
+  const value = await oneApiRequest(`/keys?page=${page}&page_size=10`, undefined, mainSiteSession);
   if (!isRecord(value) || !Array.isArray(value.keys) || !Number.isSafeInteger(value.total) || (value.total as number) < 0) {
     throw new Error("Key 列表格式无效，请重新加载。");
   }
   return { total: value.total as number, keys: value.keys.map(parseKey) };
 }
 
-export async function createOneApiKey(remark: string): Promise<OneApiKey> {
+export async function createOneApiKey(remark: string, mainSiteSession?: string): Promise<OneApiKey> {
   return parseKey(await oneApiRequest("/keys", {
     remark: remark.trim() || "miniQ", is_active: true, allow_model_ids: ["all"], quote_limit: 0,
-  }));
+  }, mainSiteSession));
 }

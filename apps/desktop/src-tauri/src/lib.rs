@@ -27,6 +27,7 @@ mod platform_overlay;
 mod task_sound;
 mod terminal_install;
 mod terminal_open;
+mod zaiwen_sso;
 use keep_awake::KeepAwakeState;
 
 type DaemonState = std::sync::Arc<daemon::DaemonLifecycle>;
@@ -480,7 +481,9 @@ pub fn run() {
                 browser_evaluate,
                 browser_screenshot,
                 browser_capabilities,
-                account_transport::desktop_account_request
+                account_transport::desktop_account_request,
+                zaiwen_sso::zaiwen_session_status,
+                zaiwen_sso::zaiwen_account_login
             ];
             handler(invoke)
         })

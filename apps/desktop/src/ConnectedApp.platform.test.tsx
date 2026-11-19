@@ -94,6 +94,11 @@ it.each(["Win32", "MacIntel", "Linux x86_64"])("opens the full main site immedia
   expect(openBrowser).not.toHaveBeenCalled();
   await switchTo("在问");
   await screen.findByRole("main", { name: "在问主站" });
+  const importButton = await screen.findByRole("button", { name: "选择在问 API Key" });
+  const topbar = container.querySelector(".app-menubar")!;
+  expect(topbar.contains(importButton)).toBe(true);
+  expect(topbar.querySelector(".app-menubar-brand")?.nextElementSibling?.contains(importButton)).toBe(true);
+  expect(screen.getByRole("main", { name: "在问主站" }).contains(importButton)).toBe(false);
   await waitFor(() => expect(openBrowser).toHaveBeenCalledOnce());
   const [, bounds, viewId, visible] = vi.mocked(openBrowser).mock.calls[0];
   expect(viewId).toBe("zaiwen-site");
@@ -123,6 +128,7 @@ it.each(["Win32", "MacIntel", "Linux x86_64"])("opens the full main site immedia
   expect(browserAction).not.toHaveBeenCalled();
 
   await switchTo("miniQ");
+  expect(screen.queryByRole("button", { name: "选择在问 API Key" })).toBeNull();
   await waitFor(() => expect(setBrowserVisible).toHaveBeenLastCalledWith(viewId, false));
   expect(screen.queryByRole("main", { name: "在问主站" })).toBeNull();
   expect(screen.getByRole("complementary", { name: "miniQ 会话" })).toBeTruthy();

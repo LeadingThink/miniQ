@@ -1,23 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { IapApiError, createOneApiKey, loadOneApiAccount, loadOneApiKeys, logoutIapAccount, type OneApiAccount } from "../mobileIapAccount";
+import { IapApiError, loadOneApiAccount, logoutIapAccount, type OneApiAccount } from "../mobileIapAccount";
+import { acquireDesktopAccountKey } from "../desktopAccountKey";
 import { MobileAccountLogin } from "./MobileAccountLogin";
 import "./DesktopAccountLogin.css";
-
-/** Reuse an active key before creating one; never replace a key merely because it is on a later page. */
-export async function acquireDesktopAccountKey(): Promise<string> {
-  let page = 1;
-  let count = 0;
-  while (true) {
-    const result = await loadOneApiKeys(page);
-    const usable = result.keys.find((key) => key.is_active && key.expire_time > Date.now() / 1000);
-    if (usable) return usable.sk;
-    count += result.keys.length;
-    if (count >= result.total) break;
-    if (result.keys.length === 0) throw new Error("Key 列表加载不完整，请重试。");
-    page += 1;
-  }
-  return (await createOneApiKey("miniQ 桌面端")).sk;
-}
 
 export function DesktopAccountLogin(props: { disabled: boolean; onKey: (key: string) => void; onBusyChange: (busy: boolean) => void }) {
   const [account, setAccount] = useState<OneApiAccount | null>(null);

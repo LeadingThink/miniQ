@@ -12,6 +12,23 @@ const account = { phone: "13800000000", nick: "Test", balance: 100.0001 };
 const key = { key_id: "key-1", sk: "sk-test", remark: "miniQ", is_active: true, expire_time: 2000000000 };
 beforeEach(() => { vi.resetAllMocks(); mocks.tauri = false; mocks.deleteCookie.mockResolvedValue(undefined); });
 
+it("uses the isolated main-site session for every imported-key request", async () => {
+  mocks.tauri = true;
+  mocks.invoke.mockResolvedValueOnce(success({ total: 1, keys: [key] })).mockResolvedValueOnce(success(key));
+  await loadOneApiKeys(2, "opaque-session");
+  await createOneApiKey("miniQ", "opaque-session");
+  expect(mocks.invoke.mock.calls.map(([, args]) => args.request)).toEqual([
+    { baseUrl: "https://oneapi.zaiwenai.com/v1", path: "/keys?page=2&page_size=10", method: "GET", body: null, mainSiteSession: "opaque-session" },
+    { baseUrl: "https://oneapi.zaiwenai.com/v1", path: "/keys", method: "POST", body: { remark: "miniQ", is_active: true, allow_model_ids: ["all"], quote_limit: 0 }, mainSiteSession: "opaque-session" },
+  ]);
+  expect(mocks.request).not.toHaveBeenCalled();
+});
+
+it("does not route a desktop SSO session through mobile cookies", async () => {
+  await expect(loadOneApiKeys(1, "opaque-session")).rejects.toThrow("桌面本机");
+  expect(mocks.request).not.toHaveBeenCalled();
+});
+
 it("uses the Tauri account transport without putting cookies or JWTs in JS", async () => {
   mocks.tauri = true;
   mocks.invoke.mockResolvedValue({ status: 200, data: { code: "0", data: account } });

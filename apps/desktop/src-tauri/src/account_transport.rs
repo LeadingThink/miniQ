@@ -2,6 +2,7 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Mutex, OnceLock};
+use tauri::Manager;
 
 const ACCOUNT_BASE_URL: &str = "https://oneapi.zaiwenai.com/v1";
 static CLIENT: OnceLock<Mutex<Option<reqwest::Client>>> = OnceLock::new();
@@ -13,6 +14,8 @@ pub struct AccountRequest {
     pub path: String,
     pub method: String,
     pub body: Option<Value>,
+    #[serde(default)]
+    pub main_site_session: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -49,15 +52,32 @@ fn validated_url(request: &AccountRequest) -> Result<String, String> {
     if !allowed || request.path.contains('#') {
         return Err("桌面账户服务不支持此接口".into());
     }
+    if request.main_site_session.is_some()
+        && !(request.path.starts_with("/keys?")
+            || (request.method == "POST" && request.path == "/keys"))
+    {
+        return Err("主站导入会话仅允许读取或创建 API Key".into());
+    }
     Ok(format!("{ACCOUNT_BASE_URL}{}", request.path))
 }
 
-fn trusted_main_webview(label: &str) -> Result<(), String> {
+pub(crate) fn trusted_main_webview(label: &str) -> Result<(), String> {
     if label == "main" {
         Ok(())
     } else {
         Err("账户命令仅允许主窗口调用".into())
     }
+}
+
+pub(crate) fn new_account_client() -> Result<reqwest::Client, String> {
+    // reqwest uses rustls-no-provider; another client may have initialized it already.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    reqwest::Client::builder()
+        .cookie_store(true)
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|_| "无法初始化账户网络请求".into())
 }
 
 fn account_client() -> Result<reqwest::Client, String> {
@@ -66,14 +86,7 @@ fn account_client() -> Result<reqwest::Client, String> {
         .lock()
         .map_err(|_| "账户会话不可用")?;
     if state.is_none() {
-        *state = Some(
-            reqwest::Client::builder()
-                .cookie_store(true)
-                .redirect(reqwest::redirect::Policy::none())
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .map_err(|_| "无法初始化账户网络请求")?,
-        );
+        *state = Some(new_account_client()?);
     }
     state.clone().ok_or_else(|| "账户会话不可用".into())
 }
@@ -86,7 +99,11 @@ pub async fn desktop_account_request(
     trusted_main_webview(webview.label())?;
     let url = validated_url(&request)?;
     let method = Method::from_bytes(request.method.as_bytes()).map_err(|_| "账户请求方法无效")?;
-    let mut builder = account_client()?
+    let client = match request.main_site_session.as_deref() {
+        Some(session) => crate::zaiwen_sso::client_for(webview.app_handle(), session).await?,
+        None => account_client()?,
+    };
+    let mut builder = client
         .request(method, url)
         .header(reqwest::header::ACCEPT, "application/json")
         .header(reqwest::header::CACHE_CONTROL, "no-store");
@@ -102,6 +119,9 @@ pub async fn desktop_account_request(
         .json::<Value>()
         .await
         .map_err(|_| "账户服务返回格式无效")?;
+    if let Some(session) = request.main_site_session.as_deref() {
+        crate::zaiwen_sso::assert_session(webview.app_handle(), session).await?;
+    }
     if request.path == "/user/logout" && (200..300).contains(&status) && data["code"] == "0" {
         if let Ok(mut state) = CLIENT.get_or_init(|| Mutex::new(None)).lock() {
             *state = None;
@@ -117,12 +137,20 @@ pub async fn desktop_account_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn initializes_tls_before_building_account_clients() {
+        assert!(new_account_client().is_ok());
+        assert!(new_account_client().is_ok());
+        assert!(rustls::crypto::CryptoProvider::get_default().is_some());
+    }
+
     fn request(method: &str, path: &str) -> AccountRequest {
         AccountRequest {
             base_url: ACCOUNT_BASE_URL.into(),
             path: path.into(),
             method: method.into(),
             body: None,
+            main_site_session: None,
         }
     }
     #[test]
@@ -164,5 +192,19 @@ mod tests {
         assert!(trusted_main_webview("main").is_ok());
         assert!(trusted_main_webview("companion").is_err());
         assert!(trusted_main_webview("browser-1").is_err());
+    }
+    #[test]
+    fn main_site_session_is_restricted_to_key_acquisition() {
+        for (method, path, allowed) in [
+            ("GET", "/keys?page=1&page_size=10", true),
+            ("POST", "/keys", true),
+            ("GET", "/user", false),
+            ("POST", "/user/login", false),
+            ("POST", "/user/logout", false),
+        ] {
+            let mut value = request(method, path);
+            value.main_site_session = Some("opaque-session".into());
+            assert_eq!(validated_url(&value).is_ok(), allowed);
+        }
     }
 }

@@ -6,7 +6,8 @@ vi.mock("../mobileIapAccount", async (original) => ({ ...(await original<typeof 
   loadOneApiAccount: mocks.account, loginIapAccount: mocks.login, loadOneApiKeys: mocks.keys,
   createOneApiKey: mocks.create, logoutIapAccount: mocks.logout, requestIapLoginCode: mocks.sms,
 }));
-import { DesktopAccountLogin, acquireDesktopAccountKey } from "./DesktopAccountLogin";
+import { DesktopAccountLogin } from "./DesktopAccountLogin";
+import { acquireDesktopAccountKey } from "../desktopAccountKey";
 import { recordMobilePrivacyConsent } from "../mobilePrivacy";
 const account = { phone: "13800000000", nick: "Test", balance: 100 };
 const key = { key_id: "test", sk: "sk-test", remark: "miniQ", is_active: true, expire_time: 4102444800 };
@@ -58,7 +59,7 @@ it("searches later pages and ignores disabled and expired keys", async () => {
   mocks.keys.mockResolvedValueOnce({ total: 3, keys: [{ ...key, is_active: false }, { ...key, expire_time: 1 }] })
     .mockResolvedValueOnce({ total: 3, keys: [key] });
   await expect(acquireDesktopAccountKey()).resolves.toBe("sk-test");
-  expect(mocks.keys).toHaveBeenNthCalledWith(2, 2);
+  expect(mocks.keys).toHaveBeenNthCalledWith(2, 2, undefined);
   expect(mocks.create).not.toHaveBeenCalled();
 });
 it("does not create a key when listing fails or returns an incomplete page", async () => {

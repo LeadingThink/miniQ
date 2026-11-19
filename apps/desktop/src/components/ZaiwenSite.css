@@ -12,3 +12,15 @@
 .zaiwen-site-error { padding: 24px; color: var(--text-mid); overflow: auto; overflow-wrap: anywhere; }
 .zaiwen-site-error h2 { color: var(--text); }
 .zaiwen-site-error button { display: block; margin-top: 12px; }
+.zaiwen-key-import { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.zaiwen-key-import > [role="status"] { font-size: 12px; color: var(--text-mid); white-space: nowrap; }
+.zaiwen-key-import button { flex-shrink: 0; }
+.zaiwen-key-import-button { --accent: #14775f; --accent-fg: #ffffff; }
+.zaiwen-key-choices { max-height: 280px; overflow-y: auto; margin: 16px 0; padding: 0; border: 0; }
+.zaiwen-key-choices legend { margin-bottom: 8px; color: var(--text-mid); }
+.zaiwen-key-choice { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.zaiwen-key-choice + .zaiwen-key-choice { margin-top: 8px; }
+.zaiwen-key-choice:has(input:checked) { background: var(--bg); border-color: var(--text-mid); }
+.zaiwen-key-choice span { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.zaiwen-key-choice code { color: var(--text-mid); }
+.zaiwen-key-choice[aria-disabled="true"] { opacity: 0.55; cursor: default; }

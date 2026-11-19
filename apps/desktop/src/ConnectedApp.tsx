@@ -20,6 +20,7 @@ export default function ConnectedApp(props: {
   const [controller, setController] = useState<MiniqAppController | null>(null);
   const [platform, setPlatform] = useState<AppPlatform>("miniq");
   const [siteOpened, setSiteOpened] = useState(false);
+  const [siteToolbar, setSiteToolbar] = useState<HTMLDivElement | null>(null);
   const viewingSite = platform === "zaiwen";
   const switchPlatform = useCallback((next: AppPlatform) => {
     if (next === "zaiwen") setSiteOpened(true);
@@ -27,7 +28,8 @@ export default function ConnectedApp(props: {
   }, []);
   if (!desktop) return <HostContent {...props} />;
   return <div className="desktop-workspace">
-    <AppMenuBar app={viewingSite ? null : controller} platform={platform} onPlatformChange={switchPlatform} />
+    <AppMenuBar app={viewingSite ? null : controller} platform={platform} onPlatformChange={switchPlatform}
+      platformActionsRef={setSiteToolbar} />
     <div className={`app ${desktop.sidebarCollapsed ? "sidebar-collapsed" : ""}`} style={{ display: viewingSite ? "none" : undefined }} inert={viewingSite}>
       {controller && <UnifiedSidebar app={controller} />}
       <div style={{ display: desktop.host === null ? "contents" : "none" }} inert={desktop.host !== null}>
@@ -38,7 +40,7 @@ export default function ConnectedApp(props: {
       </div>}
     </div>
     {siteOpened && <Suspense fallback={viewingSite ? <main role="status">正在打开在问…</main> : null}>
-      <ZaiwenSite active={viewingSite} />
+      <ZaiwenSite active={viewingSite} toolbar={siteToolbar} client={desktop.root} />
     </Suspense>}
   </div>;
 }

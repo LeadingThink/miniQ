@@ -519,7 +519,7 @@ pub struct BrowserState {
 #[serde(rename_all = "camelCase")]
 pub struct BrowserCapabilities {
     navigation_control: bool,
-    dom_snapshot: bool,
+    pub(crate) dom_snapshot: bool,
     screenshot: bool,
     tabs: bool,
     pointer_input: bool,
