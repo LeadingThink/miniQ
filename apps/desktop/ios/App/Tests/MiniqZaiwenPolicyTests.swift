@@ -22,6 +22,11 @@ struct MiniqZaiwenPolicyTests {
         precondition(!MiniqZaiwenPolicy.requestsMenu(menu, source: MiniqZaiwenPolicy.home, mainFrame: false))
         precondition(!MiniqZaiwenPolicy.requestsMenu(URL(string: "miniq-platform://menu?command=key"), source: MiniqZaiwenPolicy.home, mainFrame: true))
         precondition(!MiniqZaiwenPolicy.requestsMenu(menu, source: nil, mainFrame: true))
+        let switchToMiniq = URL(string: "miniq-platform://switch/miniq")!
+        precondition(MiniqZaiwenPolicy.requestsPlatformSwitch(switchToMiniq, source: MiniqZaiwenPolicy.home, mainFrame: true))
+        precondition(!MiniqZaiwenPolicy.requestsPlatformSwitch(URL(string: "miniq-platform://switch/zaiwen"), source: MiniqZaiwenPolicy.home, mainFrame: true))
+        precondition(!MiniqZaiwenPolicy.requestsPlatformSwitch(switchToMiniq, source: URL(string: "https://example.com/"), mainFrame: true))
+        precondition(!MiniqZaiwenPolicy.requestsPlatformSwitch(switchToMiniq, source: MiniqZaiwenPolicy.home, mainFrame: false))
         print("14 iOS navigation policy cases passed")
         print("9 iOS platform menu policy cases passed")
     }

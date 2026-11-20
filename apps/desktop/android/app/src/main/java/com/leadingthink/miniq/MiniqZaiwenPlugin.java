@@ -80,9 +80,13 @@ public class MiniqZaiwenPlugin extends Plugin {
         settings.setSupportMultipleWindows(false);
         site.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                if (ZaiwenNavigation.requestsMenu(request.getUrl().toString(), view.getUrl(), request.isForMainFrame())) {
+                String target = request.getUrl().toString();
+                if (ZaiwenNavigation.requestsMenu(target, view.getUrl(), request.isForMainFrame())
+                    || ZaiwenNavigation.requestsPlatformSwitch(target, view.getUrl(), request.isForMainFrame())) {
                     visible = false; applyVisibility();
-                    notifyListeners("platformMenuRequested", new JSObject());
+                    JSObject data = new JSObject();
+                    if (ZaiwenNavigation.requestsPlatformSwitch(target, view.getUrl(), request.isForMainFrame())) data.put("platform", "miniq");
+                    notifyListeners("platformMenuRequested", data);
                     return true;
                 }
                 return !ZaiwenNavigation.allows(request.getUrl().toString());

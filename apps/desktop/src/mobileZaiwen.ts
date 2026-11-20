@@ -4,12 +4,13 @@ export interface MobileZaiwenState { loading: boolean; canGoBack: boolean; error
 export type MobileZaiwenLayout = { visible: false } | {
   visible: true; x: number; y: number; width: number; height: number; viewportWidth: number;
 };
+export type MobilePlatformMenuEvent = { platform?: "miniq" };
 interface MiniqZaiwenPlugin {
   update(layout: MobileZaiwenLayout): Promise<MobileZaiwenState>;
   getState(): Promise<MobileZaiwenState>;
   reload(): Promise<MobileZaiwenState>;
   goBack(): Promise<{ navigated: boolean }>;
-  addListener(event: "platformMenuRequested", listener: () => void): Promise<PluginListenerHandle>;
+  addListener(event: "platformMenuRequested", listener: (event: MobilePlatformMenuEvent) => void): Promise<PluginListenerHandle>;
 }
 const plugin = registerPlugin<MiniqZaiwenPlugin>("MiniqZaiwen");
 
@@ -33,4 +34,4 @@ export const updateMobileZaiwen = (layout: MobileZaiwenLayout) => command(() => 
 export const readMobileZaiwenState = () => command(() => plugin.getState());
 export const reloadMobileZaiwen = () => command(() => plugin.reload());
 export const goBackMobileZaiwen = () => command(() => plugin.goBack());
-export const listenMobilePlatformMenu = (listener: () => void) => plugin.addListener("platformMenuRequested", listener);
+export const listenMobilePlatformMenu = (listener: (event: MobilePlatformMenuEvent) => void) => plugin.addListener("platformMenuRequested", listener);

@@ -20,12 +20,19 @@ export function MobilePlatformShell({ children }: { children: ReactNode }) {
   const modal = useOpenDialog();
   useEffect(() => { if (modal) setMenuOpen(false); }, [modal]);
   const siteActive = platform === "zaiwen";
-  const site = useMobileZaiwenView(surface, siteActive && !menuOpen && !modal);
+  const selectPlatform = (next: AppPlatform) => {
+    setMenuOpen(false);
+    setPlatform(next);
+  };
+  const site = useMobileZaiwenView(surface, siteActive && !modal);
   useEffect(() => {
     if (!site.supported || !siteActive || modal) return;
     let disposed = false;
-    const handle = listenMobilePlatformMenu(() => {
-      if (!disposed) { anchor.current = siteAnchor.current; setMenuOpen(true); }
+    const handle = listenMobilePlatformMenu((event) => {
+      if (!disposed) {
+        if (event?.platform === "miniq") { selectPlatform("miniq"); return; }
+        anchor.current = siteAnchor.current; setMenuOpen(true);
+      }
     });
     return () => { disposed = true; void handle.then((listener) => listener.remove()).catch(() => {}); };
   }, [site.supported, siteActive, modal]);
@@ -50,7 +57,7 @@ export function MobilePlatformShell({ children }: { children: ReactNode }) {
       </div>
     </main>
     <Menu open={menuOpen && !modal} anchorRef={anchor} onClose={() => setMenuOpen(false)} label="选择平台" className="platform-switcher-menu">
-      <PlatformMenu platform={platform} onSelect={setPlatform} />
+      <PlatformMenu platform={platform} onSelect={selectPlatform} />
     </Menu>
   </div></MobilePlatformContext>;
 }

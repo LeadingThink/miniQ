@@ -127,10 +127,15 @@ public class MiniqZaiwenPlugin: CAPPlugin, CAPBridgedPlugin, WKNavigationDelegat
 
     public func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if MiniqZaiwenPolicy.requestsMenu(action.request.url, source: action.sourceFrame.request.url,
-                                        mainFrame: action.sourceFrame.isMainFrame && action.targetFrame?.isMainFrame == true) {
+        let mainFrame = action.sourceFrame.isMainFrame && action.targetFrame?.isMainFrame == true
+        if MiniqZaiwenPolicy.requestsMenu(action.request.url, source: action.sourceFrame.request.url, mainFrame: mainFrame)
+            || MiniqZaiwenPolicy.requestsPlatformSwitch(action.request.url, source: action.sourceFrame.request.url, mainFrame: mainFrame) {
             visible = false; applyVisibility()
-            notifyListeners("platformMenuRequested", data: [:])
+            if MiniqZaiwenPolicy.requestsPlatformSwitch(action.request.url, source: action.sourceFrame.request.url, mainFrame: mainFrame) {
+                notifyListeners("platformMenuRequested", data: ["platform": "miniq"])
+            } else {
+                notifyListeners("platformMenuRequested", data: [:])
+            }
             decisionHandler(.cancel)
             return
         }

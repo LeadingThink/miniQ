@@ -68,15 +68,16 @@ it.each(["ios", "android"])("switches to the real site and back without losing t
   expect(screen.queryByRole("textbox", { name: "miniQ 草稿" })).toBeNull();
   await switchTo("miniQ");
   await waitFor(() => expect(native.update).toHaveBeenLastCalledWith({ visible: false }));
+  expect(screen.queryByRole("menu")).toBeNull();
   expect(screen.getByRole("textbox", { name: "miniQ 草稿" })).toHaveProperty("value", "保留这个草稿");
 });
 
-it("keeps the switch menu above the native view and resumes it after dismissal", async () => {
+it("keeps the native site visible while the switch menu is open", async () => {
   render(<MobilePlatformShell><Draft /></MobilePlatformShell>);
   await switchTo("在问");
   await waitFor(() => expect(native.update).toHaveBeenCalledWith(expect.objectContaining({ visible: true })));
   await openMenu();
-  await waitFor(() => expect(native.update).toHaveBeenLastCalledWith({ visible: false }));
+  await waitFor(() => expect(native.update).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true })));
   fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
   await waitFor(() => expect(native.update).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true })));
 });

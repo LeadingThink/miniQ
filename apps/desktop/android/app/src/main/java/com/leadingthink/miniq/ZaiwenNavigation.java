@@ -12,6 +12,12 @@ final class ZaiwenNavigation {
         catch (URISyntaxException error) { return false; }
     }
 
+    static boolean requestsPlatformSwitch(String target, String source, boolean mainFrame) {
+        if (!mainFrame || !"miniq-platform://switch/miniq".equals(target) || !allows(source)) return false;
+        try { return "chat.zaiwenai.com".equalsIgnoreCase(new URI(source).getHost()); }
+        catch (URISyntaxException error) { return false; }
+    }
+
     static boolean allows(String value) {
         if (value == null) return false;
         try {

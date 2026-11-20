@@ -21,8 +21,10 @@ export function useMobileZaiwenView(surface: RefObject<HTMLElement | null>, acti
       void updateMobileZaiwen({ visible: false }).catch(() => {});
     };
     const layout = async () => {
+      if (disposed) return false;
       const rect = surface.current?.getBoundingClientRect();
       const visible = !document.hidden && rect && rect.width > 0 && rect.height > 0;
+      if (disposed) return false;
       try {
         const next = await updateMobileZaiwen(visible ? { visible: true, x: rect.left, y: rect.top,
           width: rect.width, height: rect.height, viewportWidth: window.innerWidth } : { visible: false });

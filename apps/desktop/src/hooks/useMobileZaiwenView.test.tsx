@@ -80,6 +80,17 @@ it("ignores a late state response after switching away and stops polling", async
   expect(native.read).toHaveBeenCalledTimes(calls);
 });
 
+it("ignores a late layout callback after switching away", async () => {
+  const { rerender } = renderHook(({ active }) => useMobileZaiwenView(surface, active), { initialProps: { active: true } });
+  await act(async () => {});
+  native.update.mockClear();
+  rerender({ active: false });
+  await act(async () => { resize([], {} as ResizeObserver); });
+  expect(native.update).toHaveBeenCalledTimes(2);
+  expect(native.update.mock.calls.every(([layout]) => layout.visible === false)).toBe(true);
+  expect(native.update).toHaveBeenLastCalledWith({ visible: false });
+});
+
 it("does not reload a view when retry setup finishes after unmount", async () => {
   const { result, unmount } = renderHook(() => useMobileZaiwenView(surface, true));
   await act(async () => {});

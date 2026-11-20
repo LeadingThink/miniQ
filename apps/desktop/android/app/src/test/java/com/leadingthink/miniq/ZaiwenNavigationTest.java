@@ -28,4 +28,11 @@ public class ZaiwenNavigationTest {
         assertFalse(ZaiwenNavigation.requestsMenu("miniq-platform://menu", ZaiwenNavigation.HOME, false));
         assertFalse(ZaiwenNavigation.requestsMenu("miniq-platform://menu?command=key", ZaiwenNavigation.HOME, true));
     }
+
+    @Test public void acceptsOnlyTheMiniqPlatformSwitchSignal() {
+        assertTrue(ZaiwenNavigation.requestsPlatformSwitch("miniq-platform://switch/miniq", ZaiwenNavigation.HOME, true));
+        assertFalse(ZaiwenNavigation.requestsPlatformSwitch("miniq-platform://switch/zaiwen", ZaiwenNavigation.HOME, true));
+        assertFalse(ZaiwenNavigation.requestsPlatformSwitch("miniq-platform://switch/miniq", "https://example.com/", true));
+        assertFalse(ZaiwenNavigation.requestsPlatformSwitch("miniq-platform://switch/miniq", ZaiwenNavigation.HOME, false));
+    }
 }

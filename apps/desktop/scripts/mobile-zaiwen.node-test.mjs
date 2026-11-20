@@ -20,10 +20,10 @@ test("both native bridges implement the same limited site navigation contract", 
   assert.doesNotMatch(android, /addJavascriptInterface|BridgeWebViewClient|loadDataWithBaseURL/);
 });
 
-test("native mobile bridges opt the shared site script into the full navigation mode", () => {
+test("native mobile bridges mark the shared site view and keep compact navigation", () => {
   assert.match(android, /window\.__MINIQ_MOBILE_SITE__\s*=\s*true/);
   assert.match(ios, /window\.__MINIQ_MOBILE_SITE__\s*=\s*true/);
-  assert.match(read("src-tauri/src/zaiwen_site.js"), /window\.__MINIQ_MOBILE_SITE__\s*\?/);
+  assert.match(read("src-tauri/src/zaiwen_site.js"), /new Set\(\["任务中心", "商用API", "生产力工具"\]\)/);
 });
 
 test("native entry points register the plugin and the iOS build target includes its sources", () => {
@@ -86,6 +86,11 @@ test("mobile site switch uses the existing header and preserves sidebar and acco
     assert.equal(button.parentElement, document.querySelector(".mobile-nav-group"));
     assert.equal(button.nextElementSibling.className, "mobile-menu-btn");
     assert.equal(button.href, "miniq-platform://menu");
+    button.click();
+    const menu = document.querySelector("#miniq-mobile-platform-switch-menu");
+    assert.equal(menu?.getAttribute("role"), "menu");
+    assert.equal(menu?.hidden, false);
+    assert.equal(menu?.querySelector('a[href="miniq-platform://switch/miniq"]')?.textContent, "miniQ构建、调试和发布");
     assert.equal(document.querySelectorAll("nav.header").length, 1);
     assert.equal(document.querySelectorAll("#miniq-mobile-platform-switch").length, 1);
     assert.equal(document.querySelector("#login").textContent, "登录");

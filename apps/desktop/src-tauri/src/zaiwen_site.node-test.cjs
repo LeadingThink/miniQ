@@ -100,12 +100,12 @@ test("handles recreated desktop sidebars after client-side navigation", async (t
   }
 });
 
-test("keeps the site's full navigation in the native mobile WebView", async (t) => {
+test("keeps creative and discovery entries while hiding unrelated mobile destinations", async (t) => {
   const window = page(t, "https://chat.zaiwenai.com/", true);
   window.document.body.innerHTML = sidebar();
   await flush();
-  assert.deepEqual(visibleTitles(window), ["新对话", "艺术创作", "任务中心", "发现", "商用API", "生产力工具"]);
-  assert.equal(window.document.querySelectorAll("[data-miniq-hidden-navigation]").length, 0);
+  assert.deepEqual(visibleTitles(window), ["新对话", "艺术创作", "发现"]);
+  assert.equal(window.document.querySelectorAll("[data-miniq-hidden-navigation]").length, 3);
 });
 
 test("updates visibility when Vue reuses a menu node and changes its title", async (t) => {

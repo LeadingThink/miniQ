@@ -7,13 +7,10 @@
 
   const styleId = "miniq-zaiwen-chat-style";
   const hiddenAttribute = "data-miniq-hidden-navigation";
-  // Desktop keeps account and productivity destinations out of the embedded
-  // chat while exposing the site's creative and discovery entry points.
-  // Native mobile WebViews set this marker before injecting the script so the
-  // mobile menu can expose the site's full navigation.
-  const hiddenTitles = window.__MINIQ_MOBILE_SITE__
-    ? new Set()
-    : new Set(["任务中心", "商用API", "生产力工具"]);
+  // Keep the embedded chat focused on conversation, creative work and
+  // discovery. Native mobile WebViews set this marker before injecting the
+  // script, but share the same compact navigation as the desktop shell.
+  const hiddenTitles = new Set(["任务中心", "商用API", "生产力工具"]);
   const chat = ".route-page > .index > .content";
   const guide = `${chat} > .dialogue-region > .message-box > .scroll > .scroll-container > .guide`;
   const composer = `${chat} > .dialogue-region ~ .input-region > .input-box`;

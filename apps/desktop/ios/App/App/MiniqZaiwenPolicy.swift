@@ -8,6 +8,11 @@ enum MiniqZaiwenPolicy {
             && allows(source) && source?.host?.lowercased() == "chat.zaiwenai.com"
     }
 
+    static func requestsPlatformSwitch(_ target: URL?, source: URL?, mainFrame: Bool) -> Bool {
+        return mainFrame && target?.absoluteString == "miniq-platform://switch/miniq"
+            && allows(source) && source?.host?.lowercased() == "chat.zaiwenai.com"
+    }
+
     static func allows(_ url: URL?) -> Bool {
         guard let url, url.scheme?.lowercased() == "https",
               let host = url.host, !host.isEmpty,
