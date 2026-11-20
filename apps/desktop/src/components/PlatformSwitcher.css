@@ -1,0 +1,6 @@
+.app-menubar-brand { display: flex; align-items: center; gap: 9px; margin-right: 10px; color: var(--text); font-size: 14px; font-weight: 650; letter-spacing: -0.025em; }
+.platform-switcher { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 9px 0 6px; border: 0; border-radius: 9px; background: transparent; color: var(--text); font: inherit; cursor: pointer; }
+.platform-switcher > img { width: 24px; height: 24px; object-fit: contain; flex-shrink: 0; }
+.platform-switcher > svg { color: var(--text-mid); }
+.platform-switcher[aria-expanded="true"], .app-menubar .platform-switcher[aria-expanded="true"] { background: var(--bg-hover); }
+.platform-switcher-error { max-width: 320px; color: var(--danger); font-size: 12px; }

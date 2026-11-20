@@ -12,6 +12,7 @@ import { readMobileEntryMode } from "./mobileEntryMode";
 import { DesktopHostProvider } from "./desktopHost";
 import { useIosIapRecovery } from "./hooks/useIosIapRecovery";
 import { IS_MOBILE_TEST_API } from "./mobileApiConfig";
+import { MobilePlatformShell } from "./components/MobilePlatformShell";
 const SharedSessionPage = lazy(() => import("./components/SharedSessionPage").then((module) => ({ default: module.SharedSessionPage })));
 const RemoteWorkbench = lazy(() => import("./RemoteWorkbench").then((module) => ({ default: module.RemoteWorkbench })));
 const ConnectedApp = lazy(() => import("./ConnectedApp"));
@@ -24,7 +25,10 @@ export default function App() {
   const shareId = sharedSessionId();
   if (shareId !== null) return <Suspense fallback={<AppLoadingScreen label="正在加载分享…" />}><SharedSessionPage key={shareId} id={shareId} /></Suspense>;
 
-  if (isRemoteBrowserEntry()) return <><RemoteGate theme={theme} onThemeChange={storeTheme} /><MobileUpdatePrompt /></>;
+  if (isRemoteBrowserEntry()) {
+    const mobile = <RemoteGate theme={theme} onThemeChange={storeTheme} />;
+    return <>{isNativeMobileApp() ? <MobilePlatformShell>{mobile}</MobilePlatformShell> : mobile}<MobileUpdatePrompt /></>;
+  }
   const desktop = <Suspense fallback={<AppLoadingScreen label="正在加载工作台…" />}><ConnectedApp theme={theme} onThemeChange={storeTheme} /></Suspense>;
   return <DesktopHostProvider>{desktop}</DesktopHostProvider>;
 }

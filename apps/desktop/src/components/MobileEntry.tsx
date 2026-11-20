@@ -12,6 +12,7 @@ import { MobileAccountPanel } from "./MobileAccountPanel";
 import { isIosIapAvailable } from "../iosIap";
 import { isMobileAccountAvailable } from "../mobileAccountPlatform";
 import { IS_MOBILE_TEST_API } from "../mobileApiConfig";
+import { MobilePlatformTitle } from "./MobilePlatformTitle";
 import "./MobileEntry.css";
 
 const MobileChat = lazy(() => import("./MobileChat").then((module) => ({ default: module.MobileChat })));
@@ -130,7 +131,7 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
       </div>}
       {section !== "chat" && !accountOpen && (
         <main className="mobile-entry">
-          <div className="mobile-entry-brand"><span>miniQ</span><small>移动工作台</small>{section !== "settings" && <button type="button" className="mobile-entry-settings" onClick={openSettings}>设置</button>}<button type="button" className="mobile-entry-appearance" onClick={() => setAppearanceOpen(true)}>外观</button></div>
+          <div className="mobile-entry-brand"><MobilePlatformTitle /><small>移动工作台</small>{section !== "settings" && <button type="button" className="mobile-entry-settings" onClick={openSettings}>设置</button>}<button type="button" className="mobile-entry-appearance" onClick={() => setAppearanceOpen(true)}>外观</button></div>
           <form className="mobile-entry-sheet" aria-busy={pending || loadingCredentials} onSubmit={(event) => {
             event.preventDefault();
             if (showKeyFields) void saveSettings();

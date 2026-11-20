@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MobileAppearanceSheet } from "./MobileAppearanceSheet";
 import { MobileEntry } from "./MobileEntry";
+import { MobilePlatformShell } from "./MobilePlatformShell";
 
 const native = vi.hoisted(() => ({ enabled: true, addListener: vi.fn(), minimizeApp: vi.fn() }));
 vi.mock("../mobileRuntime", () => ({ isNativeMobileApp: () => native.enabled }));
@@ -34,6 +35,21 @@ afterEach(cleanup);
 async function pressBack() {
   await act(async () => { [...registrations].forEach(({ callback }) => callback()); });
 }
+
+it("retires hidden miniQ back listeners while the main site owns navigation", async () => {
+  render(<MobilePlatformShell><MobileEntry onRemote={vi.fn()} /></MobilePlatformShell>);
+  await waitFor(() => expect(registrations).toHaveLength(1));
+  fireEvent.click(screen.getByRole("button", { name: "miniQ" }));
+  fireEvent.click(await screen.findByRole("menuitemradio", { name: "在问" }));
+  await waitFor(() => expect(registrations).toHaveLength(2));
+  expect(registrations[0].remove).toHaveBeenCalledOnce();
+  await pressBack();
+  expect(native.minimizeApp).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "miniQ" })).toBeTruthy();
+  await waitFor(() => expect(registrations).toHaveLength(3));
+  await pressBack();
+  expect(native.minimizeApp).toHaveBeenCalledOnce();
+});
 
 it.each([false, true])("closes appearance before the entry route or app (remote=%s)", async (remote) => {
   render(<MobileEntry onRemote={vi.fn()} />);

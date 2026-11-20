@@ -2,7 +2,8 @@ import { getAppearance, storeTheme, subscribeAppearance } from "../theme";
 import { ThemePicker } from "./ThemePicker";
 import type { AppPlugin } from "@capacitor/app";
 import { Download, Trash2, X } from "lucide-react";
-import { useId, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useContext, useId, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { MobilePageActivity } from "../mobilePageActivity";
 import { isNativeMobileApp } from "../mobileRuntime";
 import { BACKGROUNDS, type BackgroundDefinition } from "../backgroundCatalog";
 import { mobileBackgroundPolicy, type VideoDownloadStatus } from "../mobileBackgroundPolicy";
@@ -26,11 +27,13 @@ let appModule: Promise<typeof import("@capacitor/app")> | undefined;
 
 // Both the entry screen and the connected workspace use the sheet's back handling.
 export function useMobileBackButton(onBack: (app: AppPlugin) => void, enabled = true) {
+  const pageActive = useContext(MobilePageActivity);
+  const listen = enabled && pageActive;
   const callback = useRef(onBack);
   useLayoutEffect(() => { callback.current = onBack; }, [onBack]);
 
   useEffect(() => {
-    if (!enabled || !isNativeMobileApp()) return;
+    if (!listen || !isNativeMobileApp()) return;
     let disposed = false;
     let listener: { remove: () => Promise<void> } | undefined;
     const remove = (handle: { remove: () => Promise<void> }) => {
@@ -49,7 +52,7 @@ export function useMobileBackButton(onBack: (app: AppPlugin) => void, enabled = 
       disposed = true;
       if (listener) remove(listener);
     };
-  }, [enabled]);
+  }, [listen]);
 }
 
 export interface MobileAppearanceSheetProps {

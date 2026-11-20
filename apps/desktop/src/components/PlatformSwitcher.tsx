@@ -6,6 +6,7 @@ import { closePlatformOverlay, listenPlatformOverlayAction, openPlatformOverlay 
 import { errorMessage } from "../errorMessage";
 import { isTauriRuntime } from "../runtime";
 import type { AppPlatform } from "../platforms";
+import "./PlatformSwitcher.css";
 
 export type { AppPlatform } from "../platforms";
 

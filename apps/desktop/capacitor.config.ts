@@ -44,7 +44,7 @@ const config: CapacitorConfig = {
   },
   plugins: {
     App: {
-      disableBackButtonHandler: true,
+      disableBackButtonHandler: false,
     },
     Keyboard: {
       resize: "native",

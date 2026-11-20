@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type TouchEvent } from "react";
+import { MobilePlatformTitle } from "./MobilePlatformTitle";
 import {
   FolderPlus,
   Archive,
@@ -205,7 +206,7 @@ export function Sidebar(props: SidebarProps) {
     >
       {mobile && <div className="sidebar-brand-row">
         <div className="sidebar-brand-lockup" data-tauri-drag-region>
-          <span className="brand" data-tauri-drag-region>miniQ</span>
+          <span className="brand" data-tauri-drag-region><MobilePlatformTitle /></span>
           <span className="sidebar-version">v2.4</span>
         </div>
         {props.onClose && <button type="button" className="sidebar-close" aria-label="关闭项目与会话侧栏" onClick={props.onClose}><X size={19} /></button>}

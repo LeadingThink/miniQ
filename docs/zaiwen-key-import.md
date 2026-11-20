@@ -23,11 +23,13 @@
 | Windows | Tauri/Wry + Edge WebView2 | 支持 | 导航、DOM、截图、合成输入 |
 | macOS | Tauri/Wry + WKWebView | 支持 | 导航、DOM、截图、合成输入 |
 | Linux | Tauri/Wry + WebKitGTK | 不支持读取主站登录态 | 原有受限能力不变 |
-| iOS | Capacitor + WKWebView | 未接入此桌面流程 | 未扩展；保留现有手机账户流程 |
-| Android | Capacitor + Android System WebView | 未接入此桌面流程 | 未扩展；保留现有手机账户流程 |
+| iOS | Capacitor 主页面 + 独立 WKWebView 主站视图 | 支持主站切换；未接入桌面 Key 选择 | 新增主站导航、返回、刷新和显隐；无通用 DOM、截图或输入驱动 |
+| Android | Capacitor 主页面 + 独立 Android System WebView 主站视图 | 支持主站切换；未接入桌面 Key 选择 | 新增主站导航、返回、刷新和显隐；无通用 DOM、截图或输入驱动 |
 | 网页预览 | 浏览器中的跨域 iframe | 不支持跨域读取 | 无原生 DOM、截图或输入驱动 |
 
-没有新增通用跨域读取权限、浏览器自动化接口或不受限网络代理。两个原生命令仅接受主窗口调用；读取脚本只在专用主站视图、精确生产源和顶层页面读取 Token。界面只拿到用于检测变化的会话标记。独立 SSO 会话仅能读/创建 Key，每次请求前后均核对主站会话。本次修改没有改变原生平台能力。
+桌面 Key 选择没有新增通用跨域读取权限、浏览器自动化接口或不受限网络代理。两个原生命令仅接受主窗口调用；读取脚本只在专用主站视图、精确生产源和顶层页面读取 Token。界面只拿到用于检测变化的会话标记。独立 SSO 会话仅能读/创建 Key，每次请求前后均核对主站会话。
+
+上述 SSO 用户流程属于桌面端。手机主站切换使用独立的有限导航插件，不包含这两个桌面命令，也不读取登录 Token 或修改 miniQ Key，详见 [手机端主站切换](mobile-zaiwen-site.md)。
 
 ## 边界与验证
 

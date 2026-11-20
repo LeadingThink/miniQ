@@ -14,11 +14,15 @@ export default defineConfig(({ mode }) => ({
       },
     }),
     viteStaticCopy({
-      targets: ["cmaps", "standard_fonts", "wasm"].map((name) => ({
-        src: `node_modules/pdfjs-dist/${name}/*`,
-        dest: `pdfjs/${name}`,
-        rename: { stripBase: true },
-      })),
+      targets: [
+        { src: "src-tauri/src/zaiwen_site.js", dest: ".", rename: { stripBase: true } },
+        { src: "src/mobile/zaiwen_mobile.js", dest: ".", rename: { stripBase: true } },
+        ...["cmaps", "standard_fonts", "wasm"].map((name) => ({
+          src: `node_modules/pdfjs-dist/${name}/*`,
+          dest: `pdfjs/${name}`,
+          rename: { stripBase: true },
+        })),
+      ],
     }),
     {
       name: "miniq-theme-bootstrap",

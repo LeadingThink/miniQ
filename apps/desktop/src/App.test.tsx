@@ -14,6 +14,7 @@ const state = vi.hoisted(() => {
   let release!: () => void;
   return {
     remote: true,
+    native: false,
     testApi: false,
     consent: true,
     share: null as string | null,
@@ -27,6 +28,10 @@ const state = vi.hoisted(() => {
     releaseHarness: () => release(),
   };
 });
+vi.mock("./mobileRuntime", () => ({ isNativeMobileApp: () => state.native }));
+vi.mock("./components/MobilePlatformShell", () => ({
+  MobilePlatformShell: ({ children }: { children: ReactNode }) => <div data-testid="mobile-platform-shell">{children}</div>,
+}));
 vi.mock("./remoteAccess", () => ({
   isRemoteBrowserEntry: () => state.remote,
   loadRemoteCredentials: state.loadCredentials,
@@ -69,6 +74,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   state.remote = true;
+  state.native = false;
   state.testApi = false;
   state.consent = true;
   state.share = null;
@@ -76,6 +82,17 @@ beforeEach(() => {
   state.useHarness.mockReturnValue({ client: { mode: "remote" }, catalog: { currentSessionId: "session-one" } });
 });
 afterEach(cleanup);
+
+it.each([true, false])("wraps mobile entry and remote discovery only in the native app (native=%s)", async (native) => {
+  state.native = native;
+  render(<App />);
+  await screen.findByRole("button", { name: "连接远程" });
+  expect(Boolean(screen.queryByTestId("mobile-platform-shell"))).toBe(native);
+  state.loadCredentials.mockResolvedValue({ apiKey: "test-key" });
+  fireEvent.click(screen.getByRole("button", { name: "连接远程" }));
+  await screen.findByRole("button", { name: /测试电脑/ });
+  expect(Boolean(screen.queryByTestId("mobile-platform-shell"))).toBe(native);
+});
 
 it("keeps the workbench module out of the entry screen and preserves context when it is requested", async () => {
   render(<App />);

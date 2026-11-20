@@ -18,6 +18,7 @@ import { MobileChatRow } from "./MobileChatRow";
 import { MobileModelPicker } from "./MobileModelPicker";
 import { MobileImagePicker } from "./MobileImagePicker";
 import { BillingDialog } from "./BillingDialog";
+import { MobilePlatformTitle } from "./MobilePlatformTitle";
 import "./MobileChat.css";
 
 export function MobileChat(props: { apiKey: string; onBack: () => void; onSettings?: () => void; onAccount?: () => void }) {
@@ -100,7 +101,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
     <main className="mobile-chat">
       <header className="mobile-chat-header">
         <button type="button" className="icon-button" aria-label="返回" title="返回" onClick={props.onBack}><ArrowLeft size={18} /></button>
-        <strong>移动问答</strong>
+        <strong><MobilePlatformTitle fallback="移动问答" /></strong>
         {props.onSettings && <button type="button" className="icon-button" aria-label="设置" title="设置" onClick={props.onSettings}><Settings size={18} /></button>}
       </header>
       <section className="mobile-chat-feed" ref={feedRef} tabIndex={0} aria-label="问答记录" onScroll={onScroll}>

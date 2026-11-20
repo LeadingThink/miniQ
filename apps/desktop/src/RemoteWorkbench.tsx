@@ -10,6 +10,7 @@ import { dismissTaskBanner, type TaskNotificationTarget } from "./taskBanner";
 import type { ThemeId } from "./theme";
 import { hostKey } from "./hostWorkspace";
 import { RemoteDeviceBarContext, type RemoteDeviceBar } from "./remoteDeviceBar";
+import { MobilePlatformTitle } from "./components/MobilePlatformTitle";
 import "./RemoteWorkbench.css";
 
 const ConnectedApp = lazy(() => import("./ConnectedApp"));
@@ -85,7 +86,7 @@ export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit, onA
     onSwitch: () => setChoosing(true), onSwitchMode, onAppearance,
   };
   return <div className="remote-workbench">
-    <header className="remote-desktop-bar"><button type="button" onClick={() => setChoosing((value) => !value)} aria-expanded={choosing || !current}>
+    <header className="remote-desktop-bar"><MobilePlatformTitle optional /><button type="button" onClick={() => setChoosing((value) => !value)} aria-expanded={choosing || !current}>
       {current?.name || "选择连接的电脑"}<span>{online === null ? "状态待确认" : online ? "在线" : current ? "离线" : ""} · 切换电脑</span>
     </button></header>
     {notice && <p role="status">{notice}</p>}

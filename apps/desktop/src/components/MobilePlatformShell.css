@@ -1,0 +1,11 @@
+.mobile-platform-shell { width: 100%; height: 100%; min-height: 0; }
+.mobile-platform-content, .mobile-platform-site { height: 100%; min-height: 0; position: relative; }
+.mobile-platform-content { overflow: auto; }
+.mobile-platform-site { display: flex; padding-top: var(--safe-top); padding-bottom: var(--safe-bottom); background: var(--bg); }
+.mobile-platform-surface { flex: 1; min-height: 0; }
+.mobile-platform-site-trigger { position: absolute; top: calc(8px + var(--safe-top)); left: max(10px, var(--safe-left)); font-size: 16px; font-weight: 650; }
+.mobile-platform-surface > :is(p, section) { padding: 72px 24px 24px; color: var(--text-mid); }
+.mobile-platform-title { display: inline-flex; align-items: center; gap: 5px; flex: none; min-height: 36px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.mobile-platform-title > svg { color: var(--text-mid); }
+.mobile-platform-title > span { opacity: 1; font: inherit; }
+.mobile-entry-brand .mobile-platform-title { font-size: var(--font-headline); font-weight: 760; }

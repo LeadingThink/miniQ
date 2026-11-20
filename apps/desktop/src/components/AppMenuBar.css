@@ -18,34 +18,6 @@
   -webkit-user-select: none;
 }
 
-.app-menubar-brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-right: 10px;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: -0.025em;
-}
-.app-menubar .platform-switcher {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 0 9px 0 6px;
-  border-radius: 9px;
-  color: var(--text);
-  cursor: pointer;
-}
-.platform-switcher > img { width: 24px; height: 24px; object-fit: contain; flex-shrink: 0; }
-.platform-switcher > svg { color: var(--text-mid); }
-.app-menubar .platform-switcher[aria-expanded="true"] { background: var(--bg-hover); }
-.platform-switcher-error {
-  max-width: 320px;
-  color: var(--danger);
-  font-size: 12px;
-}
 .app-menubar-nav { display: flex; align-items: center; gap: 2px; }
 .app-menubar-platform-actions { display: flex; align-items: center; min-width: 0; margin-right: 8px; }
 .app-menubar button:not(.ui-button) { border: 0; background: transparent; color: inherit; font: inherit; }
@@ -61,5 +33,5 @@
 .window-controls button { display: grid; place-items: center; width: 46px; border-radius: 0; }
 .window-controls .window-close:hover { background: #c42b1c; color: #fff; }
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
-  .app-menubar, .app-menubar-dropdown, .platform-switcher-menu { display: none; }
+  .app-menubar, .app-menubar-dropdown { display: none; }
 }
