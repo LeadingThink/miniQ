@@ -66,6 +66,16 @@ export function ContextUsageControl({ client, sessionId }: { client: RpcClient; 
     if (opened !== null && opened !== sessionId) close();
   }, [close, opened, sessionId]);
 
+  useEffect(() => {
+    if (!nativeOpen) return;
+    const dismissFromMainView = (event: PointerEvent) => {
+      if (event.target instanceof Node && trigger.current?.contains(event.target)) return;
+      close();
+    };
+    document.addEventListener("pointerdown", dismissFromMainView, true);
+    return () => document.removeEventListener("pointerdown", dismissFromMainView, true);
+  }, [close, nativeOpen]);
+
   useEffect(() => () => { void closeContextUsageOverlay(); }, []);
 
   const open = () => {

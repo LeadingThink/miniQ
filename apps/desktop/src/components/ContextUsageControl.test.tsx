@@ -231,3 +231,38 @@ it("sizes the native overlay to the measured panel instead of showing the DOM po
   }));
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+it("closes the native overlay when the main WebView receives an outside pointer interaction", async () => {
+  vi.stubGlobal("__TAURI_INTERNALS__", {});
+  native.invoke.mockClear();
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    { left: 0, top: 0, right: 300, bottom: 260, width: 300, height: 260, x: 0, y: 0, toJSON: () => ({}) },
+  );
+  renderControl();
+  const input = document.body.appendChild(document.createElement("input"));
+  const trigger = screen.getByRole("button", { name: "上下文用量" });
+
+  fireEvent.click(trigger);
+  await vi.waitFor(() => expect(native.invoke).toHaveBeenCalledWith("context_usage_overlay_open", expect.any(Object)));
+  fireEvent.pointerDown(input);
+  await vi.waitFor(() => expect(native.invoke).toHaveBeenCalledWith("context_usage_overlay_close", {}));
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+});
+
+it("lets the native trigger toggle its overlay without treating itself as an outside interaction", async () => {
+  vi.stubGlobal("__TAURI_INTERNALS__", {});
+  native.invoke.mockClear();
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    { left: 0, top: 0, right: 300, bottom: 260, width: 300, height: 260, x: 0, y: 0, toJSON: () => ({}) },
+  );
+  renderControl();
+  const trigger = screen.getByRole("button", { name: "上下文用量" });
+
+  fireEvent.click(trigger);
+  await vi.waitFor(() => expect(native.invoke).toHaveBeenCalledWith("context_usage_overlay_open", expect.any(Object)));
+  native.invoke.mockClear();
+  fireEvent.pointerDown(trigger);
+  expect(native.invoke).not.toHaveBeenCalled();
+  fireEvent.click(trigger);
+  await vi.waitFor(() => expect(native.invoke.mock.calls).toEqual([["context_usage_overlay_close", {}]]));
+});

@@ -9,6 +9,10 @@ it("places read-only context usage before the model picker in the shared workben
   const control = readFileSync(new URL("./components/ContextUsageControl.tsx", import.meta.url), "utf8");
   expect(control).not.toMatch(/@tauri-apps|@capacitor|session\.compact|type="range"/);
   expect(control).toContain('<Popover');
+  expect(control).toMatch(/if \(!nativeOpen\) return;[\s\S]*?addEventListener\("pointerdown", dismissFromMainView, true\)/);
+  const nativeOverlay = readFileSync(new URL("../src-tauri/src/context_usage_overlay.rs", import.meta.url), "utf8");
+  expect(nativeOverlay).toContain('ChildOverlay::new(\n    "context-usage-overlay"');
+  expect(nativeOverlay).toContain("PANEL.close(app)");
 });
 
 it("shares compact activity styles without platform-specific WebView selectors", () => {
