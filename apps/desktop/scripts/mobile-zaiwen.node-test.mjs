@@ -20,6 +20,12 @@ test("both native bridges implement the same limited site navigation contract", 
   assert.doesNotMatch(android, /addJavascriptInterface|BridgeWebViewClient|loadDataWithBaseURL/);
 });
 
+test("native mobile bridges opt the shared site script into the full navigation mode", () => {
+  assert.match(android, /window\.__MINIQ_MOBILE_SITE__\s*=\s*true/);
+  assert.match(ios, /window\.__MINIQ_MOBILE_SITE__\s*=\s*true/);
+  assert.match(read("src-tauri/src/zaiwen_site.js"), /window\.__MINIQ_MOBILE_SITE__\s*\?/);
+});
+
 test("native entry points register the plugin and the iOS build target includes its sources", () => {
   assert.match(read("ios/App/App/MainViewController.swift"), /registerPluginInstance\(MiniqZaiwenPlugin\(\)\)/);
   assert.match(read("android/app/src/main/java/com/leadingthink/miniq/MainActivity.java"), /registerPlugin\(MiniqZaiwenPlugin.class\)/);

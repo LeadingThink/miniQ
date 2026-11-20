@@ -7,7 +7,13 @@
 
   const styleId = "miniq-zaiwen-chat-style";
   const hiddenAttribute = "data-miniq-hidden-navigation";
-  const hiddenTitles = new Set(["艺术创作", "发现"]);
+  // Desktop keeps account and productivity destinations out of the embedded
+  // chat while exposing the site's creative and discovery entry points.
+  // Native mobile WebViews set this marker before injecting the script so the
+  // mobile menu can expose the site's full navigation.
+  const hiddenTitles = window.__MINIQ_MOBILE_SITE__
+    ? new Set()
+    : new Set(["任务中心", "商用API", "生产力工具"]);
   const chat = ".route-page > .index > .content";
   const guide = `${chat} > .dialogue-region > .message-box > .scroll > .scroll-container > .guide`;
   const composer = `${chat} > .dialogue-region ~ .input-region > .input-box`;
@@ -31,9 +37,10 @@
       `;
       document.head.appendChild(style);
     }
-    // The site renders navigation as role=link divs, without hrefs. Restrict
-    // matching to menu titles so chat messages and history names are untouched.
-    for (const item of document.querySelectorAll('.sidebar .menus > .menu[role="link"]')) {
+    // The site renders navigation as menu elements without stable hrefs.
+    // Restrict matching to the sidebar menu container so chat messages and
+    // history names are untouched.
+    for (const item of document.querySelectorAll('.sidebar .menus > .menu')) {
       const title = item.querySelector(":scope > .title")?.textContent.trim();
       item.toggleAttribute(hiddenAttribute, hiddenTitles.has(title));
     }

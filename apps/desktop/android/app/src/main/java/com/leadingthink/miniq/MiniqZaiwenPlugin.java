@@ -68,7 +68,7 @@ public class MiniqZaiwenPlugin extends Plugin {
     }
 
     private void createSite() throws IOException {
-        script = loadScript("zaiwen_site") + "\n" + loadScript("zaiwen_mobile");
+        script = "window.__MINIQ_MOBILE_SITE__ = true;\n" + loadScript("zaiwen_site") + "\n" + loadScript("zaiwen_mobile");
         site = new WebView(getActivity());
         WebSettings settings = site.getSettings();
         settings.setJavaScriptEnabled(true);

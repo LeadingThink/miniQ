@@ -82,6 +82,7 @@ public class MiniqZaiwenPlugin: CAPPlugin, CAPBridgedPlugin, WKNavigationDelegat
                 let config = WKWebViewConfiguration()
                 config.websiteDataStore = .default()
                 config.userContentController = WKUserContentController()
+                config.userContentController.addUserScript(WKUserScript(source: "window.__MINIQ_MOBILE_SITE__ = true;", injectionTime: .atDocumentStart, forMainFrameOnly: true))
                 config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
                 config.userContentController.addUserScript(WKUserScript(source: mobileScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
                 let view = WKWebView(frame: .zero, configuration: config)

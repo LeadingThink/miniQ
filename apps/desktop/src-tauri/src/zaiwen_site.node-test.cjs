@@ -5,7 +5,7 @@ const { JSDOM } = require("jsdom");
 
 const script = readFileSync(`${__dirname}/zaiwen_site.js`, "utf8");
 const menu = (title) => `<div class="menu flex" role="link" tabindex="0"><div class="icon-wrapper"></div><div class="title">${title}</div></div>`;
-const sidebar = () => `<aside class="sidebar"><div class="scroll"><div class="menus flex-c">${["新对话", "艺术创作", "任务中心", "发现", "商用API"].map(menu).join("")}<div class="menu" role="button">生产力工具</div></div><div class="history"><button>艺术创作</button><button>发现</button></div></div></aside>`;
+const sidebar = () => `<aside class="sidebar"><div class="scroll"><div class="menus flex-c">${["新对话", "艺术创作", "任务中心", "发现", "商用API"].map(menu).join("")}<div class="menu" role="button"><div class="title">生产力工具</div></div></div><div class="history"><button>艺术创作</button><button>发现</button></div></div></aside>`;
 
 // Matches the main site's ProblemEntry, ChatTabbar and InputRegion structure.
 const chat = (optimization = "灵感") => `
@@ -55,7 +55,7 @@ function visible(window, selector) {
   return true;
 }
 
-function page(t, url = "https://chat.zaiwenai.com/") {
+function page(t, url = "https://chat.zaiwenai.com/", mobile = false) {
   const dom = new JSDOM("", { url, runScripts: "outside-only" });
   const observers = [];
   const NativeObserver = dom.window.MutationObserver;
@@ -66,48 +66,57 @@ function page(t, url = "https://chat.zaiwenai.com/") {
     observers.forEach((observer) => observer.disconnect());
     dom.window.close();
   });
+  if (mobile) dom.window.__MINIQ_MOBILE_SITE__ = true;
   dom.window.eval(script);
   return dom.window;
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
-const navItems = (document) => [...document.querySelectorAll('.menus > .menu[role="link"]')];
+const navItems = (document) => [...document.querySelectorAll('.menus > .menu')];
 const visibleTitles = (window) => navItems(window.document)
   .filter((item) => window.getComputedStyle(item).display !== "none")
   .map((item) => item.querySelector(".title").textContent);
 
-test("hides only the two navigation entries while keeping chat, history and content", async (t) => {
+test("exposes creative and discovery entries in the desktop main-site navigation", async (t) => {
   const window = page(t);
   window.document.body.innerHTML = `${sidebar()}<main>${menu("发现")}<p>艺术创作与发现</p><textarea>聊天草稿</textarea></main>`;
   await flush();
-  assert.deepEqual(visibleTitles(window), ["新对话", "任务中心", "商用API"]);
-  assert.equal(window.document.querySelectorAll("[data-miniq-hidden-navigation]").length, 2);
+  assert.deepEqual(visibleTitles(window), ["新对话", "艺术创作", "发现"]);
+  assert.equal(window.document.querySelectorAll("[data-miniq-hidden-navigation]").length, 3);
   for (const item of window.document.querySelectorAll(".history button, main .menu, main p, textarea")) {
     assert.notEqual(window.getComputedStyle(item).display, "none");
   }
   assert.equal(window.document.querySelector("textarea").value, "聊天草稿");
 });
 
-test("handles desktop/mobile sidebars recreated after client-side navigation", async (t) => {
+test("handles recreated desktop sidebars after client-side navigation", async (t) => {
   const window = page(t);
   for (const path of ["/", "/?conversation_id=123"]) {
     window.history.pushState({}, "", path);
     window.document.body.innerHTML = sidebar() + sidebar().replace('class="sidebar"', 'class="sidebar sidebar-mobile"');
     await flush();
-    assert.equal(window.document.querySelectorAll("[data-miniq-hidden-navigation]").length, 4);
-    assert.deepEqual(visibleTitles(window), ["新对话", "任务中心", "商用API", "新对话", "任务中心", "商用API"]);
+    assert.equal(window.document.querySelectorAll("[data-miniq-hidden-navigation]").length, 6);
+    assert.deepEqual(visibleTitles(window), ["新对话", "艺术创作", "发现", "新对话", "艺术创作", "发现"]);
   }
+});
+
+test("keeps the site's full navigation in the native mobile WebView", async (t) => {
+  const window = page(t, "https://chat.zaiwenai.com/", true);
+  window.document.body.innerHTML = sidebar();
+  await flush();
+  assert.deepEqual(visibleTitles(window), ["新对话", "艺术创作", "任务中心", "发现", "商用API", "生产力工具"]);
+  assert.equal(window.document.querySelectorAll("[data-miniq-hidden-navigation]").length, 0);
 });
 
 test("updates visibility when Vue reuses a menu node and changes its title", async (t) => {
   const window = page(t);
   window.document.body.innerHTML = sidebar();
   await flush();
-  const item = navItems(window.document)[1];
+  const item = navItems(window.document)[2];
   item.querySelector(".title").firstChild.data = "新对话";
   await flush();
   assert.notEqual(window.getComputedStyle(item).display, "none");
-  item.querySelector(".title").textContent = "发现";
+  item.querySelector(".title").textContent = "商用API";
   await flush();
   assert.equal(window.getComputedStyle(item).display, "none");
 });
@@ -119,7 +128,7 @@ test("installs once and reapplies to a newly loaded document", async (t) => {
     window.eval(script);
     await flush();
     assert.equal(window.document.querySelectorAll("#miniq-zaiwen-chat-style").length, 1);
-    assert.equal(window.document.querySelectorAll("[data-miniq-hidden-navigation]").length, 2);
+    assert.equal(window.document.querySelectorAll("[data-miniq-hidden-navigation]").length, 3);
   }
 });
 
