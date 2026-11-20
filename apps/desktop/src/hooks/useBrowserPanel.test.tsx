@@ -371,6 +371,25 @@ it("does not expose a zero-sized or newly suspended panel after a late resize", 
   expect(setBrowserVisible).not.toHaveBeenCalledWith("view-hidden", true);
 });
 
+it("serializes a rapid switch away from and back to the main platform", async () => {
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const ref = surface();
+  let finishResize!: () => void;
+  vi.mocked(resizeBrowser).mockImplementationOnce(() => new Promise((resolve) => { finishResize = resolve; }));
+  const { result, rerender } = renderHook(({ suspended }) =>
+    useBrowserPanel("https://chat.zaiwenai.com/", ref, suspended, "zaiwen-site"),
+  { initialProps: { suspended: false } });
+  await waitFor(() => expect(resizeBrowser).toHaveBeenCalled());
+
+  rerender({ suspended: true });
+  rerender({ suspended: false });
+  await act(async () => { finishResize(); });
+  await waitFor(() => expect(result.current.pending).toBe(false));
+
+  const visibility = vi.mocked(setBrowserVisible).mock.calls.map(([, visible]) => visible);
+  expect(visibility).toEqual([false, true]);
+});
+
 it.each([
   { operation: "snapshot", includeScreenshot: false, captures: 0 },
   { operation: "snapshot", includeScreenshot: true, captures: 1 },

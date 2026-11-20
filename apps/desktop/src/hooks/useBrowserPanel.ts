@@ -76,6 +76,12 @@ export function useBrowserPanel(
   const initialUrl = useRef(url);
   const initialLoadStarted = useRef(false);
   const surfaceSequence = useRef(0);
+  // Visibility changes share one native child WebView. Serialize them so a
+  // late resize/show from the Zaiwen view cannot cover the miniQ composer
+  // after switching back to the main platform.
+  const surfaceBusy = useRef(false);
+  const pendingSurface = useRef<{ request: number; show: boolean } | null>(null);
+  const surfaceRunner = useRef<(request: number, show: boolean) => void>(() => {});
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
   const clearLoadError = useCallback(() => {
@@ -123,17 +129,45 @@ export function useBrowserPanel(
   }, []);
   const reconcileSurface = useCallback(async () => {
     const request = ++surfaceSequence.current;
-    const rect = surface.current?.getBoundingClientRect();
-    if (!mounted.current || suspendedRef.current || loadErrorRef.current || !rect || rect.width <= 0 || rect.height <= 0) {
-      await setBrowserVisible(viewId, false);
+    const show = mounted.current && !suspendedRef.current && !loadErrorRef.current;
+    if (!show) void setBrowserVisible(viewId, false).catch(() => {});
+    if (surfaceBusy.current) {
+      pendingSurface.current = { request, show };
       return;
     }
-    // A panel may have moved or become visible since its page was opened in
-    // the background. Move the native child before exposing it to the user.
-    await resizeBrowser({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, viewId);
-    if (request !== surfaceSequence.current) return;
-    await setBrowserVisible(viewId, mounted.current && !suspendedRef.current && !loadErrorRef.current);
+    surfaceRunner.current(request, show);
+  }, [viewId]);
+
+  const runSurface = useCallback((request: number, show: boolean) => {
+    surfaceBusy.current = true;
+    void (async () => {
+      try {
+        if (!show) {
+          // A hide must complete even when a newer show request is queued. It
+          // closes the old native layer before the next platform is exposed.
+          await setBrowserVisible(viewId, false);
+          return;
+        }
+        const rect = surface.current?.getBoundingClientRect();
+        if (!mounted.current || suspendedRef.current || loadErrorRef.current || !rect || rect.width <= 0 || rect.height <= 0) {
+          await setBrowserVisible(viewId, false);
+          return;
+        }
+        await resizeBrowser({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, viewId);
+        if (request !== surfaceSequence.current || !mounted.current || suspendedRef.current || loadErrorRef.current) return;
+        await setBrowserVisible(viewId, true);
+      } catch {
+        // Visibility reconciliation is best effort. The next resize or
+        // platform switch will retry the native state.
+      } finally {
+        surfaceBusy.current = false;
+        const next = pendingSurface.current;
+        pendingSurface.current = null;
+        if (next) surfaceRunner.current(next.request, next.show);
+      }
+    })();
   }, [surface, viewId]);
+  surfaceRunner.current = runSurface;
   const load = useCallback(
     (target: string) => {
       const previousLoad = pendingLoad.current;
