@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    body::Body,
+    body::{Body, Bytes},
     http::StatusCode,
     response::Response,
     routing::{get, post},
@@ -20,6 +20,7 @@ async fn auto_protocol_falls_back_from_oneapi_route_404_and_caches_successful_ro
     let paths = Arc::new(Mutex::new(Vec::new()));
     let response_paths = paths.clone();
     let chat_paths = paths.clone();
+    // Consume each upload before replying so the client receives the mock response on Windows.
     let app = Router::new()
         .route(
             "/v1/models/{model}",
@@ -34,7 +35,7 @@ async fn auto_protocol_falls_back_from_oneapi_route_404_and_caches_successful_ro
         )
         .route(
             "/v1/responses",
-            post(move || {
+            post(move |_: Bytes| {
                 let paths = response_paths.clone();
                 async move {
                     paths.lock().unwrap().push("/v1/responses");
@@ -54,7 +55,7 @@ async fn auto_protocol_falls_back_from_oneapi_route_404_and_caches_successful_ro
         )
         .route(
             "/v1/chat/completions",
-            post(move || {
+            post(move |_: Bytes| {
                 let paths = chat_paths.clone();
                 async move {
                     paths.lock().unwrap().push("/v1/chat/completions");
