@@ -1,6 +1,6 @@
 [package]
 name = "miniq-desktop"
-version = "0.1.243"
+version = "0.1.244"
 edition = "2021"
 license = "MIT"
 
@@ -61,3 +61,10 @@ objc2-web-kit = { version = "0.3", default-features = false, features = ["std", 
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# Wry 0.55.1 only reads the deprecated macOS filename pasteboard type. Finder
+# and other modern drag sources may publish only `public.file-url`, which can
+# produce an empty drop or panic while Wry is collecting paths. Pin the
+# upstream fix until it is released to crates.io.
+[patch.crates-io]
+wry = { git = "https://github.com/vdavid/wry", rev = "545b7abf7f1737d1e30feeb22c431215eff6e50b" }

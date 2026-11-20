@@ -2219,7 +2219,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-desktop"
-version = "0.1.243"
+version = "0.1.244"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2259,7 +2259,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-local"
-version = "0.1.243"
+version = "0.1.244"
 dependencies = [
  "base64 0.22.1",
  "dunce",
@@ -2280,7 +2280,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-protocol"
-version = "0.1.243"
+version = "0.1.244"
 dependencies = [
  "schemars 0.8.22",
  "serde",
@@ -5662,8 +5662,7 @@ checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 [[package]]
 name = "wry"
 version = "0.55.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "186f9871daa55fd9c016578b810d149de58367113db7fb72b462d2323ce19514"
+source = "git+https://github.com/vdavid/wry?rev=545b7abf7f1737d1e30feeb22c431215eff6e50b#545b7abf7f1737d1e30feeb22c431215eff6e50b"
 dependencies = [
  "base64 0.22.1",
  "block2",
