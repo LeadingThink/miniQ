@@ -140,7 +140,10 @@ impl ChildOverlay {
 
     pub fn close(&self, app: &tauri::AppHandle) -> Result<(), String> {
         if let Some(webview) = app.get_webview(self.label) {
-            webview.hide().map_err(|error| error.to_string())?;
+            // A hidden child can still remain the native drag destination on
+            // macOS. Remove transient overlays from the view hierarchy so a
+            // later Finder drop reaches the main webview.
+            webview.close().map_err(|error| error.to_string())?;
         }
         Ok(())
     }

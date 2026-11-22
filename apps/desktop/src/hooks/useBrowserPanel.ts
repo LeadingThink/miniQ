@@ -130,7 +130,6 @@ export function useBrowserPanel(
   const reconcileSurface = useCallback(async () => {
     const request = ++surfaceSequence.current;
     const show = mounted.current && !suspendedRef.current && !loadErrorRef.current;
-    if (!show) void setBrowserVisible(viewId, false).catch(() => {});
     if (surfaceBusy.current) {
       pendingSurface.current = { request, show };
       return;

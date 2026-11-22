@@ -387,7 +387,7 @@ it("serializes a rapid switch away from and back to the main platform", async ()
   await waitFor(() => expect(result.current.pending).toBe(false));
 
   const visibility = vi.mocked(setBrowserVisible).mock.calls.map(([, visible]) => visible);
-  expect(visibility).toEqual([false, true]);
+  expect(visibility).toEqual([true]);
 });
 
 it.each([
