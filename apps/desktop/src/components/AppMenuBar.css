@@ -19,7 +19,6 @@
 }
 
 .app-menubar-nav { display: flex; align-items: center; gap: 2px; }
-.app-menubar-platform-actions { display: flex; align-items: center; min-width: 0; margin-right: 8px; }
 .app-menubar button:not(.ui-button) { border: 0; background: transparent; color: inherit; font: inherit; }
 .app-menubar .app-menubar-trigger { height: 30px; padding: 0 12px; border-radius: 5px; font-size: 13px; }
 .app-menubar button:not(.ui-button):hover, .app-menubar-trigger[aria-expanded="true"] { background: var(--bg-hover); color: var(--text); }

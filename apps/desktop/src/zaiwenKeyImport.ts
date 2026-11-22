@@ -3,7 +3,7 @@ import { isUsableDesktopAccountKey, loadDesktopAccountKeys } from "./desktopAcco
 import { createOneApiKey, type OneApiKey } from "./mobileIapAccount";
 import { throwIfAborted } from "./abortSignal";
 import { isTauriRuntime } from "./runtime";
-import { ZAIWEN_API_BASE_URL } from "./providerDefaults";
+import { DEFAULT_PROVIDER_MODEL, ZAIWEN_API_BASE_URL } from "./providerDefaults";
 import type { RpcClient } from "./rpc";
 
 export interface ZaiwenSessionStatus { supported: boolean; sessionId: string | null }
@@ -18,10 +18,6 @@ export interface ImportProvider {
 export async function zaiwenSessionStatus(): Promise<ZaiwenSessionStatus> {
   if (!isTauriRuntime()) return { supported: false, sessionId: null };
   return invoke<ZaiwenSessionStatus>("zaiwen_session_status");
-}
-
-export function hasZaiwenKey(provider: ImportProvider | null): boolean {
-  return !!provider?.hasApiKey && provider.baseUrl.replace(/\/+$/, "") === ZAIWEN_API_BASE_URL;
 }
 
 function assertLocalImport(client: RpcClient, signal: AbortSignal): void {
@@ -42,10 +38,10 @@ export async function loadZaiwenImportKeys(client: RpcClient, sessionId: string,
   return loadDesktopAccountKeys(sessionId, signal);
 }
 
-/** Validates and returns the selected main-site key without changing miniQ settings. */
-export async function selectZaiwenKey(
+/** Revalidates the choice and saves it as the local miniQ provider after confirmation. */
+export async function importZaiwenKey(
   client: RpcClient, sessionId: string, signal: AbortSignal, selectedKeyId: string | null,
-): Promise<OneApiKey> {
+): Promise<void> {
   assertLocalImport(client, signal);
   const keys = await loadDesktopAccountKeys(sessionId, signal);
   const selected = keys.find((key) => key.key_id === selectedKeyId && isUsableDesktopAccountKey(key));
@@ -54,7 +50,15 @@ export async function selectZaiwenKey(
   await validateSession(sessionId, signal);
   const key = selected ?? await createOneApiKey("miniQ 桌面端", sessionId);
   await validateSession(sessionId, signal);
-  return key;
+  const { provider } = await client.call<{ provider: ImportProvider | null }>("settings.get", undefined, { signal });
+  if (provider?.hasApiKey) throw new Error("miniQ 已配置 API Key，请在模型设置中更换。");
+  await validateSession(sessionId, signal);
+  await client.call("settings.update", { provider: {
+    baseUrl: ZAIWEN_API_BASE_URL,
+    model: DEFAULT_PROVIDER_MODEL,
+    apiProtocol: "auto",
+    apiKey: key.sk,
+  } }, { signal });
 }
 
 async function validateSession(sessionId: string, signal: AbortSignal): Promise<void> {

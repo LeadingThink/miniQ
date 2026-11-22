@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 import type { OneApiKey } from "../mobileIapAccount";
 import { isUsableDesktopAccountKey } from "../desktopAccountKey";
-import { hasZaiwenKey, loadZaiwenImportKeys, selectZaiwenKey, zaiwenSessionStatus, type ImportProvider } from "../zaiwenKeyImport";
+import { loadZaiwenImportKeys, importZaiwenKey, zaiwenSessionStatus, type ImportProvider } from "../zaiwenKeyImport";
 
 interface ImportPrompt {
   sessionId: string;
@@ -33,16 +33,16 @@ function useImportOperation() {
   return { busy, message, setMessage, operation, cancel, run };
 }
 
-export function useZaiwenKeyImport(active: boolean, client?: RpcClient) {
+/** Observe login on the site; defer SSO and the visible chooser until miniQ is active. */
+export function useZaiwenKeyImport(active: boolean, showPrompt: boolean, client?: RpcClient) {
   const [prompt, setPrompt] = useState<ImportPrompt | null>(null);
   const [configured, setConfigured] = useState(false);
-  const [selectedKeyId, setSelectedKeyId] = useState<string | null>(null);
-  const selectedSession = useRef<string | null>(null);
   const { busy, message, setMessage, operation, cancel, run } = useImportOperation();
   const seen = useRef(new Set<string>());
   const session = useRef<string | null>(null);
-  const current = useRef({ active, client });
-  current.current = { active, client };
+  const current = useRef({ active: active && showPrompt, client });
+  current.current = { active: active && showPrompt, client };
+  const generation = useRef(0);
 
   const inspect = useCallback(async (explicit: boolean, valid: () => boolean) => {
     if (!client || client.mode !== "local" || client.sshHost) {
@@ -54,10 +54,6 @@ export function useZaiwenKeyImport(active: boolean, client?: RpcClient) {
     if (session.current !== status.sessionId) {
       cancel(); setPrompt(null); setMessage("");
       session.current = status.sessionId;
-      if (selectedSession.current !== status.sessionId) {
-        selectedSession.current = null;
-        setSelectedKeyId(null);
-      }
       seen.current.clear();
     }
     if (!status.supported) {
@@ -66,17 +62,21 @@ export function useZaiwenKeyImport(active: boolean, client?: RpcClient) {
     }
     const { provider } = await client.call<{ provider: ImportProvider | null }>("settings.get");
     if (!valid() || session.current !== status.sessionId) return false;
-    const hasSavedKey = hasZaiwenKey(provider);
+    const hasSavedKey = !!provider?.hasApiKey;
     setConfigured(hasSavedKey);
-    if (!status.sessionId) {
-      if (explicit) setMessage("请先在在问主站登录，登录后可选择 API Key。");
+    if (!status.sessionId || hasSavedKey) {
+      cancel();
+      setPrompt(null);
+      if (explicit && !status.sessionId) setMessage("请先在在问主站登录，登录后切回 miniQ 选择 API Key。");
       return true;
     }
     const sessionId = status.sessionId;
-    if (!explicit && selectedSession.current === sessionId) return true;
+    if (!showPrompt) {
+      setPrompt({ sessionId, keys: null, selectedKeyId: null });
+      return true;
+    }
     if (!explicit && seen.current.has(sessionId)) return true;
     seen.current.add(sessionId);
-    if (!explicit && hasSavedKey) return true;
     if (operation.current) return true;
     setPrompt({ sessionId, keys: null, selectedKeyId: null });
     void run(async (signal) => {
@@ -84,52 +84,49 @@ export function useZaiwenKeyImport(active: boolean, client?: RpcClient) {
       if (!signal.aborted && valid()) setPrompt({ sessionId, keys, selectedKeyId: null });
     });
     return true;
-  }, [client, cancel, operation, run, setMessage]);
+  }, [client, showPrompt, cancel, operation, run, setMessage]);
 
   useEffect(() => {
     seen.current.clear();
-    setConfigured(false);
     setMessage("");
-    if (!active) return;
+    generation.current++;
+    if (!active) { setPrompt(null); setConfigured(false); return; }
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       let again = true;
       try { again = await inspect(false, () => !disposed); }
-      catch { if (!disposed) setMessage("暂时无法读取在问登录状态，可点击选择在问 API Key 重试。"); }
+      catch { if (!disposed) setMessage("暂时无法读取在问登录状态，请重新进入在问后切回 miniQ 重试。"); }
       if (!disposed && again) timer = setTimeout(() => void poll(), 3000);
     };
     void poll();
-    return () => { disposed = true; clearTimeout(timer); };
-  }, [active, inspect, setMessage]);
+    return () => { disposed = true; generation.current++; clearTimeout(timer); cancel(); };
+  }, [active, inspect, setMessage, cancel]);
 
   const dismiss = useCallback(() => {
+    if (session.current) seen.current.add(session.current);
     cancel(); setPrompt(null);
   }, [cancel]);
-  useEffect(() => {
-    if (!active) dismiss();
-    return cancel;
-  }, [active, client, cancel, dismiss]);
-
   const request = async () => {
     if (operation.current || busy || !current.current.active) return;
-    try { await inspect(true, () => current.current.active && current.current.client === client); }
-    catch { setMessage("读取在问登录状态失败，请重试。"); }
+    const started = generation.current;
+    const valid = () => generation.current === started && current.current.active && current.current.client === client;
+    try { await inspect(true, valid); }
+    catch { if (valid()) setMessage("读取在问登录状态失败，请重试。"); }
   };
   const confirm = async () => {
     if (!prompt || !client || operation.current || busy || !current.current.active) return;
-    if (prompt.selectedKeyId !== null && prompt.selectedKeyId === selectedKeyId) return;
     if (!prompt.keys || (prompt.keys.some(isUsableDesktopAccountKey) && !prompt.selectedKeyId)) return;
     await run(async (signal) => {
-      const selected = await selectZaiwenKey(client, prompt.sessionId, signal, prompt.selectedKeyId);
+      await importZaiwenKey(client, prompt.sessionId, signal, prompt.selectedKeyId);
       if (signal.aborted) return;
-      setSelectedKeyId(selected.key_id); selectedSession.current = prompt.sessionId;
+      setConfigured(true);
       setPrompt(null); setMessage("");
     });
   };
   const selectKey = (nextKeyId: string) => {
-    if (!busy && nextKeyId !== selectedKeyId) setPrompt((value) => value?.keys?.some((key) => key.key_id === nextKeyId && isUsableDesktopAccountKey(key))
+    if (!busy) setPrompt((value) => value?.keys?.some((key) => key.key_id === nextKeyId && isUsableDesktopAccountKey(key))
       ? { ...value, selectedKeyId: nextKeyId } : value);
   };
-  return { prompt, configured, selectedKeyId, busy, message, request, confirm, dismiss, selectKey };
+  return { prompt, configured, busy, message, request, confirm, dismiss, selectKey };
 }

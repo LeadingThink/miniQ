@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useRef, useState, type KeyboardEvent, type Ref } from "react";
+import { Fragment, useCallback, useRef, useState, type KeyboardEvent } from "react";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { captureEditingTarget } from "../menuEditing";
 import { isMacDesktop, isWindowsDesktop } from "../windowChrome";
@@ -15,11 +15,10 @@ import "./AppMenuBar.css";
 
 const LABELS = ["文件", "编辑", "视图", "帮助"];
 
-export function AppMenuBar({ app, platform = "miniq", onPlatformChange, platformActionsRef }: {
+export function AppMenuBar({ app, platform = "miniq", onPlatformChange }: {
   app: MiniqAppController | null;
   platform?: AppPlatform;
   onPlatformChange?: (platform: AppPlatform) => void;
-  platformActionsRef?: Ref<HTMLDivElement>;
 }) {
   const [open, setOpen] = useState<number | null>(null);
   const [focused, setFocused] = useState(0);
@@ -61,7 +60,6 @@ export function AppMenuBar({ app, platform = "miniq", onPlatformChange, platform
   return <>
     <header className="app-menubar" data-tauri-drag-region>
       <PlatformSwitcher platform={platform} onPlatformChange={onPlatformChange} />
-      {platform === "zaiwen" && <div ref={platformActionsRef} className="app-menubar-platform-actions" />}
       {!isMacDesktop() && <nav role="menubar" aria-label="应用菜单" className="app-menubar-nav"
         onMouseDownCapture={() => { if (open === null) restoreEditor.current = captureEditingTarget(); }}
         onFocusCapture={(event) => {

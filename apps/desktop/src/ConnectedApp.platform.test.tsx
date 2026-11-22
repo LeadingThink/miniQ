@@ -11,15 +11,19 @@ import PlatformOverlay from "./components/PlatformOverlay";
 
 const state = vi.hoisted(() => ({
   mount: vi.fn(), unmount: vi.fn(), host: null as string | null,
-  invoke: vi.fn(),
+  invoke: vi.fn(), status: vi.fn(), keys: vi.fn(), save: vi.fn(),
   listeners: new Map<string, (event: { payload: unknown }) => void>(),
+  root: { mode: "local", call: vi.fn() },
   controller: {
     client: { mode: "local" }, catalog: {}, setError: vi.fn(),
-    navigation: {}, actions: {}, updater: {},
+    navigation: {}, actions: {}, updater: {}, connection: { refreshProviderConfiguration: vi.fn(async () => true) },
   },
 }));
+vi.mock("./zaiwenKeyImport", async (original) => ({ ...await original<typeof import("./zaiwenKeyImport")>(),
+  zaiwenSessionStatus: state.status, loadZaiwenImportKeys: state.keys, importZaiwenKey: state.save,
+}));
 vi.mock("./runtime", () => ({ isTauriRuntime: vi.fn(() => true) }));
-vi.mock("./desktopHost", () => ({ useDesktopHost: () => ({ host: state.host, sidebarCollapsed: false }) }));
+vi.mock("./desktopHost", () => ({ useDesktopHost: () => ({ host: state.host, sidebarCollapsed: false, root: state.root }) }));
 vi.mock("./hooks/useMiniqApp", () => ({ useMiniqApp: () => state.controller }));
 vi.mock("./components/UnifiedSidebar", () => ({ UnifiedSidebar: () => <aside aria-label="miniQ 会话" /> }));
 vi.mock("./components/WindowControls", () => ({ WindowControls: () => null }));
@@ -47,6 +51,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.invoke.mockResolvedValue(undefined);
   state.host = null;
+  state.status.mockResolvedValue({ supported: true, sessionId: null });
+  state.root.call.mockResolvedValue({ provider: null });
+  state.keys.mockReset().mockResolvedValue([{ key_id: "test-key", sk: "sk-private-test-key", remark: "工作密钥", is_active: true, expire_time: 4102444800 }]);
+  state.save.mockResolvedValue(undefined);
   state.listeners.clear();
   localStorage.clear();
   delete window.__MINIQ_PLATFORM__;
@@ -86,6 +94,13 @@ async function switchTo(name: "在问" | "miniQ") {
   fireEvent.click(screen.getByRole("menuitemradio", { name }));
 }
 
+async function finishSiteLoad() {
+  await waitFor(() => expect(state.listeners.has("browser://page-load")).toBe(true));
+  await act(async () => state.listeners.get("browser://page-load")!({ payload: {
+    viewId: "zaiwen-site", url: "https://chat.zaiwenai.com/", phase: "finished",
+  } }));
+}
+
 it.each(["Win32", "MacIntel", "Linux x86_64"])("opens the full main site immediately without a miniQ login or conversation list on %s", async (platform) => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
   const { container } = render(<ConnectedApp theme="jade" onThemeChange={() => {}} />);
@@ -94,11 +109,8 @@ it.each(["Win32", "MacIntel", "Linux x86_64"])("opens the full main site immedia
   expect(openBrowser).not.toHaveBeenCalled();
   await switchTo("在问");
   await screen.findByRole("main", { name: "在问主站" });
-  const importButton = await screen.findByRole("button", { name: "选择在问 API Key" });
-  const topbar = container.querySelector(".app-menubar")!;
-  expect(topbar.contains(importButton)).toBe(true);
-  expect(topbar.querySelector(".app-menubar-brand")?.nextElementSibling?.contains(importButton)).toBe(true);
-  expect(screen.getByRole("main", { name: "在问主站" }).contains(importButton)).toBe(false);
+  expect(screen.queryByRole("button", { name: "选择在问 API Key" })).toBeNull();
+  expect(container.querySelector(".app-menubar-platform-actions")).toBeNull();
   await waitFor(() => expect(openBrowser).toHaveBeenCalledOnce());
   const [, bounds, viewId, visible] = vi.mocked(openBrowser).mock.calls[0];
   expect(viewId).toBe("zaiwen-site");
@@ -245,4 +257,83 @@ it("opens main-site popup links and closes the native surface when the app unmou
   expect(openLinkWindow).toHaveBeenCalledExactlyOnceWith("https://chat.zaiwenai.com/help");
   unmount();
   await waitFor(() => expect(closeBrowser).toHaveBeenCalledExactlyOnceWith(viewId));
+});
+
+it.each(["Win32", "MacIntel"])("prompts on miniQ immediately after leaving a logged-in site on %s", async (platform) => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+  state.status.mockResolvedValue({ supported: true, sessionId: "session-a" });
+  let finish!: (keys: unknown[]) => void;
+  state.keys.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  render(<ConnectedApp theme="jade" onThemeChange={() => {}} />);
+  expect(state.status).not.toHaveBeenCalled();
+  await switchTo("在问");
+  await finishSiteLoad();
+  await waitFor(() => expect(state.status).toHaveBeenCalled());
+  await act(async () => {});
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(state.keys).not.toHaveBeenCalled();
+  await switchTo("miniQ");
+  expect(screen.getByRole("dialog", { name: "选择 API Key" })).toBeTruthy();
+  expect(screen.getByLabelText("miniQ 工作台").getAttribute("data-active")).toBe("true");
+  expect(screen.getByText("正在加载 API Key…")).toBeTruthy();
+  await waitFor(() => expect(setBrowserVisible).toHaveBeenLastCalledWith("zaiwen-site", false));
+  await act(async () => finish([]));
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await switchTo("在问");
+  await switchTo("miniQ");
+  await screen.findByRole("radio", { name: /工作密钥/ });
+  expect(state.keys).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  { supported: true, sessionId: null, provider: null },
+  { supported: true, sessionId: "session-a", provider: { hasApiKey: true, baseUrl: "https://custom.test/v1" } },
+  { supported: false, sessionId: null, provider: null },
+])("does not prompt for missing login, configured providers, or unsupported engines: %j", async ({ supported, sessionId, provider }) => {
+  state.status.mockResolvedValue({ supported, sessionId });
+  state.root.call.mockResolvedValue({ provider });
+  render(<ConnectedApp theme="jade" onThemeChange={() => {}} />);
+  await switchTo("在问");
+  await finishSiteLoad();
+  await switchTo("miniQ");
+  await act(async () => {});
+  expect(state.status).toHaveBeenCalled();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(state.keys).not.toHaveBeenCalled();
+  expect(state.save).not.toHaveBeenCalled();
+});
+
+it("refreshes miniQ after saving and does not prompt on subsequent switches", async () => {
+  state.status.mockResolvedValue({ supported: true, sessionId: "session-a" });
+  state.save.mockImplementationOnce(async () => {
+    state.root.call.mockResolvedValue({ provider: { hasApiKey: true } });
+  });
+  render(<ConnectedApp theme="jade" onThemeChange={() => {}} />);
+  await switchTo("在问");
+  await finishSiteLoad();
+  await switchTo("miniQ");
+  fireEvent.click(await screen.findByRole("radio", { name: /工作密钥/ }));
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(state.save).toHaveBeenCalledWith(state.root, "session-a", expect.any(AbortSignal), "test-key");
+  expect(state.controller.connection.refreshProviderConfiguration).toHaveBeenCalledOnce();
+  await switchTo("在问");
+  await switchTo("miniQ");
+  await act(async () => {});
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(state.keys).toHaveBeenCalledOnce();
+});
+
+it("does not import local credentials into an SSH workspace", async () => {
+  state.host = "ssh-host";
+  state.status.mockResolvedValue({ supported: true, sessionId: "session-a" });
+  render(<ConnectedApp theme="jade" onThemeChange={() => {}} />);
+  await switchTo("在问");
+  await finishSiteLoad();
+  await switchTo("miniQ");
+  await act(async () => {});
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(state.status).not.toHaveBeenCalled();
+  expect(state.save).not.toHaveBeenCalled();
 });
