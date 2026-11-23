@@ -7,14 +7,19 @@
 //! machine. The lease lives in the daemon (not the desktop window) because the
 //! daemon keeps serving the phone after the window quits.
 
-use std::process::Child;
+use std::process::{Child, ExitStatus};
 #[cfg(any(test, target_os = "macos", target_os = "linux"))]
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::state::{AppState, DaemonSettings};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
+/// How long to wait before retrying a helper that exited with failure
+/// (e.g. polkit denying `systemd-inhibit` on headless Linux). Retrying every
+/// poll would turn one permanent denial into a hot respawn loop, each cycle
+/// producing another denied polkit check.
+const FAILURE_RETRY_DELAY: Duration = Duration::from_secs(600);
 
 /// True while the daemon tries to keep a relay connection open.
 pub(crate) fn wants_keep_awake(settings: &DaemonSettings) -> bool {
@@ -45,6 +50,10 @@ pub(crate) struct Lease {
     child: Option<Child>,
     /// Avoid spamming the log every poll when the platform has no helper.
     reported_failure: bool,
+    /// While set, a failed helper must not be restarted until the deadline.
+    /// A non-zero exit means the platform refused the request (e.g. polkit
+    /// "Access denied"), which retries will not fix.
+    retry_after: Option<Instant>,
 }
 
 impl Lease {
@@ -52,13 +61,41 @@ impl Lease {
         if !enabled {
             self.release();
             self.reported_failure = false;
+            self.retry_after = None;
             return;
+        }
+        if let Some(deadline) = self.retry_after {
+            if Instant::now() < deadline {
+                // Last helper failed permanently; stay quiet instead of
+                // respawning every poll. Reap the zombie if still around.
+                if let Some(child) = self.child.as_mut() {
+                    let _ = child.try_wait();
+                }
+                return;
+            }
+            self.retry_after = None;
         }
         if let Some(child) = self.child.as_mut() {
             match child.try_wait() {
                 Ok(None) => return,
-                // The helper exited (killed externally); start a new one.
-                _ => self.child = None,
+                Ok(Some(status)) => {
+                    match status.code() {
+                        // Exited cleanly, or killed by a signal from outside
+                        // (e.g. an admin reaping a stale helper): start a
+                        // replacement.
+                        Some(0) | None => self.child = None,
+                        // Non-zero exit: the helper itself reported failure
+                        // (e.g. polkit denied `systemd-inhibit` on headless
+                        // Linux). That refusal is permanent, so back off
+                        // instead of respawning on every poll.
+                        Some(_) => {
+                            self.note_failed_exit(status);
+                            return;
+                        }
+                    }
+                }
+                // Lost track of the helper; fall through and start a new one.
+                Err(_) => self.child = None,
             }
         }
         match start_helper() {
@@ -72,6 +109,18 @@ impl Lease {
                 self.reported_failure = true;
             }
             Err(_) => {}
+        }
+    }
+
+    /// Records a helper that exited with failure (e.g. polkit denying
+    /// `systemd-inhibit` on headless Linux). The refusal is permanent, so the
+    /// next attempt backs off instead of respawning on every poll.
+    fn note_failed_exit(&mut self, status: ExitStatus) {
+        self.child = None;
+        self.retry_after = Some(Instant::now() + FAILURE_RETRY_DELAY);
+        if !self.reported_failure {
+            tracing::warn!(?status, "keep-awake helper failed, backing off");
+            self.reported_failure = true;
         }
     }
 
@@ -158,6 +207,25 @@ mod tests {
         assert!(!wants_keep_awake(&settings(false, "sk-test")));
         assert!(!wants_keep_awake(&settings(true, "")));
         assert!(!wants_keep_awake(&settings(true, "   ")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_helper_backs_off_instead_of_respawning() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let mut lease = Lease::default();
+        // Simulate `systemd-inhibit` refused by polkit (exit code 1).
+        lease.note_failed_exit(ExitStatus::from_raw(1 << 8));
+        assert!(lease.retry_after.is_some());
+        // While backing off, polling must not start a replacement helper:
+        // previously this respawned every poll, each cycle producing another
+        // denied polkit check.
+        lease.set(true);
+        assert_eq!(lease.helper_pid(), None);
+
+        // A fresh lease has no backoff armed.
+        assert!(Lease::default().retry_after.is_none());
     }
 
     #[cfg(target_os = "macos")]
