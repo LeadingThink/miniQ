@@ -9,6 +9,9 @@ export interface FileTypeInfo {
   label: string;
 }
 
+/** Remote library uploads include photo and video originals. */
+export const UPLOAD_MEDIA_ACCEPT = "image/*,video/*,.heic,.heif";
+
 const EXTENSIONS: Record<string, FileTypeInfo> = {};
 function register(type: FileType, label: string, extensions: string[]) {
   for (const extension of extensions) EXTENSIONS[extension] = { type, label };

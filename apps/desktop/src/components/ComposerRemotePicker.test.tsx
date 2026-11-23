@@ -3,13 +3,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ComposerCard } from "./Composer";
 import { uploadRemoteFile } from "../remoteTransfer";
-import { stageBrowserUploadSources, type RemoteUploadSource } from "../remoteUploadSource";
+import { pickUploadSources, stageBrowserUploadSources, usesNativeUploadPicker, type RemoteUploadSource } from "../remoteUploadSource";
 import { readAttachments, storeAttachments } from "../composerDraft";
 import type { RpcClient } from "../rpc";
 vi.mock("../runtime", () => ({ isTauriRuntime: () => false }));
 vi.mock("../remoteTransfer", () => ({ uploadRemoteFile: vi.fn() }));
 vi.mock("../remoteUploadSource", () => ({
-  usesNativeUploadPicker: () => false,
+  usesNativeUploadPicker: vi.fn(() => false),
+  pickUploadSources: vi.fn(),
   stageBrowserUploadSources: vi.fn(async (files) => files),
   releaseUploadSources: vi.fn(async () => {}),
 }));
@@ -19,6 +20,7 @@ beforeEach(() => {
   base.client = client;
   projectBase.client = client;
   vi.mocked(uploadRemoteFile).mockReset();
+  vi.mocked(usesNativeUploadPicker).mockReturnValue(false);
   HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   HTMLDialogElement.prototype.close = function () { this.open = false; };
 });
@@ -56,7 +58,7 @@ it("offers original photos and files, waits for actual receipt, preserves text a
   fireEvent.change(screen.getByRole("textbox", { name: "消息" }), { target: { value: "我的草稿" } });
   open();
   expect(screen.getByRole("button", { name: "上传本机文件" })).toBeTruthy();
-  const files = await choose("选择照片原件");
+  const files = await choose("选择照片和视频原件");
   expect(vi.mocked(uploadRemoteFile).mock.calls[0].slice(0, 3)).toEqual([client, { sessionId: "session-A" }, files[0]]);
   expect(readAttachments("upload-A")).toEqual([]);
   act(() => vi.mocked(uploadRemoteFile).mock.calls[0][4]?.(1, 2));
@@ -66,6 +68,38 @@ it("offers original photos and files, waits for actual receipt, preserves text a
   await act(async () => finish(receipt("/project/inbox/actual.heic")));
   expect(readAttachments("upload-A")).toEqual(["/project/inbox/actual.heic"]);
   expect((screen.getByRole("textbox", { name: "消息" }) as HTMLTextAreaElement).value).toBe("我的草稿");
+  expect(base.onSend).not.toHaveBeenCalled();
+});
+it("offers mixed image/video selection and attaches every original only after its receipt", async () => {
+  vi.mocked(uploadRemoteFile).mockImplementation(async (_client, _scope, source) => receipt(`/project/inbox/${source.name}`));
+  render(<ComposerCard {...base} />);
+  open();
+  expect(screen.getByRole("button", { name: "上传照片和视频原件" })).toBeTruthy();
+  const input = screen.getByLabelText("选择照片和视频原件") as HTMLInputElement;
+  expect(input.accept.split(",")).toEqual(["image/*", "video/*", ".heic", ".heif"]);
+  expect(input.multiple).toBe(true);
+  const files = [
+    new File(["heic-original"], "照片.heic", { type: "image/heic" }),
+    new File(["mov-original"], "视频.mov", { type: "video/quicktime" }),
+    new File(["mp4-original"], "视频.mp4", { type: "video/mp4" }),
+  ];
+  await act(async () => { fireEvent.change(input, { target: { files } }); });
+  await waitFor(() => expect(readAttachments("upload-A")).toEqual(files.map(file => `/project/inbox/${file.name}`)));
+  expect(vi.mocked(uploadRemoteFile).mock.calls.map(call => call[2])).toEqual(files);
+  expect(base.onSend).not.toHaveBeenCalled();
+});
+it("uses the native library for video originals and attaches its confirmed desktop receipt", async () => {
+  vi.mocked(usesNativeUploadPicker).mockReturnValue(true);
+  const video = { kind: "native" as const, id: "cached-mov", name: "视频.mov", size: 10, sha256: "b".repeat(64), release: vi.fn() };
+  vi.mocked(pickUploadSources).mockResolvedValueOnce([video]);
+  vi.mocked(uploadRemoteFile).mockResolvedValueOnce(receipt("/project/inbox/视频.mov"));
+  render(<ComposerCard {...base} />);
+  open();
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "上传照片和视频原件" })); });
+  await waitFor(() => expect(readAttachments("upload-A")).toEqual(["/project/inbox/视频.mov"]));
+  expect(pickUploadSources).toHaveBeenCalledExactlyOnceWith("photos", expect.any(AbortSignal));
+  expect(vi.mocked(uploadRemoteFile).mock.calls[0][2]).toBe(video);
+  expect(stageBrowserUploadSources).not.toHaveBeenCalled();
   expect(base.onSend).not.toHaveBeenCalled();
 });
 it.each(["session", "client", "unmount"])("keeps late committed receipt in original draft after %s change", async (change) => {
@@ -140,8 +174,8 @@ it("uploads by workspace before a session exists and attaches the receipt to the
   vi.mocked(uploadRemoteFile).mockResolvedValueOnce(receipt("/project/inbox/u/photo.heic"));
   render(<ComposerCard {...projectBase} />);
   open();
-  expect(screen.getByRole("button", { name: "上传照片原件" })).toBeTruthy();
-  const files = await choose("选择照片原件");
+  expect(screen.getByRole("button", { name: "上传照片和视频原件" })).toBeTruthy();
+  const files = await choose("选择照片和视频原件");
   expect(vi.mocked(uploadRemoteFile).mock.calls[0].slice(0, 3)).toEqual([client, { workspaceId: "project-A" }, files[0]]);
   await waitFor(() => expect(readAttachments("hero-A")).toEqual(["/project/inbox/u/photo.heic"]));
   expect(base.onSend).not.toHaveBeenCalled();
@@ -180,7 +214,7 @@ it("falls back to the path dialog and explains that a project is required when n
   open();
   const dialog = screen.getByRole("dialog", { name: "附加远程文件" });
   expect(within(dialog).getByRole("note").textContent).toContain("请先选择一个项目");
-  expect(within(dialog).queryByRole("button", { name: "上传照片原件" })).toBeNull();
+  expect(within(dialog).queryByRole("button", { name: "上传照片和视频原件" })).toBeNull();
   expect(uploadRemoteFile).not.toHaveBeenCalled();
 });
 

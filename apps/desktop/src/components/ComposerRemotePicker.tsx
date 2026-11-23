@@ -2,6 +2,7 @@ import { FileText, ImagePlus, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ComposerUploadSelection } from "../composerUploads";
 import { usesNativeUploadPicker } from "../remoteUploadSource";
+import { UPLOAD_MEDIA_ACCEPT } from "../fileTypes";
 import { isRemoteAbsolutePath } from "./RemotePathDialog";
 import "./RemoteUpload.css";
 
@@ -56,8 +57,8 @@ export function ComposerRemotePicker(props: {
   };
   return <>
     {inputs.map(input => <input key={input.id} ref={input.active ? input.kind === "files" ? files : photos : undefined}
-      type="file" multiple hidden aria-label={input.active ? input.kind === "files" ? "选择本机文件" : "选择照片原件" : undefined}
-      accept={input.kind === "photos" ? "image/*,.heic,.heif" : undefined}
+      type="file" multiple hidden aria-label={input.active ? input.kind === "files" ? "选择本机文件" : "选择照片和视频原件" : undefined}
+      accept={input.kind === "photos" ? UPLOAD_MEDIA_ACCEPT : undefined}
       onChange={event => change(event, input.id, input.kind)} />)}
     <dialog ref={dialog} className="remote-upload" aria-label="附加远程文件"
       onCancel={event => { event.preventDefault(); props.onClose(); }}
@@ -69,8 +70,8 @@ export function ComposerRemotePicker(props: {
       </header>
       <div className="remote-upload-body">
         <div className="remote-upload-actions">
-          <button type="button" className="remote-upload-tile" aria-label="上传照片原件" onClick={() => choose("photos")}>
-            <ImagePlus size={22} aria-hidden="true" /><strong>照片</strong><small>从相册选择</small>
+          <button type="button" className="remote-upload-tile" aria-label="上传照片和视频原件" onClick={() => choose("photos")}>
+            <ImagePlus size={22} aria-hidden="true" /><strong>照片和视频</strong><small>从相册选择</small>
           </button>
           <button type="button" className="remote-upload-tile" aria-label="上传本机文件" onClick={() => choose("files")}>
             <Upload size={22} aria-hidden="true" /><strong>文件</strong><small>任意类型，保留原件</small>
@@ -89,7 +90,7 @@ export function ComposerRemotePicker(props: {
           </form>
         </details>
         {error && <p className="remote-upload-error" role="alert">{error}</p>}
-        <p className="remote-upload-hint">单个文件最大 200 MiB。照片选择器可能转换格式，需要保留 HEIC 原件时请用“文件”。</p>
+        <p className="remote-upload-hint">单个文件最大 200 MiB。相册选择器可能转换格式，需要保留照片或视频原件时请用“文件”。</p>
       </div>
     </dialog>
   </>;

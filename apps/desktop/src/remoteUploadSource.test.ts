@@ -35,6 +35,21 @@ it("removes all cached originals and the partial file when a later provider is u
   expect(await disk.entries()).toEqual(["miniq-upload-cache"]);
 });
 
+it.each([["视频.mov", "video/quicktime"], ["视频.mp4", "video/mp4"]])("stages the complete video original %s in bounded chunks without transcoding", async (name, type) => {
+  const bytes = Uint8Array.from({ length: UPLOAD_CHUNK_BYTES + 19 }, (_, index) => index % 251);
+  const original = new File([bytes], name, { type });
+  const wholeRead = vi.spyOn(original, "arrayBuffer").mockRejectedValue(new Error("whole file forbidden"));
+  const sources = await stageBrowserUploadSources([original]);
+  expect(sources).toHaveLength(1);
+  expect(sources[0]).toMatchObject({ name, size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
+  if (sources[0].kind !== "browser") throw new Error("browser cache expected");
+  expect(new Uint8Array(await sources[0].file.arrayBuffer())).toEqual(bytes);
+  expect(wholeRead).not.toHaveBeenCalled();
+  expect(disk.writes).toEqual([UPLOAD_CHUNK_BYTES, 19]);
+  await releaseUploadSources(sources);
+  expect(await disk.entries()).toEqual(["miniq-upload-cache"]);
+});
+
 it("checks cancellation between disk chunks and deletes only its partial cache", async () => {
   const controller = new AbortController();
   disk.beforeWrite(() => controller.abort());

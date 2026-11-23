@@ -1,11 +1,10 @@
-import { imageTooLarge, MAX_IMAGE_BYTES } from "./imageLimits";
-
 export const MOBILE_CHAT_STORAGE_KEY = "miniq.mobile.chat.v1";
 export const MOBILE_MODEL_STORAGE_KEY = "miniq.mobile.chat.model.v1";
 
 export type ChatContent = string | Array<
   { type: "text"; text: string } |
-  { type: "image_url"; image_url: { url: string; detail?: "auto" } }
+  { type: "image_url"; image_url: { url: string; detail?: "auto" } } |
+  { type: "video_url"; video_url: { url: string } }
 >;
 
 export interface MobileChatMessage {
@@ -18,11 +17,6 @@ export interface MobileChatMessage {
   createdAt?: string;
   completedAt?: string;
   elapsedMs?: number;
-}
-
-export interface PendingMobileImage {
-  name: string;
-  dataUrl: string;
 }
 
 export function textChatModels(result: unknown): string[] {
@@ -74,10 +68,12 @@ function isChatMessage(value: unknown): value is Omit<MobileChatMessage, "id"> &
   return typeof value.content === "string" || (Array.isArray(value.content) && value.content.every((part: unknown) => {
     if (!part || typeof part !== "object" || !("type" in part)) return false;
     if (part.type === "text") return "text" in part && typeof part.text === "string";
-    if (part.type !== "image_url" || !("image_url" in part)) return false;
-    const image = part.image_url;
-    return Boolean(image && typeof image === "object" && "url" in image && typeof image.url === "string"
-      && /^(https?:\/\/|data:image\/(?:png|jpeg|webp|gif);base64,)/i.test(image.url));
+    const media = part.type === "image_url" && "image_url" in part ? part.image_url
+      : part.type === "video_url" && "video_url" in part ? part.video_url : null;
+    if (!media || typeof media !== "object" || !("url" in media) || typeof media.url !== "string") return false;
+    return part.type === "image_url"
+      ? /^(https?:\/\/|data:image\/(?:png|jpeg|webp|gif);base64,)/i.test(media.url)
+      : /^(https?:\/\/|data:video\/(?:mp4|quicktime|webm);base64,)/i.test(media.url);
   }));
 }
 
@@ -101,16 +97,4 @@ export async function mobileResponseError(response: Response): Promise<string> {
   } catch {
     return `请求失败（${response.status}）`;
   }
-}
-
-export async function readMobileImage(file: File): Promise<PendingMobileImage> {
-  if (file.size > MAX_IMAGE_BYTES) throw imageTooLarge();
-  if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) throw new Error("仅支持 PNG、JPEG、WebP 或 GIF 图片");
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("图片读取失败"));
-    reader.onerror = () => reject(reader.error ?? new Error("图片读取失败"));
-    reader.readAsDataURL(file);
-  });
-  return { name: file.name, dataUrl };
 }

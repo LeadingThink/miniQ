@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MobileEntry } from "./MobileEntry";
-import * as mobileChatData from "../mobileChatData";
+import * as mobileChatMedia from "../mobileChatMedia";
 import { readMobileEntryMode } from "../mobileEntryMode";
 
 vi.mock("./Md", () => ({ Md: ({ children }: { children: string }) => <div>{children}</div> }));
@@ -52,7 +52,7 @@ it("keeps unsaved key edits when leaving settings and does not use them for requ
   fireEvent.click(screen.getByRole("button", { name: "返回" }));
   await screen.findByRole("button", { name: "前往设置" });
   expect(fetch).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText("附加图片"), { target: { files: [new File(["image"], "draft.png", { type: "image/png" })] } });
+  fireEvent.change(screen.getByLabelText("附加照片或视频"), { target: { files: [new File(["image"], "draft.png", { type: "image/png" })] } });
   await screen.findByText("draft.png");
   fireEvent.click(screen.getByRole("button", { name: "设置" }));
   expect(screen.getByPlaceholderText<HTMLInputElement>("sk-...").value).toBe("unsaved-key");
@@ -83,15 +83,15 @@ it("keeps the in-memory text draft across settings and purpose selection when lo
 });
 
 it.each([true, false])("keeps an image read in flight across settings (complete while hidden: %s)", async (completeWhileHidden) => {
-  let finish!: (image: mobileChatData.PendingMobileImage) => void;
-  vi.spyOn(mobileChatData, "readMobileImage").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  let finish!: (image: mobileChatMedia.PendingMobileMedia) => void;
+  vi.spyOn(mobileChatMedia, "readMobileMedia").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
   render(<MobileEntry initialMode="chat" onRemote={vi.fn()} />);
   await screen.findByRole("textbox", { name: "输入问题或任务" });
-  fireEvent.change(screen.getByLabelText("附加图片"), { target: { files: [new File(["image"], "pending.png", { type: "image/png" })] } });
-  expect(mobileChatData.readMobileImage).toHaveBeenCalledOnce();
+  fireEvent.change(screen.getByLabelText("附加照片或视频"), { target: { files: [new File(["image"], "pending.png", { type: "image/png" })] } });
+  expect(mobileChatMedia.readMobileMedia).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByRole("button", { name: "设置" }));
   if (!completeWhileHidden) fireEvent.click(screen.getByRole("button", { name: "返回" }));
-  await act(async () => { finish({ name: "pending.png", dataUrl: "data:image/png;base64,aW1hZ2U=" }); });
+  await act(async () => { finish({ kind: "image", name: "pending.png", dataUrl: "data:image/png;base64,aW1hZ2U=" }); });
   if (completeWhileHidden) fireEvent.click(screen.getByRole("button", { name: "返回" }));
   expect(screen.getByText("pending.png")).toBeTruthy();
   expect(screen.getByRole("button", { name: "移除图片" })).toBeTruthy();

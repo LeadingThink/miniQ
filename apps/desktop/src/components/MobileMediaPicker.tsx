@@ -1,19 +1,21 @@
 import { Camera, ImagePlus, Images, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { isNativeMobileApp } from "../mobileRuntime";
-import { pickMobileImage, type MobileImageSource } from "../mobileImagePicker";
+import { captureMobilePhoto } from "../mobilePhotoCapture";
+import { pickMobileMediaFile } from "../mobileMediaPicker";
+import { MOBILE_CHAT_MEDIA_ACCEPT } from "../mobileChatMedia";
 import { useMobileBackButton } from "./MobileAppearanceSheet";
 
 interface Props {
   disabled?: boolean;
-  onImage: (file: File) => void | Promise<void>;
+  onMedia: (file: File) => void | Promise<void>;
   onError?: (message: string) => void;
 }
 
-export function MobileImagePicker(props: Props) {
+export function MobileMediaPicker(props: Props) {
   const native = isNativeMobileApp();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<MobileImageSource | null>(null);
+  const [busy, setBusy] = useState<"camera" | "photos" | null>(null);
   const titleId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
@@ -44,10 +46,10 @@ export function MobileImagePicker(props: Props) {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
     setOpen(false);
-    if (file) void props.onImage(file);
+    if (file) void props.onMedia(file);
   };
 
-  const choose = async (source: MobileImageSource) => {
+  const choose = async (source: "camera" | "photos") => {
     if (props.disabled || busy) return;
     if (!native) {
       setOpen(false);
@@ -56,11 +58,11 @@ export function MobileImagePicker(props: Props) {
     }
     setBusy(source);
     try {
-      const file = await pickMobileImage(source);
-      if (file) await props.onImage(file);
+      const file = await (source === "camera" ? captureMobilePhoto() : pickMobileMediaFile());
+      if (file) await props.onMedia(file);
       setOpen(false);
     } catch (error) {
-      props.onError?.(error instanceof Error ? error.message : "图片选择失败，请重试");
+      props.onError?.(error instanceof Error ? error.message : "附件选择失败，请重试");
     } finally {
       setBusy(null);
     }
@@ -71,9 +73,9 @@ export function MobileImagePicker(props: Props) {
       <button
         ref={trigger}
         type="button"
-        className="mobile-chat-image-button"
-        aria-label="添加图片"
-        title="添加图片"
+        className="mobile-chat-media-button"
+        aria-label="添加照片或视频"
+        title="添加照片或视频"
         disabled={props.disabled}
         onClick={() => setOpen(true)}
       >
@@ -83,9 +85,9 @@ export function MobileImagePicker(props: Props) {
         ref={galleryInput}
         className="mobile-chat-file-input"
         type="file"
-        aria-label="附加图片"
+        aria-label="附加照片或视频"
         disabled={props.disabled}
-        accept="image/png,image/jpeg,image/webp,image/gif"
+        accept={MOBILE_CHAT_MEDIA_ACCEPT}
         onChange={handleInput}
       />
       <input
@@ -108,8 +110,8 @@ export function MobileImagePicker(props: Props) {
         >
           <section className="mobile-chat-media-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
             <header className="mobile-chat-media-header">
-              <h2 id={titleId}>添加图片</h2>
-              <button type="button" className="mobile-chat-media-close" aria-label="关闭图片菜单" onClick={() => setOpen(false)}>
+              <h2 id={titleId}>添加照片或视频</h2>
+              <button type="button" className="mobile-chat-media-close" aria-label="关闭附件菜单" onClick={() => setOpen(false)}>
                 <X size={19} />
               </button>
             </header>
@@ -120,7 +122,7 @@ export function MobileImagePicker(props: Props) {
               </button>
               <button type="button" className="mobile-chat-media-action" aria-label="从相册选择" disabled={Boolean(busy)} onClick={() => void choose("photos")}>
                 <span className="mobile-chat-media-action-icon"><Images size={21} /></span>
-                <span><strong>{busy === "photos" ? "正在打开相册…" : "从相册选择"}</strong><small>选择设备中已有的图片</small></span>
+                <span><strong>{busy === "photos" ? "正在读取附件…" : "从相册选择"}</strong><small>选择一张照片或一个视频原件，视频限 64 MiB</small></span>
               </button>
             </div>
             <button type="button" className="mobile-chat-media-cancel" onClick={() => setOpen(false)}>取消</button>

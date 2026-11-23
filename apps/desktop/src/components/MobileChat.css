@@ -105,7 +105,8 @@
 .mobile-chat-message .md {
   font-size: var(--font-callout);
 }
-.mobile-chat-message.user img {
+.mobile-chat-message.user img,
+.mobile-chat-message.user video {
   display: block;
   max-width: min(100%, 280px);
   max-height: 280px;
@@ -157,7 +158,7 @@
   flex: 1;
   margin-right: 4px;
 }
-.mobile-chat-image-button,
+.mobile-chat-media-button,
 .mobile-chat-send {
   flex: none;
   display: inline-flex;
@@ -169,16 +170,16 @@
   border: 0;
   border-radius: var(--radius-pill);
 }
-.mobile-chat-image-button {
+.mobile-chat-media-button {
   position: relative;
   background: transparent;
   color: var(--text-mid);
   cursor: pointer;
 }
-.mobile-chat-image-button:hover {
+.mobile-chat-media-button:hover {
   background: var(--bg-hover);
 }
-.mobile-chat-image-button:focus-within {
+.mobile-chat-media-button:focus-within {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
@@ -193,7 +194,7 @@
   white-space: nowrap;
   border: 0;
 }
-.mobile-chat-image-button:disabled {
+.mobile-chat-media-button:disabled {
   color: var(--text-dim);
   cursor: default;
   opacity: .55;
@@ -312,7 +313,7 @@
   color: var(--text-dim);
   opacity: 1;
 }
-.mobile-chat-image-chip {
+.mobile-chat-media-chip {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -323,12 +324,12 @@
   color: var(--text-mid);
   font-size: var(--font-footnote);
 }
-.mobile-chat-image-chip span {
+.mobile-chat-media-chip span {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.mobile-chat-image-chip button {
+.mobile-chat-media-chip button {
   display: grid;
   place-items: center;
   flex: none;
@@ -338,6 +339,11 @@
   border: 0;
   background: transparent;
   color: var(--text-mid);
+}
+.mobile-chat-media-hint {
+  margin: 0 6px;
+  color: var(--text-mid);
+  font-size: var(--font-footnote);
 }
 .mobile-chat-composer .voice-input {
   flex: none;

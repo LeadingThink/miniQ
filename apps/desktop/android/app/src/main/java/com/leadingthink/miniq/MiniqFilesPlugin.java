@@ -75,7 +75,10 @@ public class MiniqFilesPlugin extends Plugin {
         uploadPicker = selection;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("photos".equals(kind) ? "image/*" : "*/*");
+        intent.setType("*/*");
+        if ("photos".equals(kind)) {
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] { "image/*", "video/*" });
+        }
         intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         try { getActivity().runOnUiThread(() -> launchUploadPicker(selection, intent)); }

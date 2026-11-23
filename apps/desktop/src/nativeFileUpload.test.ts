@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const native = vi.hoisted(() => ({ pickUpload: vi.fn(), upload: vi.fn(), readUploadChunk: vi.fn(), releaseUpload: vi.fn(), cancel: vi.fn(), addListener: vi.fn(), remove: vi.fn() }));
 vi.mock("@capacitor/core", () => ({ registerPlugin: () => native }));
 import * as transfer from "./nativeFileTransfer";
+import { pickUploadSources, releaseUploadSources } from "./remoteUploadSource";
 
 const source = { id: "native-source-1", name: "原件.heic", size: 200 * 1024 * 1024, sha256: "a".repeat(64) };
 beforeEach(() => {
@@ -38,6 +39,26 @@ it("releases a late picker result when the initiating draft was cancelled", asyn
   await expect(transfer.pickNativeUploadFiles("files", controller.signal)).rejects.toMatchObject({ name: "AbortError" });
   expect(native.cancel).toHaveBeenCalledWith({ id: native.pickUpload.mock.calls[0][0].id });
   expect(native.releaseUpload).toHaveBeenCalledExactlyOnceWith({ ids: [source.id] });
+});
+
+it("queues mixed native photo and video originals with unchanged metadata and releases each once", async () => {
+  const files = [source, { ...source, id: "native-mov", name: "视频.mov" }, { ...source, id: "native-mp4", name: "视频.mp4" }];
+  native.pickUpload.mockResolvedValueOnce({ files });
+  const selected = await pickUploadSources("photos");
+  expect(native.pickUpload).toHaveBeenCalledExactlyOnceWith({ id: expect.any(String), kind: "photos" });
+  expect(selected).toEqual(files.map(file => ({ ...file, kind: "native", release: expect.any(Function) })));
+  expect(selected.every(file => !("file" in file))).toBe(true);
+  await releaseUploadSources(selected);
+  await releaseUploadSources(selected);
+  expect(native.releaseUpload.mock.calls).toEqual(files.map(file => [{ ids: [file.id] }]));
+});
+
+it("rejects an oversized native video and releases the entire mixed selection", async () => {
+  const files = [source, { ...source, id: "native-mov", name: "视频.mov", size: source.size + 1 }];
+  native.pickUpload.mockResolvedValueOnce({ files });
+  await expect(pickUploadSources("photos")).rejects.toThrow("200 MiB");
+  expect(native.releaseUpload).toHaveBeenCalledExactlyOnceWith({ ids: files.map(file => file.id) });
+  expect(native.upload).not.toHaveBeenCalled();
 });
 
 it("cancels the matching PUT and removes its progress listener", async () => {

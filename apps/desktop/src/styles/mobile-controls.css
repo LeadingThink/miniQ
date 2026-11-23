@@ -23,7 +23,7 @@
     display: inline-flex;
     align-items: center;
   }
-  .mobile-chat-image-chip button {
+  .mobile-chat-media-chip button {
     min-width: 44px;
     min-height: 44px;
   }

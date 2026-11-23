@@ -1,19 +1,15 @@
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 
-export type MobileImageSource = "camera" | "photos";
-
-/** Capture or select one image through Capacitor and expose it to the shared reader. */
-export async function pickMobileImage(source: MobileImageSource): Promise<File | null> {
-  if (source === "camera") {
-    const permission = await Camera.requestPermissions({ permissions: ["camera"] });
-    if (permission.camera !== "granted") {
-      throw new Error("相机权限未开启，请在系统设置中允许 miniQ 使用相机");
-    }
+/** Only camera capture uses Capacitor Camera; the library accepts original videos too. */
+export async function captureMobilePhoto(): Promise<File | null> {
+  const permission = await Camera.requestPermissions({ permissions: ["camera"] });
+  if (permission.camera !== "granted") {
+    throw new Error("相机权限未开启，请在系统设置中允许 miniQ 使用相机");
   }
 
   try {
     const photo = await Camera.getPhoto({
-      source: source === "camera" ? CameraSource.Camera : CameraSource.Photos,
+      source: CameraSource.Camera,
       resultType: CameraResultType.Uri,
       quality: 90,
       width: 2048,
@@ -27,8 +23,7 @@ export async function pickMobileImage(source: MobileImageSource): Promise<File |
     const type = imageMimeType(blob.type, photo.format);
     if (!type) throw new Error("拍摄的图片格式不受支持");
     const extension = type === "image/jpeg" ? "jpg" : type.slice("image/".length);
-    const prefix = source === "camera" ? "photo" : "image";
-    return new File([blob], `miniq-${prefix}-${Date.now()}.${extension}`, { type });
+    return new File([blob], `miniq-photo-${Date.now()}.${extension}`, { type });
   } catch (error) {
     if (isPickerCancellation(error)) return null;
     throw error;

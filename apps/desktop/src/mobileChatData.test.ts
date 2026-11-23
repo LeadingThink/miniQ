@@ -74,3 +74,18 @@ it("copies all text parts without exposing inline image data as text", () => {
     { type: "text", text: "第二段" },
   ])).toBe("第一段\n第二段");
 });
+
+it("restores video originals in history while rejecting unsafe or mismatched video URLs", () => {
+  const content = [{ type: "text" as const, text: "请分析" },
+    { type: "video_url" as const, video_url: { url: "data:video/mp4;base64,b3JpZ2luYWw=" } }];
+  localStorage.setItem(MOBILE_CHAT_STORAGE_KEY, JSON.stringify([
+    { id: "video", role: "user", content },
+    { role: "user", content: [{ type: "video_url", video_url: { url: "javascript:alert(1)" } }] },
+    { role: "user", content: [{ type: "video_url", video_url: { url: "data:text/html;base64,YQ==" } }] },
+    { role: "user", content: [{ type: "video_url", video_url: {} }] },
+  ]));
+  expect(readMobileChat()).toEqual([{ id: "video", role: "user", content }]);
+  expect(mobileMessageText(content)).toBe("请分析");
+  persistMobileChat(readMobileChat());
+  expect(readMobileChat()[0].content).toEqual(content);
+});

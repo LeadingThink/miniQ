@@ -54,6 +54,6 @@ it("new-session screen without a project asks the user to choose one instead of 
   render(<HeroPage app={app(false)} slashCommands={[]} />);
   openAttachment();
   expect(screen.getByText(/请先选择一个项目/)).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "上传照片原件" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "上传照片和视频原件" })).toBeNull();
   expect(uploadRemoteFile).not.toHaveBeenCalled();
 });

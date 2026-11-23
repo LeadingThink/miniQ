@@ -33,7 +33,7 @@ final class MiniqUploadPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewC
             var configuration = PHPickerConfiguration()
             configuration.selectionLimit = 0
             configuration.selection = .ordered
-            configuration.filter = .images
+            configuration.filter = .any(of: [.images, .videos])
             configuration.preferredAssetRepresentationMode = .current
             let photos = PHPickerViewController(configuration: configuration)
             photos.delegate = self
@@ -100,20 +100,21 @@ final class MiniqUploadPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewC
         if results.isEmpty { cancel(); return }
         worker.async {
             guard !self.finished else { return }
-            self.copyPhoto(results, index: 0)
+            self.copyMedia(results, index: 0)
         }
     }
 
-    private func copyPhoto(_ results: [PHPickerResult], index: Int) {
+    private func copyMedia(_ results: [PHPickerResult], index: Int) {
         guard !finished else { return }
         if cancellation.isCancelled { finish(.failure(MiniqUploadError.cancelled)); return }
         guard index < results.count else { finish(.success(staged)); return }
         let provider = results[index].itemProvider
-        guard let type = provider.registeredTypeIdentifiers.first(where: {
-            guard let type = UTType($0) else { return false }
-            return type.conforms(to: .image)
-        }) else { finish(.failure(MiniqUploadError.unreadable)); return }
-        let progress = provider.loadFileRepresentation(forTypeIdentifier: type) { [self] url, error in
+        let types = provider.registeredTypeIdentifiers.compactMap { UTType($0) }
+        // A movie provider can also advertise an image thumbnail. Keep the full video.
+        guard let type = types.first(where: { $0.conforms(to: .movie) })
+            ?? types.first(where: { $0.conforms(to: .image) })
+        else { finish(.failure(MiniqUploadError.unreadable)); return }
+        let progress = provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { [self] url, error in
             // The provider deletes this URL when its callback returns. Copy synchronously here.
             let copy = {
                 guard !self.finished else { return }
@@ -126,7 +127,7 @@ final class MiniqUploadPicker: NSObject, UIDocumentPickerDelegate, PHPickerViewC
                         name += "." + url.pathExtension
                     }
                     self.staged.append(try self.cache.copy(source: url, name: name, cancellation: self.cancellation))
-                    self.worker.async { self.copyPhoto(results, index: index + 1) }
+                    self.worker.async { self.copyMedia(results, index: index + 1) }
                 } catch { self.finish(.failure(error)) }
             }
             if DispatchQueue.getSpecific(key: workerKey) == true { copy() }

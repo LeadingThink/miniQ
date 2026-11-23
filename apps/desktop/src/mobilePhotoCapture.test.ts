@@ -11,9 +11,9 @@ vi.mock("@capacitor/camera", () => ({
   CameraSource: { Camera: "CAMERA", Photos: "PHOTOS" },
 }));
 
-import { pickMobileImage } from "./mobileImagePicker";
+import { captureMobilePhoto } from "./mobilePhotoCapture";
 
-describe("pickMobileImage", () => {
+describe("captureMobilePhoto", () => {
   beforeEach(() => {
     camera.getPhoto.mockReset();
     camera.requestPermissions.mockReset();
@@ -26,7 +26,7 @@ describe("pickMobileImage", () => {
     camera.getPhoto.mockResolvedValue({ webPath: "https://camera.test/photo", format: "jpeg" });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(new Blob(["image"], { type: "image/jpeg" }), { status: 200 })));
 
-    const file = await pickMobileImage("camera");
+    const file = await captureMobilePhoto();
 
     expect(camera.requestPermissions).toHaveBeenCalledWith({ permissions: ["camera"] });
     expect(camera.getPhoto).toHaveBeenCalledWith(expect.objectContaining({ source: "CAMERA", resultType: "uri" }));
@@ -34,20 +34,22 @@ describe("pickMobileImage", () => {
     expect(file?.type).toBe("image/jpeg");
   });
 
-  it("does not request camera permission for the photo library", async () => {
+  it("uses the capture format when the camera returns a blob without a MIME type", async () => {
+    camera.requestPermissions.mockResolvedValue({ camera: "granted" });
     camera.getPhoto.mockResolvedValue({ webPath: "https://camera.test/image", format: "png" });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(new Blob(["image"], { type: "" }), { status: 200 })));
 
-    const file = await pickMobileImage("photos");
+    const file = await captureMobilePhoto();
 
-    expect(camera.requestPermissions).not.toHaveBeenCalled();
-    expect(camera.getPhoto).toHaveBeenCalledWith(expect.objectContaining({ source: "PHOTOS" }));
+    expect(camera.requestPermissions).toHaveBeenCalledWith({ permissions: ["camera"] });
+    expect(camera.getPhoto).toHaveBeenCalledWith(expect.objectContaining({ source: "CAMERA" }));
     expect(file?.type).toBe("image/png");
   });
 
   it("treats cancelling the native picker as a no-op", async () => {
-    camera.getPhoto.mockRejectedValue(new Error("User cancelled photos app"));
+    camera.requestPermissions.mockResolvedValue({ camera: "granted" });
+    camera.getPhoto.mockRejectedValue(new Error("User cancelled camera"));
 
-    await expect(pickMobileImage("photos")).resolves.toBeNull();
+    await expect(captureMobilePhoto()).resolves.toBeNull();
   });
 });

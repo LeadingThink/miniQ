@@ -122,7 +122,7 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
   return (
     <>
       {accountOpen && <MobileAccountPanel onBack={() => { setAccountOpen(false); setPrivacyAccepted(hasMobilePrivacyConsent()); }} onBusyChange={setAccountBusy} />}
-      {/* Keep drafts and pending image reads alive while another entry page is visible. */}
+      {/* Keep drafts and pending media reads alive while another entry page is visible. */}
       {chatOpened && <div style={{ display: section === "chat" && !accountOpen ? "contents" : "none" }}>
         <Suspense fallback={<AppLoadingScreen label="正在加载移动问答…">
           <button type="button" className="secondary" onClick={() => setSection("home")}><ArrowLeft size={15} />返回</button>
