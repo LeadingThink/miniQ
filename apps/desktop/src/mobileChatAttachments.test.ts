@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { expect, it } from "vitest";
 import { MAX_IMAGE_BYTES } from "./imageLimits";
-import { MAX_MOBILE_VIDEO_BYTES, mobileMediaContent, readMobileMedia } from "./mobileChatMedia";
+import { MAX_MOBILE_VIDEO_BYTES, mobileAttachmentContent, readMobileAttachment } from "./mobileChatAttachments";
 
 it.each([
   ["clip.mp4", "video/mp4", "video/mp4"],
@@ -12,21 +12,24 @@ it.each([
   ["clip.m4v", "video/x-m4v", "video/mp4"],
 ])("reads the entire original video %s (%s) without conversion", async (name, type, expected) => {
   const bytes = new Uint8Array(Array.from({ length: 300_001 }, (_, index) => index % 256));
-  const media = await readMobileMedia(new File([bytes], name, { type }));
+  const media = await readMobileAttachment(new File([bytes], name, { type }));
   expect(media).toMatchObject({ kind: "video", name });
+  if (media.kind !== "video") throw new Error("video expected");
   expect(media.dataUrl.startsWith(`data:${expected};base64,`)).toBe(true);
   expect(Buffer.from(media.dataUrl.split(",")[1], "base64")).toEqual(Buffer.from(bytes));
-  expect(mobileMediaContent("请分析视频", media)).toEqual([
+  expect(mobileAttachmentContent("请分析视频", media)).toEqual([
     { type: "text", text: "请分析视频" }, { type: "video_url", video_url: { url: media.dataUrl } },
   ]);
 });
 
 it("keeps the image content contract and supports a video without accompanying text", async () => {
-  const image = await readMobileMedia(new File(["original"], "photo.png", { type: "image/png" }));
-  expect(mobileMediaContent("", image)).toEqual([{ type: "image_url", image_url: { url: image.dataUrl, detail: "auto" } }]);
-  const video = await readMobileMedia(new File(["original"], "clip.mp4", { type: "video/mp4" }));
-  expect(mobileMediaContent("", video)).toEqual([{ type: "video_url", video_url: { url: video.dataUrl } }]);
-  expect(mobileMediaContent("纯文字", null)).toBe("纯文字");
+  const image = await readMobileAttachment(new File(["original"], "photo.png", { type: "image/png" }));
+  if (image.kind !== "image") throw new Error("image expected");
+  expect(mobileAttachmentContent("", image)).toEqual([{ type: "image_url", image_url: { url: image.dataUrl, detail: "auto" } }]);
+  const video = await readMobileAttachment(new File(["original"], "clip.mp4", { type: "video/mp4" }));
+  if (video.kind !== "video") throw new Error("video expected");
+  expect(mobileAttachmentContent("", video)).toEqual([{ type: "video_url", video_url: { url: video.dataUrl } }]);
+  expect(mobileAttachmentContent("纯文字", null)).toBe("纯文字");
 });
 
 it.each([
@@ -37,5 +40,5 @@ it.each([
 ])("rejects invalid %s before allocating a data URL", async (name, type, size, error) => {
   const file = new File(["test"], name, { type });
   Object.defineProperty(file, "size", { value: size });
-  await expect(readMobileMedia(file)).rejects.toThrow(error);
+  await expect(readMobileAttachment(file)).rejects.toThrow(error);
 });

@@ -66,6 +66,31 @@ it("uses the native library for video originals and releases the cached selectio
   expect(screen.getByText("已收件：/project/inbox/视频.mov")).toBeTruthy();
   expect(releaseUploadSources).toHaveBeenCalledExactlyOnceWith([video]);
 });
+it("uploads every saved WeChat file through the document picker and releases the selection", async () => {
+  vi.mocked(usesNativeUploadPicker).mockReturnValue(true);
+  const files = ["微信合同.docx", "微信表格.xlsx"].map((name, index) => ({ kind: "native" as const,
+    id: `wechat-${index}`, name, size: 100, sha256: "b".repeat(64), release: vi.fn() }));
+  vi.mocked(pickUploadSources).mockResolvedValueOnce(files);
+  vi.mocked(uploadRemoteFile).mockImplementation(async (_client, _scope, file) => ({
+    status: "completed", path: `/project/inbox/${file.name}`, size: file.size, sha256: "b".repeat(64),
+  }));
+  render(<RemoteFileUpload access={access} />);
+  expect(screen.getByText(/先在微信中/)).toBeTruthy();
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "上传微信文件" })); });
+  expect(pickUploadSources).toHaveBeenCalledExactlyOnceWith("files", expect.any(AbortSignal));
+  expect(vi.mocked(uploadRemoteFile).mock.calls.map(call => call[2])).toEqual(files);
+  for (const file of files) expect(screen.getByText(`已收件：/project/inbox/${file.name}`)).toBeTruthy();
+  expect(releaseUploadSources).toHaveBeenCalledWith(files);
+});
+
+it("opens the generic browser document input for WeChat exports", () => {
+  render(<RemoteFileUpload access={access} />);
+  const input = screen.getByLabelText<HTMLInputElement>("选择本机文件");
+  const click = vi.spyOn(input, "click");
+  fireEvent.click(screen.getByRole("button", { name: "上传微信文件" }));
+  expect(click).toHaveBeenCalledOnce();
+  expect(input.hasAttribute("accept")).toBe(false);
+});
 it("shows a failure without reporting a successful upload", async () => {
   vi.mocked(uploadRemoteFile).mockRejectedValue(new Error("桌面离线"));
   render(<RemoteFileUpload access={access} />);

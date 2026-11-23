@@ -211,7 +211,11 @@
   backdrop-filter: blur(8px);
 }
 .mobile-chat-media-sheet {
+  box-sizing: border-box;
   width: min(100%, 520px);
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   margin: 0 auto;
   padding: 8px;
   background: var(--bg);
@@ -296,6 +300,7 @@
   margin-top: 2px;
   color: var(--text-mid);
   font-size: var(--font-footnote);
+  overflow-wrap: anywhere;
 }
 .mobile-chat-media-cancel {
   width: 100%;
@@ -344,6 +349,13 @@
   margin: 0 6px;
   color: var(--text-mid);
   font-size: var(--font-footnote);
+}
+.mobile-chat-document {
+  display: block;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-wrap: anywhere;
 }
 .mobile-chat-composer .voice-input {
   flex: none;

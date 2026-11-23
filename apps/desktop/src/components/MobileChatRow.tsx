@@ -27,7 +27,8 @@ export const MobileChatRow = memo(function MobileChatRow(props: {
         : typeof message.content === "string" ? message.content
           : message.content.map((part, index) => part.type === "text" ? <span key={index}>{part.text}</span>
             : part.type === "image_url" ? <img key={index} src={part.image_url.url} alt="已附加图片" loading="lazy" />
-              : <video key={index} src={part.video_url.url} aria-label="已附加视频" controls playsInline preload="metadata" />)}
+              : part.type === "video_url" ? <video key={index} src={part.video_url.url} aria-label="已附加视频" controls playsInline preload="metadata" />
+                : <span key={index} className="mobile-chat-document" aria-label="已附加文件">{part.file.filename}</span>)}
     </div>
     {!active && message.status && <div className="mobile-chat-status">{message.status === "interrupted" ? "已停止，收到的内容已保留" : "回答未完成，收到的内容已保留"}</div>}
     <div className="mobile-chat-message-footer">

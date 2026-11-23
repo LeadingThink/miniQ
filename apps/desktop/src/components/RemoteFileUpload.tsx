@@ -1,4 +1,4 @@
-import { Square, Upload, ImagePlus } from "lucide-react";
+import { Square, Upload, ImagePlus, FileText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import { uploadRemoteFile } from "../remoteTransfer";
@@ -6,6 +6,7 @@ import { pickUploadSources, releaseUploadSources, stageBrowserUploadSources, use
 import { throwIfAborted } from "../abortSignal";
 import type { FileReadOptions } from "../remoteFiles";
 import { UPLOAD_MEDIA_ACCEPT } from "../fileTypes";
+import { WECHAT_FILE_GUIDANCE } from "../wechatFileUpload";
 export function RemoteFileUpload({ access, onError }: {
     access: FileReadOptions;
     onError?: (message: string) => void;
@@ -88,7 +89,9 @@ export function RemoteFileUpload({ access, onError }: {
       <div className="remote-file-upload-actions">
         <button type="button" className="ghost" disabled={!access.client || !access.sessionId} onClick={() => choose("files")}><Upload size={16}/>上传本机文件</button>
         <button type="button" className="ghost" disabled={!access.client || !access.sessionId} onClick={() => choose("photos")}><ImagePlus size={16}/>上传照片和视频</button>
+        <button type="button" className="ghost" disabled={!access.client || !access.sessionId} onClick={() => choose("files")}><FileText size={16}/>上传微信文件</button>
       </div>
+      <small>{WECHAT_FILE_GUIDANCE}</small>
       <small>保存到当前会话的项目收件箱 · 每个文件最多 200 MiB。相册选择器可能转换格式；保留照片或视频原件请使用“上传本机文件”选择原文件。</small>
     </> : <div role="status" className="remote-file-upload-progress"><span>{phase}</span><progress max={100} value={progress}/><button type="button" className="ghost" onClick={() => { setPhase("正在取消并确认桌面状态…"); request.current?.abort(); }}><Square size={14}/>取消上传 {progress}%</button></div>}
     {receipts.map((receipt, index) => <p key={index} role="status" className={receipt.includes("失败") ? "remote-file-receipt failed" : "remote-file-receipt"}>{receipt}</p>)}

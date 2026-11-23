@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 import { createHash } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
-import { MAX_MOBILE_VIDEO_BYTES, readMobileMedia } from "./mobileChatMedia";
+import { MAX_MOBILE_VIDEO_BYTES, readMobileAttachment } from "./mobileChatAttachments";
 
 const bridge = vi.hoisted(() => ({ pick: vi.fn(), read: vi.fn() }));
 vi.mock("./remoteUploadSource", async (original) => ({
   ...await original<typeof import("./remoteUploadSource")>(), pickUploadSources: bridge.pick,
 }));
 vi.mock("./nativeFileTransfer", () => ({ readNativeUploadChunk: bridge.read }));
-import { pickMobileMediaFile } from "./mobileMediaPicker";
+import { pickMobileAttachmentFile } from "./mobileAttachmentPicker";
 
 function source(bytes = new Uint8Array([0, 1, 255])) {
   return { kind: "native" as const, id: "cached-video", name: "phone.MOV", size: bytes.length,
@@ -21,25 +21,26 @@ it("reads and verifies every bounded chunk of the native original and releases t
   const selected = source(bytes);
   bridge.pick.mockResolvedValue([selected]);
   bridge.read.mockImplementation((_id, start, length) => Promise.resolve(Buffer.from(bytes.slice(start, start + length)).toString("base64")));
-  const file = await pickMobileMediaFile();
+  const file = await pickMobileAttachmentFile("photos");
   expect(bridge.pick).toHaveBeenCalledWith("photos");
   expect(bridge.read.mock.calls).toEqual([[selected.id, 0, 262144], [selected.id, 262144, 37857]]);
   expect(file).toMatchObject({ name: "phone.MOV", size: bytes.length, type: "video/quicktime" });
-  const media = await readMobileMedia(file!);
+  const media = await readMobileAttachment(file!);
+  if (media.kind !== "video") throw new Error("video expected");
   expect(Buffer.from(media.dataUrl.split(",")[1], "base64")).toEqual(Buffer.from(bytes));
   expect(selected.release).toHaveBeenCalledOnce();
 });
 
 it("treats native cancellation as a no-op", async () => {
   bridge.pick.mockResolvedValue([]);
-  await expect(pickMobileMediaFile()).resolves.toBeNull();
+  await expect(pickMobileAttachmentFile("files")).resolves.toBeNull();
   expect(bridge.read).not.toHaveBeenCalled();
 });
 
 it("rejects a multiple selection explicitly and releases every original instead of taking only the first", async () => {
   const first = source(), second = { ...source(), id: "second" };
   bridge.pick.mockResolvedValue([first, second]);
-  await expect(pickMobileMediaFile()).rejects.toThrow("每次只能附加");
+  await expect(pickMobileAttachmentFile("files")).rejects.toThrow("每次只能附加");
   expect(bridge.read).not.toHaveBeenCalled();
   expect(first.release).toHaveBeenCalledOnce();
   expect(second.release).toHaveBeenCalledOnce();
@@ -48,7 +49,7 @@ it("rejects a multiple selection explicitly and releases every original instead 
 it("rejects oversized media before reading and releases its private cache", async () => {
   const selected = { ...source(), size: MAX_MOBILE_VIDEO_BYTES + 1 };
   bridge.pick.mockResolvedValue([selected]);
-  await expect(pickMobileMediaFile()).rejects.toThrow("视频不能超过 64 MiB");
+  await expect(pickMobileAttachmentFile("photos")).rejects.toThrow("视频不能超过 64 MiB");
   expect(bridge.read).not.toHaveBeenCalled();
   expect(selected.release).toHaveBeenCalledOnce();
 });
@@ -60,6 +61,25 @@ it.each([
   bridge.pick.mockResolvedValue([selected]);
   if (result instanceof Error) bridge.read.mockRejectedValue(result);
   else bridge.read.mockResolvedValue(result);
-  await expect(pickMobileMediaFile()).rejects.toThrow(message);
+  await expect(pickMobileAttachmentFile("photos")).rejects.toThrow(message);
+  expect(selected.release).toHaveBeenCalledOnce();
+});
+
+it("opens documents for saved WeChat PDFs and verifies the complete original", async () => {
+  const bytes = new TextEncoder().encode("%PDF-1.7\noriginal saved WeChat document");
+  const selected = { ...source(bytes), name: "微信合同.pdf" };
+  bridge.pick.mockResolvedValue([selected]);
+  bridge.read.mockResolvedValue(Buffer.from(bytes).toString("base64"));
+  const file = await pickMobileAttachmentFile("files");
+  expect(bridge.pick).toHaveBeenCalledWith("files");
+  expect(file).toMatchObject({ name: selected.name, type: "application/pdf", size: bytes.length });
+  expect(selected.release).toHaveBeenCalledOnce();
+});
+
+it("rejects unsupported documents before bridge reads and releases their cache", async () => {
+  const selected = { ...source(), name: "微信合同.docx" };
+  bridge.pick.mockResolvedValue([selected]);
+  await expect(pickMobileAttachmentFile("files")).rejects.toThrow("转为 PDF");
+  expect(bridge.read).not.toHaveBeenCalled();
   expect(selected.release).toHaveBeenCalledOnce();
 });

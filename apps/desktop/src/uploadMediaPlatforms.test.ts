@@ -28,3 +28,13 @@ it("requests both image and video documents on Android while keeping generic fil
   expect(android).toContain("intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)");
   expect(android).toContain("Intent.FLAG_GRANT_READ_URI_PERMISSION");
 });
+
+it("imports saved WeChat documents through the existing platform document pickers", () => {
+  expect(ios).toContain("UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: false)");
+  expect(ios).toContain("documents.allowsMultipleSelection = true");
+  expect(ios).toContain("source.startAccessingSecurityScopedResource()");
+  expect(ios).toContain("source.stopAccessingSecurityScopedResource()");
+  expect(android).toContain('intent.setType("*/*")');
+  expect(android).not.toContain('setPackage("com.tencent.mm")');
+  expect(android).not.toContain("MANAGE_EXTERNAL_STORAGE");
+});

@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MobileEntry } from "./MobileEntry";
-import * as mobileChatMedia from "../mobileChatMedia";
+import * as mobileChatAttachments from "../mobileChatAttachments";
 import { readMobileEntryMode } from "../mobileEntryMode";
 
 vi.mock("./Md", () => ({ Md: ({ children }: { children: string }) => <div>{children}</div> }));
@@ -83,12 +83,12 @@ it("keeps the in-memory text draft across settings and purpose selection when lo
 });
 
 it.each([true, false])("keeps an image read in flight across settings (complete while hidden: %s)", async (completeWhileHidden) => {
-  let finish!: (image: mobileChatMedia.PendingMobileMedia) => void;
-  vi.spyOn(mobileChatMedia, "readMobileMedia").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  let finish!: (image: mobileChatAttachments.PendingMobileAttachment) => void;
+  vi.spyOn(mobileChatAttachments, "readMobileAttachment").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
   render(<MobileEntry initialMode="chat" onRemote={vi.fn()} />);
   await screen.findByRole("textbox", { name: "输入问题或任务" });
   fireEvent.change(screen.getByLabelText("附加照片或视频"), { target: { files: [new File(["image"], "pending.png", { type: "image/png" })] } });
-  expect(mobileChatMedia.readMobileMedia).toHaveBeenCalledOnce();
+  expect(mobileChatAttachments.readMobileAttachment).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByRole("button", { name: "设置" }));
   if (!completeWhileHidden) fireEvent.click(screen.getByRole("button", { name: "返回" }));
   await act(async () => { finish({ kind: "image", name: "pending.png", dataUrl: "data:image/png;base64,aW1hZ2U=" }); });

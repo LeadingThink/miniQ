@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ComposerUploadSelection } from "../composerUploads";
 import { usesNativeUploadPicker } from "../remoteUploadSource";
 import { UPLOAD_MEDIA_ACCEPT } from "../fileTypes";
+import { WECHAT_FILE_GUIDANCE } from "../wechatFileUpload";
 import { isRemoteAbsolutePath } from "./RemotePathDialog";
 import "./RemoteUpload.css";
 
@@ -76,7 +77,11 @@ export function ComposerRemotePicker(props: {
           <button type="button" className="remote-upload-tile" aria-label="上传本机文件" onClick={() => choose("files")}>
             <Upload size={22} aria-hidden="true" /><strong>文件</strong><small>任意类型，保留原件</small>
           </button>
+          <button type="button" className="remote-upload-tile" aria-label="上传微信文件" onClick={() => choose("files")}>
+            <FileText size={22} aria-hidden="true" /><strong>微信文件</strong><small>选择已保存到手机的文件</small>
+          </button>
         </div>
+        <p className="remote-upload-hint">{WECHAT_FILE_GUIDANCE}</p>
         <details className="remote-upload-existing">
           <summary>附加电脑上已有的文件</summary>
           <form onSubmit={event => {

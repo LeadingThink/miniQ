@@ -1,10 +1,10 @@
-import { ArrowDown, ArrowLeft, ArrowUp, Film, ImagePlus, RefreshCw, Settings, Square, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, FileText, Film, ImagePlus, RefreshCw, Settings, Square, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { handleComposerKeyDown } from "../composerInput";
 import { readDraft, storeDraft } from "../composerDraft";
 import { useTouchComposerInput } from "../hooks/useTouchComposerInput";
 import { errorMessage } from "../errorMessage";
-import { mobileMediaContent, readMobileMedia, type PendingMobileMedia } from "../mobileChatMedia";
+import { mobileAttachmentContent, readMobileAttachment, type PendingMobileAttachment } from "../mobileChatAttachments";
 import { useConversationScroll } from "../hooks/useConversationScroll";
 import { useMobileChat } from "../hooks/useMobileChat";
 import { useMobileChatModels } from "../hooks/useMobileChatModels";
@@ -16,7 +16,7 @@ import { insertTranscript } from "../voiceAudio";
 import type { VoicePreview } from "../voiceTranscription";
 import { MobileChatRow } from "./MobileChatRow";
 import { MobileModelPicker } from "./MobileModelPicker";
-import { MobileMediaPicker } from "./MobileMediaPicker";
+import { MobileAttachmentPicker } from "./MobileAttachmentPicker";
 import { BillingDialog } from "./BillingDialog";
 import { MobilePlatformTitle } from "./MobilePlatformTitle";
 import "./MobileChat.css";
@@ -41,10 +41,10 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
   const setDraft = (value: string) => { setDraftValue(value); storeDraft("mobile-chat", value); };
   const inputMode = useTouchComposerInput();
   const keyboardHintId = useId();
-  const [pendingMedia, setPendingMedia] = useState<PendingMobileMedia | null>(null);
-  const [mediaError, setMediaError] = useState<string | null>(null);
-  const [readingMedia, setReadingMedia] = useState(false);
-  const mediaRead = useRef(0);
+  const [pendingAttachment, setPendingAttachment] = useState<PendingMobileAttachment | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [readingAttachment, setReadingAttachment] = useState(false);
+  const attachmentRead = useRef(0);
   // Keep the first rendered message stable when new messages arrive at the tail.
   const [windowStart, setWindowStart] = useState(() => {
     const index = Math.max(0, chat.messages.length - 30);
@@ -52,8 +52,8 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
   });
   const firstIndex = chat.messages.findIndex((message) => message.id === windowStart.id);
   const startIndex = firstIndex < 0 ? Math.min(windowStart.index, chat.messages.length) : firstIndex;
-  const contentVersion = useMemo(() => [chat.messages, chat.error, catalog.error, mediaError],
-    [chat.messages, chat.error, catalog.error, mediaError]);
+  const contentVersion = useMemo(() => [chat.messages, chat.error, catalog.error, attachmentError],
+    [chat.messages, chat.error, catalog.error, attachmentError]);
   const { scrollRef: feedRef, historyTopRef, onScroll,
     jumpToBottom: jumpToLatest, showJump: showLatest } = useConversationScroll({
     viewKey: "mobile-chat",
@@ -68,29 +68,29 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
   });
   const ready = Boolean(props.apiKey) && !catalog.loading && catalog.models.includes(catalog.model);
 
-  useEffect(() => () => { mediaRead.current += 1; }, []);
+  useEffect(() => () => { attachmentRead.current += 1; }, []);
 
   const send = () => {
     const content = draft.trim();
-    if ((!content && !pendingMedia) || !ready || readingMedia || voicePreview) return;
-    const userContent = mobileMediaContent(content, pendingMedia);
+    if ((!content && !pendingAttachment) || !ready || readingAttachment || voicePreview) return;
+    const userContent = mobileAttachmentContent(content, pendingAttachment);
     if (chat.send(userContent)) {
       setDraft("");
-      setPendingMedia(null);
+      setPendingAttachment(null);
       jumpToLatest();
     }
   };
-  const attachMedia = async (file: File) => {
-    const attempt = ++mediaRead.current;
-    setReadingMedia(true);
-    setMediaError(null);
+  const attachFile = async (file: File) => {
+    const attempt = ++attachmentRead.current;
+    setReadingAttachment(true);
+    setAttachmentError(null);
     try {
-      const media = await readMobileMedia(file);
-      if (attempt === mediaRead.current) setPendingMedia(media);
+      const attachment = await readMobileAttachment(file);
+      if (attempt === attachmentRead.current) setPendingAttachment(attachment);
     } catch (cause) {
-      if (attempt === mediaRead.current) setMediaError(errorMessage(cause));
+      if (attempt === attachmentRead.current) setAttachmentError(errorMessage(cause));
     } finally {
-      if (attempt === mediaRead.current) setReadingMedia(false);
+      if (attempt === attachmentRead.current) setReadingAttachment(false);
     }
   };
 
@@ -106,30 +106,31 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
         {chat.messages.length === 0 && <div className="mobile-chat-empty">
           <span className="mobile-chat-empty-mark" aria-hidden="true">Q</span>
           <h1>今天想聊点什么？</h1>
-          <p>有问题就问，也可以附加照片或视频。</p>
+          <p>有问题就问，也可以附加照片、视频或微信已保存的文件。</p>
         </div>}
         {chat.messages.slice(startIndex).map((message) => (
           <MobileChatRow key={message.id} message={message} active={chat.busy && message.id === chat.activeMessageId} onDelete={chat.deleteMessage} />
         ))}
         {!props.apiKey && <div role="status">发送前请在设置中保存 Key 并同意隐私政策。{props.onSettings && <button type="button" onClick={props.onSettings}>前往设置</button>}</div>}
         {catalog.error && <div className="mobile-entry-error" role="alert">{catalog.error}<button type="button" className="mobile-chat-retry" onClick={catalog.reload}>重新加载模型</button></div>}
-        {(chat.error || mediaError) && <div className="mobile-entry-error" role="alert">{mediaError || chat.error}</div>}
-        <BillingDialog error={mediaError || chat.error} onChangeKey={props.onSettings} onPurchase={props.onAccount} />
+        {(chat.error || attachmentError) && <div className="mobile-entry-error" role="alert">{attachmentError || chat.error}</div>}
+        <BillingDialog error={attachmentError || chat.error} onChangeKey={props.onSettings} onPurchase={props.onAccount} />
         {chat.storageWarning && <div className="mobile-entry-error" role="status">设备存储空间不足，本次内容暂时仅保留在当前页面；离开前请复制重要内容。</div>}
         {!chat.busy && chat.canRetry && <button type="button" className="mobile-chat-retry" disabled={!ready} onClick={() => { if (chat.retry()) jumpToLatest(); }}><RefreshCw size={14} />重新回答</button>}
         {showLatest && <button type="button" className="mobile-chat-jump" onClick={jumpToLatest}><ArrowDown size={14} />查看最新内容</button>}
       </section>
       <form className="mobile-chat-composer" aria-label="问答输入" onSubmit={(event) => { event.preventDefault(); send(); }}>
-        {pendingMedia && <div className="mobile-chat-media-chip">{pendingMedia.kind === "video" ? <Film size={14} /> : <ImagePlus size={14} />}<span title={pendingMedia.name}>{pendingMedia.name}</span><button type="button" aria-label={pendingMedia.kind === "video" ? "移除视频" : "移除图片"} title="移除附件" onClick={() => setPendingMedia(null)}><X size={13} /></button></div>}
-        {pendingMedia?.kind === "video" && <p className="mobile-chat-media-hint">请使用支持视频理解的模型。</p>}
+        {pendingAttachment && <div className="mobile-chat-media-chip">{pendingAttachment.kind === "video" ? <Film size={14} /> : pendingAttachment.kind === "image" ? <ImagePlus size={14} /> : <FileText size={14} />}<span title={pendingAttachment.name}>{pendingAttachment.name}</span><button type="button" aria-label={pendingAttachment.kind === "video" ? "移除视频" : pendingAttachment.kind === "image" ? "移除图片" : "移除文件"} title="移除附件" onClick={() => setPendingAttachment(null)}><X size={13} /></button></div>}
+        {pendingAttachment?.kind === "video" && <p className="mobile-chat-media-hint">请使用支持视频理解的模型。</p>}
+        {pendingAttachment?.kind === "pdf" && <p className="mobile-chat-media-hint">请使用支持 PDF 文件输入的模型。</p>}
         {voicePreview && <VoiceTranscript preview={voicePreview} />}
         <textarea ref={textarea} value={draft} rows={2} aria-label="输入问题或任务" aria-describedby={keyboardHintId} enterKeyHint={inputMode.enterSends ? "send" : "enter"} placeholder="有什么想问的…" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => handleComposerKeyDown(event, setDraft, send, inputMode)} />
         <div className="mobile-chat-composer-toolbar">
           <MobileModelPicker catalog={catalog} disabled={chat.busy} />
-          <MobileMediaPicker disabled={readingMedia} onMedia={attachMedia} onError={setMediaError} />
-          {canTranscribe && <VoiceInput key={props.apiKey} transcriber={transcriber} preferLocal={localSpeech} disabled={readingMedia}
+          <MobileAttachmentPicker disabled={readingAttachment} onAttachment={attachFile} onError={setAttachmentError} />
+          {canTranscribe && <VoiceInput key={props.apiKey} transcriber={transcriber} preferLocal={localSpeech} disabled={readingAttachment}
             onStart={() => { voiceDraft.current = { text: draft, start: textarea.current?.selectionStart ?? draft.length, end: textarea.current?.selectionEnd ?? draft.length }; }}
-            onPreview={setVoicePreview} onError={setMediaError} onTranscribed={(text) => {
+            onPreview={setVoicePreview} onError={setAttachmentError} onTranscribed={(text) => {
               const input = textarea.current;
               setDraftValue((current) => {
                 const saved = voiceDraft.current;
@@ -141,7 +142,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
               });
             }} />}
           {chat.busy ? <button type="button" className="mobile-chat-send" aria-label="停止" title="停止" onClick={chat.stop}><Square size={16} /></button>
-            : <button type="submit" className="mobile-chat-send" aria-label="发送" title="发送" disabled={Boolean(voicePreview) || !ready || readingMedia || (!draft.trim() && !pendingMedia)}><ArrowUp size={20} /></button>}
+            : <button type="submit" className="mobile-chat-send" aria-label="发送" title="发送" disabled={Boolean(voicePreview) || !ready || readingAttachment || (!draft.trim() && !pendingAttachment)}><ArrowUp size={20} /></button>}
         </div>
         <div id={keyboardHintId} className="mobile-chat-keyboard-hint">{inputMode.keyboardHint}</div>
       </form>

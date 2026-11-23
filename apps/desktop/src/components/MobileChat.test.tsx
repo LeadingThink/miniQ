@@ -61,13 +61,13 @@ it("offers camera and photo-library actions from the image button", async () => 
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ data: catalog })));
   render(<MobileChat apiKey="test-key" onBack={() => {}} />);
   await screen.findByText("custom-chat");
-  fireEvent.click(screen.getByRole("button", { name: "添加照片或视频" }));
-  expect(screen.getByRole("dialog", { name: "添加照片或视频" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "添加附件" }));
+  expect(screen.getByRole("dialog", { name: "添加附件" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "拍照" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "从相册选择" })).toBeTruthy();
   expect(document.querySelector('input[aria-label="拍照"]')?.getAttribute("capture")).toBe("environment");
   fireEvent.click(screen.getByRole("button", { name: "取消" }));
-  expect(screen.queryByRole("dialog", { name: "添加照片或视频" })).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "添加附件" })).toBeNull();
 });
 
 it("does not send an unavailable fallback model and reloads a failed catalog without losing input", async () => {

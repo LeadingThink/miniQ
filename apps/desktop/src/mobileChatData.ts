@@ -4,7 +4,8 @@ export const MOBILE_MODEL_STORAGE_KEY = "miniq.mobile.chat.model.v1";
 export type ChatContent = string | Array<
   { type: "text"; text: string } |
   { type: "image_url"; image_url: { url: string; detail?: "auto" } } |
-  { type: "video_url"; video_url: { url: string } }
+  { type: "video_url"; video_url: { url: string } } |
+  { type: "file"; file: { filename: string; file_data: string } }
 >;
 
 export interface MobileChatMessage {
@@ -68,6 +69,12 @@ function isChatMessage(value: unknown): value is Omit<MobileChatMessage, "id"> &
   return typeof value.content === "string" || (Array.isArray(value.content) && value.content.every((part: unknown) => {
     if (!part || typeof part !== "object" || !("type" in part)) return false;
     if (part.type === "text") return "text" in part && typeof part.text === "string";
+    if (part.type === "file") {
+      const file = "file" in part ? part.file : null;
+      return Boolean(file && typeof file === "object" && "filename" in file && typeof file.filename === "string"
+        && file.filename.trim() && "file_data" in file && typeof file.file_data === "string"
+        && /^data:application\/pdf;base64,[A-Za-z0-9+/]+={0,2}$/.test(file.file_data));
+    }
     const media = part.type === "image_url" && "image_url" in part ? part.image_url
       : part.type === "video_url" && "video_url" in part ? part.video_url : null;
     if (!media || typeof media !== "object" || !("url" in media) || typeof media.url !== "string") return false;

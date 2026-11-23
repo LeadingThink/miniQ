@@ -1,18 +1,18 @@
 import { Sha256 } from "./incrementalSha256";
-import { validateMobileMedia } from "./mobileChatMedia";
+import { validateMobileAttachment } from "./mobileChatAttachments";
 import { readNativeUploadChunk } from "./nativeFileTransfer";
 import { decodeBase64 } from "./remoteBlob";
 import { pickUploadSources, releaseUploadSources } from "./remoteUploadSource";
 
 /** Share the original-file picker with remote uploads, without needing a desktop. */
-export async function pickMobileMediaFile(): Promise<File | null> {
-  const sources = await pickUploadSources("photos");
+export async function pickMobileAttachmentFile(kind: "photos" | "files"): Promise<File | null> {
+  const sources = await pickUploadSources(kind);
   try {
     if (!sources.length) return null;
-    if (sources.length !== 1) throw new Error("移动问答每次只能附加一张照片或一个视频，请重新选择");
+    if (sources.length !== 1) throw new Error("移动问答每次只能附加一个文件，请重新选择");
     const source = sources[0];
     if (source.kind !== "native") throw new Error("本机文件缓存信息无效，请重新选择");
-    const { type } = validateMobileMedia({ ...source, type: "" });
+    const { type } = validateMobileAttachment({ ...source, type: "" });
     const chunks: BlobPart[] = [];
     const hash = new Sha256();
     for (let offset = 0; offset < source.size; offset += 262144) {

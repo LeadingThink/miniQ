@@ -89,3 +89,19 @@ it("restores video originals in history while rejecting unsafe or mismatched vid
   persistMobileChat(readMobileChat());
   expect(readMobileChat()[0].content).toEqual(content);
 });
+
+it("restores PDF filenames and originals while rejecting malformed file parts", () => {
+  const file = { filename: "微信合同.pdf", file_data: "data:application/pdf;base64,JVBERi0=" };
+  const invalid = [null, {}, { ...file, filename: "" }, { ...file, filename: 5 },
+    { ...file, file_data: "javascript:alert(1)" }, { ...file, file_data: "data:text/html;base64,YQ==" },
+    { ...file, file_data: "data:application/pdf;base64," }];
+  localStorage.setItem(MOBILE_CHAT_STORAGE_KEY, JSON.stringify([
+    { id: "pdf", role: "user", content: [{ type: "file", file }] },
+    ...invalid.map(file => ({ role: "user", content: [{ type: "file", file }] })),
+  ]));
+  const messages = readMobileChat();
+  expect(messages).toEqual([{ id: "pdf", role: "user", content: [{ type: "file", file }] }]);
+  persistMobileChat(messages);
+  expect(readMobileChat()).toEqual(messages);
+  expect(mobileMessageText(messages[0].content)).toBe("");
+});
