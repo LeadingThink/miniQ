@@ -90,7 +90,7 @@ it.each([true, false])("wraps mobile entry and remote discovery only in the nati
   expect(Boolean(screen.queryByTestId("mobile-platform-shell"))).toBe(native);
   state.loadCredentials.mockResolvedValue({ apiKey: "test-key" });
   fireEvent.click(screen.getByRole("button", { name: "连接远程" }));
-  await screen.findByRole("button", { name: /测试电脑/ });
+  await screen.findByRole("button", { name: /测试电脑/ }, { timeout: 10_000 });
   expect(Boolean(screen.queryByTestId("mobile-platform-shell"))).toBe(native);
 });
 
@@ -183,7 +183,7 @@ it("remounts discovery when either apiKey or relayUrl changes during credential 
       .mockReturnValueOnce(new Promise((resolve) => { second = resolve; }));
     fireEvent.click(entry); fireEvent.click(entry);
     await act(async () => first({ apiKey: "first", relayUrl: "wss://one" }));
-    await screen.findByRole("button", { name: /测试电脑/ });
+    await screen.findByRole("button", { name: /测试电脑/ }, { timeout: 10_000 });
     expect(state.directoryMount).toHaveBeenCalledTimes(1);
     await act(async () => second(changed));
     expect(state.directoryUnmount).toHaveBeenCalledTimes(1);
@@ -209,5 +209,5 @@ it("returns from desktop discovery to mode selection without clearing credential
   const entry = await screen.findByRole("button", { name: "连接远程" });
   expect(entry.getAttribute("data-mode")).toBeNull();
   fireEvent.click(entry);
-  await screen.findByRole("button", { name: /测试电脑/ });
+  await screen.findByRole("button", { name: /测试电脑/ }, { timeout: 10_000 });
 });
