@@ -12,20 +12,21 @@ import { pruneUnread, saveUnread, withUnread } from "../unreadStore";
 const LEGACY_HOSTS = "miniq.ssh.saved-hosts";
 const noop = async () => {};
 
-export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null) => RpcClient, active: { host: string | null; navigation: HostNavigation }, paused = false) {
+export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null) => RpcClient, getActive: () => { host: string | null; navigation: HostNavigation }, paused = false) {
   const [registry, setRegistry] = useState<HostList>({ hosts: [], discovered: [] });
   const [catalogs, setCatalogs] = useState<Record<string, HostCatalog>>({ [hostKey(null)]: emptyCatalog(null, "本机", root.storageScope) });
   const [error, setError] = useState<string | null>(null);
   const clearError = useCallback(() => setError(null), []);
-  const activeRef = useRef(active);
-  activeRef.current = active;
-  const isViewing = useCallback((host: string | null, sessionId: string) =>
-    document.visibilityState === "visible" && (isNativeMobileApp() || document.hasFocus())
-      && activeRef.current.host === host && activeRef.current.navigation.sessionId === sessionId, []);
+  const isViewing = useCallback((host: string | null, sessionId: string) => {
+    const active = getActive();
+    return document.visibilityState === "visible" && (isNativeMobileApp() || document.hasFocus())
+      && active.host === host && active.navigation.sessionId === sessionId;
+  }, [getActive]);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const inflight = useRef(new Map<string, Promise<void>>());
   const queued = useRef(new Set<string>());
+  const observedTerminalTransitions = useRef(new Map<string, Set<string>>());
   const knownHosts = useRef<Set<string> | null>(null);
   const registryEpoch = useRef(0);
   const reportHostError = useCallback((host: string | null, cause: unknown) => {
@@ -63,8 +64,10 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
           // The first snapshot is a baseline, not evidence of an unseen completion.
           for (const session of sessions) {
             const previous = catalog.sessions.find((entry) => entry.id === session.id);
-            if (previous && isSessionRunning(previous.status) && isSessionTerminal(session.status)
-              && !isViewing(host, session.id)) unreadSessionIds.add(session.id);
+            const observed = observedTerminalTransitions.current.get(key)?.delete(session.id);
+            if (previous && isSessionRunning(previous.status) && isSessionTerminal(session.status)) {
+              if (!observed && !isViewing(host, session.id)) unreadSessionIds.add(session.id);
+            }
           }
           return { ...current, [key]: { ...catalog,
             // A delayed catalog response cannot override a newer disconnect.
@@ -139,13 +142,19 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
   useEffect(() => {
     const event = (host: string | null, value: DaemonEvent | { type: "remote_resync" }) => {
       if (value.type === "session_status_changed" || value.type === "turn_completed" || value.type === "turn_failed") {
+        if (value.type !== "session_status_changed") {
+          const key = hostKey(host);
+          const observed = observedTerminalTransitions.current.get(key) ?? new Set<string>();
+          observed.add(value.sessionId);
+          observedTerminalTransitions.current.set(key, observed);
+        }
         setCatalogs((current) => {
           const key = hostKey(host), catalog = current[key];
           if (!catalog) return current;
           const unread = new Set(catalog.unreadSessionIds);
           const previous = catalog.sessions.find((session) => session.id === value.sessionId);
-          const completed = value.type !== "session_status_changed"
-            || (isSessionTerminal(value.status) && previous && isSessionRunning(previous.status));
+          const completed = previous && isSessionRunning(previous.status)
+            && (value.type !== "session_status_changed" || isSessionTerminal(value.status));
           if (completed && !isViewing(host, value.sessionId)) unread.add(value.sessionId);
           const sessions = value.type === "session_status_changed"
             ? catalog.sessions.map((session) => session.id === value.sessionId ? { ...session, status: value.status } : session)

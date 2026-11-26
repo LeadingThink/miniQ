@@ -4,12 +4,17 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { DesktopHostProvider, useDesktopHost, hostDraftKey, isConversationOnScreen } from "./desktopHost";
 import { SshFixtureRoot } from "./fixtures/sshModel";
+import type { DaemonEvent, SessionStatus } from "./types";
 const keepAwake = vi.hoisted(() => vi.fn());
 vi.mock("./keepAwake", async (original) => ({ ...await original<typeof import("./keepAwake")>(), useKeepAwake: keepAwake }));
 vi.mock("@capacitor/app", () => ({ App: { addListener: () => Promise.resolve({ remove: vi.fn() }) } }));
 vi.mock("./rpc", async (original) => ({ ...await original<typeof import("./rpc")>(), resolveConnection: vi.fn().mockResolvedValue({ kind: "local", port: 1, token: "fixture" }) }));
 afterEach(cleanup);
-beforeEach(() => { localStorage.clear(); keepAwake.mockClear(); });
+beforeEach(() => {
+  localStorage.clear();
+  keepAwake.mockClear();
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+});
 
 it("treats an expanded sidebar as covering conversations only on mobile", () => {
   const view = { host: null, sessionId: "current", sidebarCollapsed: false };
@@ -17,6 +22,35 @@ it("treats an expanded sidebar as covering conversations only on mobile", () => 
   expect(isConversationOnScreen(view, target, false)).toBe(true);
   expect(isConversationOnScreen(view, target, true)).toBe(false);
   expect(isConversationOnScreen(view, { host: null, sessionId: "other" }, false)).toBe(false);
+});
+
+it("keeps a completed conversation read after the active view reports its navigation", async () => {
+  class NavigationRoot extends SshFixtureRoot {
+    status: SessionStatus = "running";
+    localEvents = new Set<(event: DaemonEvent) => void>();
+    override onEvent(listener: (event: DaemonEvent) => void) { this.localEvents.add(listener); return () => { this.localEvents.delete(listener); }; }
+    override async content<T>(host: string | null, method: string, params?: unknown): Promise<T> {
+      if (host === null && method === "session.list") return { sessions: [{ id: "same-session", workspaceId: "same-workspace", workingDirectory: "/demo/project", title: "当前任务", status: this.status }] } as T;
+      return super.content(host, method, params);
+    }
+    emitLocal(event: DaemonEvent) { this.localEvents.forEach((listener) => listener(event)); }
+  }
+  const root = new NavigationRoot();
+  let desktop: ReturnType<typeof useDesktopHost>;
+  function Capture() {
+    desktop = useDesktopHost();
+    return <output data-testid="local-unread">{desktop!.catalogs['null']?.unreadSessionIds.has("same-session") ? "unread" : "read"}</output>;
+  }
+  render(<DesktopHostProvider root={root}><Capture /></DesktopHostProvider>);
+  await waitFor(() => expect(desktop!.catalogs['null']?.sessions[0]?.status).toBe("running"));
+  act(() => desktop!.rememberNavigation(null, { workspaceId: "same-workspace", sessionId: "same-session" }));
+  root.status = "idle";
+  await act(async () => {
+    root.emitLocal({ type: "session_status_changed", sessionId: "same-session", status: "idle" });
+    root.emitLocal({ type: "turn_completed", sessionId: "same-session" });
+  });
+  act(() => desktop!.rememberNavigation(null, { workspaceId: "same-workspace", sessionId: "other-session" }));
+  await waitFor(() => expect(screen.getByTestId("local-unread").textContent).toBe("read"));
 });
 
 function Workspace() {

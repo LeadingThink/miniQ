@@ -5,6 +5,7 @@ import type { Session } from "../types";
 export interface SidebarAttentionProps {
   sessions: Session[];
   unreadSessionIds: ReadonlySet<string>;
+  currentSessionId: string | null;
   workspaceLabels: ReadonlyMap<string, string>;
   onSelectSession: (sessionId: string) => void;
   onClose?: () => void;
@@ -21,13 +22,14 @@ function kindFor(session: Session, unread: ReadonlySet<string>): AttentionKind |
   return unread.has(session.id) ? "unread" : null;
 }
 
-export function SidebarAttention({ sessions, unreadSessionIds, workspaceLabels, onSelectSession, onClose }: SidebarAttentionProps) {
+export function SidebarAttention({ sessions, unreadSessionIds, currentSessionId, workspaceLabels, onSelectSession, onClose }: SidebarAttentionProps) {
   const [expanded, setExpanded] = useState(false);
   const items = useMemo(() => sessions
+    .filter((session) => session.id !== currentSessionId)
     .map((session) => ({ session, kind: kindFor(session, unreadSessionIds) }))
     .filter((item): item is { session: Session; kind: AttentionKind } => item.kind !== null)
     .sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind] || b.session.updatedAt.localeCompare(a.session.updatedAt)),
-  [sessions, unreadSessionIds]);
+  [sessions, unreadSessionIds, currentSessionId]);
 
   if (items.length === 0) return null;
   const actionableCount = items.filter((item) => item.kind !== "unread").length;

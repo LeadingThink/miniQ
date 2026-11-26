@@ -240,7 +240,7 @@ export function Sidebar(props: SidebarProps) {
         }} />}
       <div ref={scrollRef} className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
         <div ref={contentRef}>
-        <SidebarAttention sessions={props.sessions} unreadSessionIds={props.unreadSessionIds} workspaceLabels={workspaceLabels} onSelectSession={props.onSelectSession} onClose={props.onClose} />
+        <SidebarAttention sessions={props.sessions} unreadSessionIds={props.unreadSessionIds} currentSessionId={props.currentSessionId} workspaceLabels={workspaceLabels} onSelectSession={props.onSelectSession} onClose={props.onClose} />
         {props.hostGroups?.filter((host) => !navigation.groups.some(({ workspace }) => host.workspaceIds.includes(workspace.id))).map((host) => <HostHeading key={host.key} host={host} />)}
         {navigation.groups.map(({ workspace, sessions }, index) => (
           <Fragment key={workspace.id}>

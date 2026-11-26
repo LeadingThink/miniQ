@@ -21,18 +21,35 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 async function setup(initial: SessionStatus = "running", selected = true) {
   let status = initial;
+  let selectedSessionId = selected ? "s1" : null;
+  let releaseSessionList: (() => void) | null = null;
   const listeners = new Set<(event: DaemonEvent) => void>();
   const root = {
     connected: true,
-    call: vi.fn(async (method: string) => method === "workspace.list" ? { workspaces: [] } : { sessions: [{ id: "s1", status }] }),
+    call: vi.fn(async (method: string) => {
+      if (method === "workspace.list") return { workspaces: [] };
+      if (releaseSessionList) await new Promise<void>((resolve) => { releaseSessionList = resolve; });
+      return { sessions: [{ id: "s1", status }] };
+    }),
     onEvent: (fn: (event: DaemonEvent) => void) => { listeners.add(fn); return () => listeners.delete(fn); },
     onHostEvent: () => () => undefined,
   } as unknown as RpcClient;
-  const hook = renderHook(() => useHostCatalogs(root, () => root, { host: null, navigation: { workspaceId: null, sessionId: selected ? "s1" : null } }));
+  const hook = renderHook(() => useHostCatalogs(root, () => root, () => ({ host: null, navigation: { workspaceId: null, sessionId: selectedSessionId } })));
   await act(async () => hook.result.current.refreshCatalog(null));
   return { ...hook,
     unread: () => hook.result.current.catalogs[hostKey(null)].unreadSessionIds.has("s1"),
     refresh: async (next: SessionStatus) => { status = next; await act(async () => hook.result.current.refreshCatalog(null)); },
+    delayNextSessionList: () => { releaseSessionList = () => {}; },
+    releaseDelayedSessionList: async () => {
+      const release = releaseSessionList;
+      releaseSessionList = null;
+      release?.();
+      await act(async () => {});
+    },
+    select: (sessionId: string | null) => {
+      selectedSessionId = sessionId;
+      hook.rerender();
+    },
     emit: async (next: SessionStatus, terminalEvent = false) => {
       status = next;
       await act(async () => listeners.forEach((fn) => fn(terminalEvent ? { type: "turn_completed", sessionId: "s1" } : { type: "session_status_changed", sessionId: "s1", status: next })));
@@ -53,6 +70,24 @@ it("does not mark the selected foreground conversation unread", async () => {
   const hook = await setup();
   await hook.emit("idle");
   expect(hook.unread()).toBe(false);
+});
+it("does not reclassify a foreground terminal transition when turn_completed arrives after navigation", async () => {
+  const hook = await setup();
+  await hook.emit("idle");
+  expect(hook.unread()).toBe(false);
+  act(() => hook.select(null));
+  await hook.emit("idle", true);
+  expect(hook.unread()).toBe(false);
+});
+it.each([false, true])("keeps a foreground completion read when its delayed refresh lands after switching conversations (mobile=%s)", async (mobile) => {
+  runtime.mobile = mobile;
+  const hook = await setup();
+  hook.delayNextSessionList();
+  await hook.emit("idle", true);
+  expect(hook.unread()).toBe(false);
+  act(() => hook.select(null));
+  await hook.releaseDelayedSessionList();
+  await waitFor(() => expect(hook.unread()).toBe(false));
 });
 it("marks the selected conversation unread when a desktop window loses focus", async () => {
   runtime.mobile = false;

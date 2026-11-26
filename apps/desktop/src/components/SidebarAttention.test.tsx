@@ -13,6 +13,12 @@ const base: Session = {
 afterEach(cleanup);
 
 describe("SidebarAttention", () => {
+  it("does not show the current conversation as a new reply", () => {
+    render(<SidebarAttention sessions={[base]} unreadSessionIds={new Set([base.id])} currentSessionId={base.id} workspaceLabels={new Map()} onSelectSession={vi.fn()} />);
+    expect(screen.queryByText("新回复")).toBeNull();
+    expect(screen.queryByText("未读")).toBeNull();
+  });
+
   it("shows priority counts, excludes archived/read sessions, and keeps the complete list expandable", () => {
     const sessions = [
       { ...base, id: "unread", title: "新回复" },
@@ -23,7 +29,7 @@ describe("SidebarAttention", () => {
       { ...base, id: "archived-failed", title: "归档失败", archived: true, status: "failed" as const },
       base,
     ];
-    render(<SidebarAttention sessions={sessions} unreadSessionIds={new Set(["unread", "archived"])} workspaceLabels={new Map([["w1", "本机 · 项目一"]])} onSelectSession={vi.fn()} />);
+    render(<SidebarAttention sessions={sessions} unreadSessionIds={new Set(["unread", "archived"])} currentSessionId={null} workspaceLabels={new Map([["w1", "本机 · 项目一"]])} onSelectSession={vi.fn()} />);
     const summary = screen.getByRole("button", { name: /待处理/ });
     expect(summary.textContent).toContain("2");
     expect(summary.getAttribute("aria-expanded")).toBe("false");
@@ -43,7 +49,7 @@ describe("SidebarAttention", () => {
   it("selects a session and closes the mobile sidebar through the existing callback", () => {
     const onSelect = vi.fn();
     const onClose = vi.fn();
-    render(<SidebarAttention sessions={[{ ...base, id: "waiting", title: "普通会话", status: "waiting_approval" }]} unreadSessionIds={new Set()} workspaceLabels={new Map()} onSelectSession={onSelect} onClose={onClose} />);
+    render(<SidebarAttention sessions={[{ ...base, id: "waiting", title: "普通会话", status: "waiting_approval" }]} unreadSessionIds={new Set()} currentSessionId={null} workspaceLabels={new Map()} onSelectSession={onSelect} onClose={onClose} />);
     fireEvent.click(screen.getByRole("button", { name: /待处理/ }));
     fireEvent.click(screen.getByRole("button", { name: /普通会话/ }));
     expect(onSelect).toHaveBeenCalledWith("waiting");

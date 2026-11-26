@@ -42,6 +42,8 @@ function useHostState(suppliedRoot?: RpcClient) {
   const [transportPaused, setTransportPaused] = useState(false);
   const [destination, setDestination] = useState<HostDestination>({ workspaceId: null, sessionId: null, revision: 0 });
   const locations = useRef(new Map<string, HostNavigation>());
+  const activeView = useRef({ host, destination });
+  activeView.current = { host, destination };
   const filePreviews = useRef(new Map<string, FilePreviewCache>());
   const getFilePreviewCache = useCallback((target: string | null) => {
     const key = hostKey(target);
@@ -50,7 +52,11 @@ function useHostState(suppliedRoot?: RpcClient) {
     return cache;
   }, []);
   const rememberNavigation = useCallback((target: string | null, navigation: HostNavigation) => { locations.current.set(hostKey(target), navigation); }, []);
-  const catalogs = useHostCatalogs(root, clientFor, { host, navigation: locations.current.get(hostKey(host)) ?? destination }, transportPaused);
+  const getActiveNavigation = useCallback(() => {
+    const active = activeView.current;
+    return { host: active.host, navigation: locations.current.get(hostKey(active.host)) ?? active.destination };
+  }, []);
+  const catalogs = useHostCatalogs(root, clientFor, getActiveNavigation, transportPaused);
   // The root outlives host/conversation views; only local tasks hold this lease.
   useKeepAwake(hasLocalRunningTasks(root.mode, catalogs.catalogs[hostKey(null)]?.sessions ?? []));
   const viewRef = useRef({ host, sidebarCollapsed });
