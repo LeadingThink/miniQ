@@ -35,9 +35,11 @@ vi.mock("../browserWorkbench", async (original) => ({
   browserCapabilities: vi.fn(async () => ({
     navigationControl: false,
     domSnapshot: true,
+    elementLocators: true,
     screenshot: false,
     tabs: false,
     pointerInput: true,
+    independentPointer: true,
     keyboardInput: true,
     selectInput: true,
   })),
@@ -390,11 +392,39 @@ it("serializes a rapid switch away from and back to the main platform", async ()
   expect(visibility).toEqual([true]);
 });
 
+it("runs a locator form flow through the registered driver without capturing pixels", async () => {
+  document.body.innerHTML = '<label for="person">姓名</label><input id="person"><button>保存</button>';
+  for (const node of document.querySelectorAll("label,input,button")) {
+    node.getBoundingClientRect = () =>
+      ({ x: 10, y: 20, width: 100, height: 24, top: 20, left: 10, right: 110, bottom: 44 }) as DOMRect;
+  }
+  vi.mocked(evaluateBrowser).mockImplementation(async (_id, script) => JSON.stringify(eval(script)));
+  renderHook(() => useBrowserPanel("https://example.test/", surface(), false, "locator-form", "locator-task"));
+  const field = document.querySelector("input")!;
+  const clicked = vi.fn();
+  document.querySelector("button")!.addEventListener("click", clicked);
+  const snapshot = await executeEmbeddedBrowserRequest("locator-form", "snapshot", { nextObservationId: "initial" });
+  expect(snapshot.capabilities.elementLocators).toBe(true);
+  expect(snapshot.capabilities.independentPointer).toBe(true);
+  const filled = await executeEmbeddedBrowserRequest("locator-form", "type", {
+    expectedObservation: snapshot.result, nextObservationId: "filled",
+    locator: { by: "label", value: "姓名", exact: true }, text: "张三",
+  });
+  expect(field.value).toBe("张三");
+  const saved = await executeEmbeddedBrowserRequest("locator-form", "click", {
+    expectedObservation: filled.result, nextObservationId: "saved",
+    locator: { by: "role", value: "button", name: "保存", exact: true },
+  });
+  expect(clicked).toHaveBeenCalledOnce();
+  expect(document.querySelector("[data-miniq-browser-pointer]")).not.toBeNull();
+  expect(saved.result.items).toEqual(expect.arrayContaining([expect.objectContaining({ value: "张三" })]));
+  expect(screenshotBrowser).not.toHaveBeenCalled();
+});
+
 it.each([
-  { operation: "snapshot", includeScreenshot: false, captures: 0 },
-  { operation: "snapshot", includeScreenshot: true, captures: 1 },
-  { operation: "screenshot", includeScreenshot: false, captures: 1 },
-])("captures native pixels only on explicit visual requests: $operation/$includeScreenshot", async ({ operation, includeScreenshot, captures }) => {
+  { operation: "snapshot", captures: 0 },
+  { operation: "screenshot", captures: 1 },
+])("captures native pixels only on explicit visual requests: $operation", async ({ operation, captures }) => {
   const observation = {
     observationId: "visual-observation", documentId: "visual-document", tabId: "view-visual",
     url: "https://example.test/", readyState: "complete", items: [], textLines: [],
@@ -402,7 +432,7 @@ it.each([
   };
   vi.mocked(evaluateBrowser).mockResolvedValue(JSON.stringify(JSON.stringify(observation)));
   renderHook(() => useBrowserPanel("https://example.test/", surface(), false, "view-visual", "browser-visual"));
-  const response = await executeEmbeddedBrowserRequest("view-visual", operation, { nextObservationId: "visual-observation", includeScreenshot });
+  const response = await executeEmbeddedBrowserRequest("view-visual", operation, { nextObservationId: "visual-observation" });
   expect(screenshotBrowser).toHaveBeenCalledTimes(captures);
   expect(response.result).toEqual(captures
       ? { ...observation, screenshotBase64: "native-png-base64" }

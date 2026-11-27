@@ -7,9 +7,12 @@ use serde_json::Value;
 pub struct BrowserCapabilities {
     pub navigation_control: bool,
     pub dom_snapshot: bool,
+    pub element_locators: bool,
     pub screenshot: bool,
     pub tabs: bool,
     pub pointer_input: bool,
+    /// Pointer input and its visual cursor are confined to the browser WebView.
+    pub independent_pointer: bool,
     pub keyboard_input: bool,
     pub select_input: bool,
 }
@@ -67,16 +70,20 @@ mod tests {
         let capabilities = serde_json::to_value(BrowserCapabilities {
             navigation_control: true,
             dom_snapshot: true,
+            element_locators: true,
             screenshot: false,
             tabs: false,
             pointer_input: true,
+            independent_pointer: true,
             keyboard_input: true,
             select_input: true,
         })
         .unwrap();
         assert_eq!(capabilities["navigationControl"], true);
         assert_eq!(capabilities["domSnapshot"], true);
+        assert_eq!(capabilities["elementLocators"], true);
         assert_eq!(capabilities["pointerInput"], true);
+        assert_eq!(capabilities["independentPointer"], true);
     }
 
     #[test]

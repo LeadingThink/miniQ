@@ -16,6 +16,10 @@ use tauri::webview::PageLoadEvent;
 mod capture;
 pub use capture::capture as screenshot;
 
+#[path = "browser_script.rs"]
+mod script;
+pub use script::{capabilities, evaluate, BrowserCapabilities};
+
 #[cfg(target_os = "macos")]
 #[path = "browser_dialogs.rs"]
 mod dialogs;
@@ -515,30 +519,6 @@ pub struct BrowserState {
     load_error: Option<navigation::LoadError>,
 }
 
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BrowserCapabilities {
-    navigation_control: bool,
-    pub(crate) dom_snapshot: bool,
-    screenshot: bool,
-    tabs: bool,
-    pointer_input: bool,
-    keyboard_input: bool,
-    select_input: bool,
-}
-
-pub fn capabilities() -> BrowserCapabilities {
-    BrowserCapabilities {
-        navigation_control: cfg!(any(windows, target_os = "macos")),
-        dom_snapshot: cfg!(any(windows, target_os = "macos")),
-        screenshot: cfg!(any(windows, target_os = "macos")),
-        tabs: false,
-        pointer_input: cfg!(any(windows, target_os = "macos")),
-        keyboard_input: cfg!(any(windows, target_os = "macos")),
-        select_input: cfg!(any(windows, target_os = "macos")),
-    }
-}
-
 fn parse_url(value: &str) -> Result<tauri::Url, String> {
     let candidate = value.trim();
     let candidate = if candidate.contains("://") {
@@ -591,14 +571,6 @@ fn initial_size(bounds: BrowserBounds) -> LogicalSize<f64> {
     } else {
         LogicalSize::new(bounds.width, bounds.height)
     }
-}
-
-/// WKWebView hands us the JavaScript string itself, while WebView2 returns a
-/// JSON-encoded JavaScript result. Keep both adapters on the same two-level
-/// protocol so the caller can decode the outer result and then the observation.
-#[cfg(target_os = "macos")]
-fn encode_webkit_script_string(value: &str) -> Result<String, String> {
-    serde_json::to_string(value).map_err(|error| format!("内嵌浏览器脚本结果编码失败: {error}"))
 }
 
 pub fn open(
@@ -872,130 +844,6 @@ pub fn set_visible(app: &tauri::AppHandle, view_id: &str, visible: bool) -> Resu
     Ok(())
 }
 
-#[cfg(windows)]
-pub async fn evaluate(
-    app: &tauri::AppHandle,
-    view_id: &str,
-    script: String,
-) -> Result<String, String> {
-    use webview2_com::ExecuteScriptCompletedHandler;
-    use windows::core::HSTRING;
-
-    let webview = app
-        .get_webview(&browser_label(view_id)?)
-        .ok_or_else(|| "内置浏览器尚未打开".to_string())?;
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-    let sender = std::sync::Arc::new(std::sync::Mutex::new(Some(sender)));
-    webview
-        .with_webview(move |platform| {
-            let callback_sender = sender.clone();
-            let result = unsafe {
-                platform.controller().CoreWebView2().and_then(|webview| {
-                    let handler =
-                        ExecuteScriptCompletedHandler::create(Box::new(move |status, result| {
-                            if let Some(sender) = callback_sender
-                                .lock()
-                                .ok()
-                                .and_then(|mut value| value.take())
-                            {
-                                let _ = sender.send(
-                                    status.map(|_| result).map_err(|error| error.to_string()),
-                                );
-                            }
-                            Ok(())
-                        }));
-                    webview.ExecuteScript(&HSTRING::from(script), &handler)
-                })
-            };
-            if let Err(error) = result {
-                if let Some(sender) = sender.lock().ok().and_then(|mut value| value.take()) {
-                    let _ = sender.send(Err(error.to_string()));
-                }
-            }
-        })
-        .map_err(|error| error.to_string())?;
-    tokio::time::timeout(std::time::Duration::from_secs(15), receiver)
-        .await
-        .map_err(|_| "内嵌浏览器脚本执行超时".to_string())?
-        .map_err(|_| "内嵌浏览器脚本执行通道已关闭".to_string())?
-}
-
-#[cfg(not(windows))]
-pub async fn evaluate(
-    app: &tauri::AppHandle,
-    view_id: &str,
-    script: String,
-) -> Result<String, String> {
-    #[cfg(target_os = "macos")]
-    {
-        use block2::RcBlock;
-        use objc2::runtime::AnyObject;
-        use objc2_foundation::{NSError, NSString};
-
-        let webview = app
-            .get_webview(&browser_label(view_id)?)
-            .ok_or_else(|| "内置浏览器尚未打开".to_string())?;
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        let sender = std::sync::Arc::new(std::sync::Mutex::new(Some(sender)));
-        webview
-            .with_webview(move |platform| {
-                let callback_sender = sender.clone();
-                let completion =
-                    RcBlock::new(move |result: *mut AnyObject, error: *mut NSError| {
-                        let outcome = if !error.is_null() {
-                            // WKWebView reports JavaScript exceptions and
-                            // navigation failures through NSError.  Preserve
-                            // the localized message so the caller can decide
-                            // whether to retry or refresh the observation.
-                            Err(unsafe { (&*error).to_string() })
-                        } else if result.is_null() {
-                            // `undefined` is represented by nil by WebKit. The
-                            // automation contract requires a JSON string, so
-                            // surface this as a recoverable driver error rather
-                            // than handing the parser a misleading null value.
-                            Err("内嵌浏览器脚本未返回字符串结果".to_string())
-                        } else {
-                            // browserAutomationScript deliberately returns
-                            // JSON.stringify(...), so the WebKit result is an
-                            // NSString. Validate the runtime class before
-                            // downcasting; NSObject::description would change
-                            // escaped JSON and break the observation parser.
-                            let object = unsafe { &*result };
-                            object
-                                .downcast_ref::<NSString>()
-                                .ok_or_else(|| "内嵌浏览器返回了非字符串脚本结果".to_string())
-                                .and_then(|value| encode_webkit_script_string(&value.to_string()))
-                        };
-                        if let Some(sender) = callback_sender
-                            .lock()
-                            .ok()
-                            .and_then(|mut value| value.take())
-                        {
-                            let _ = sender.send(outcome);
-                        }
-                    });
-                // `inner` is owned by Tauri/Wry; this borrowed view remains
-                // valid for the duration of the main-thread callback.
-                let view: &objc2_web_kit::WKWebView = unsafe { &*platform.inner().cast() };
-                let java_script = NSString::from_str(&script);
-                unsafe {
-                    view.evaluateJavaScript_completionHandler(&java_script, Some(&completion));
-                }
-            })
-            .map_err(|error| error.to_string())?;
-        return tokio::time::timeout(std::time::Duration::from_secs(15), receiver)
-            .await
-            .map_err(|_| "内嵌浏览器脚本执行超时".to_string())?
-            .map_err(|_| "内嵌浏览器脚本执行通道已关闭".to_string())?;
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (app, view_id, script);
-        Err("此平台尚不支持内嵌浏览器 DOM 自动化".into())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1253,28 +1101,5 @@ mod tests {
         for invalid in ["", "../main", "a:b", "a/b"] {
             assert!(browser_label(invalid).is_err());
         }
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn webkit_script_result_preserves_unicode_and_quotes_in_outer_protocol() {
-        let inner = r#"{"title":"联想之星创业 \"问卷\"","line":"第一行\n第二行"}"#;
-        let encoded = encode_webkit_script_string(inner).unwrap();
-        let decoded_outer: String = serde_json::from_str(&encoded).unwrap();
-        assert_eq!(decoded_outer, inner);
-        let value: serde_json::Value = serde_json::from_str(&decoded_outer).unwrap();
-        assert_eq!(value["title"], "联想之星创业 \"问卷\"");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn macos_browser_advertises_dom_and_native_screenshot_support() {
-        let flags = capabilities();
-        assert!(flags.navigation_control);
-        assert!(flags.dom_snapshot);
-        assert!(flags.pointer_input);
-        assert!(flags.keyboard_input);
-        assert!(flags.select_input);
-        assert!(flags.screenshot);
     }
 }

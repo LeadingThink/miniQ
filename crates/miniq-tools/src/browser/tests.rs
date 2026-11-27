@@ -1,3 +1,6 @@
+#[path = "locator_tests.rs"]
+mod locator_tests;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::*;
@@ -10,6 +13,7 @@ struct MockDriver {
     fail_next_observation: AtomicBool,
     screenshot: Option<String>,
     tabs: bool,
+    no_locators: bool,
 }
 
 impl MockDriver {
@@ -58,9 +62,8 @@ impl BrowserDriver for MockDriver {
         let mut capabilities = capabilities();
         capabilities.screenshot = self.screenshot.is_some();
         capabilities.tabs = self.tabs;
-        if request.operation == "screenshot"
-            || request.arguments["includeScreenshot"] == json!(true)
-        {
+        capabilities.element_locators = !self.no_locators;
+        if request.operation == "screenshot" {
             if let Some(encoded) = &self.screenshot {
                 result["screenshotBase64"] = json!(encoded);
             }
@@ -76,9 +79,11 @@ fn capabilities() -> BrowserCapabilities {
     BrowserCapabilities {
         navigation_control: true,
         dom_snapshot: true,
+        element_locators: true,
         screenshot: false,
         tabs: false,
         pointer_input: true,
+        independent_pointer: true,
         keyboard_input: true,
         select_input: true,
     }
@@ -436,28 +441,24 @@ async fn screenshot_requests_deliver_image_attachments_without_base64_in_model_t
     assert_eq!(opened["imageAttached"], false);
     assert!(tool.output_images(&context, &opened).is_empty());
 
-    for input in [
-        json!({"action":"screenshot"}),
-        json!({"action":"snapshot","includeScreenshot":true}),
-    ] {
-        let output = tool.execute(&context, input).await.unwrap();
-        assert_eq!(output["imageAttached"], true);
-        assert_eq!(output["screenshot"]["width"], 32);
-        assert_eq!(output["screenshot"]["height"], 24);
-        assert!(output.get("screenshotBase64").is_none());
-        let attachments = tool.output_images(&context, &output);
-        assert_eq!(attachments.len(), 1);
-        assert_eq!(attachments[0].mime_type, "image/png");
-        assert_eq!(std::fs::read(&attachments[0].path).unwrap(), *png.get_ref());
-        tool.execute(
-            &context,
-            json!({
-                "action":"click", "target":"button-1", "observationId":output["observationId"],
-            }),
-        )
-        .await
-        .unwrap();
-    }
+    let input = json!({"action":"screenshot"});
+    let output = tool.execute(&context, input).await.unwrap();
+    assert_eq!(output["imageAttached"], true);
+    assert_eq!(output["screenshot"]["width"], 32);
+    assert_eq!(output["screenshot"]["height"], 24);
+    assert!(output.get("screenshotBase64").is_none());
+    let attachments = tool.output_images(&context, &output);
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].mime_type, "image/png");
+    assert_eq!(std::fs::read(&attachments[0].path).unwrap(), *png.get_ref());
+    tool.execute(
+        &context,
+        json!({
+            "action":"click", "target":"button-1", "observationId":output["observationId"],
+        }),
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

@@ -13,7 +13,7 @@ version: 1
   - 填写不需要用户账户的表单。
   - 给网页截图。
   - 验证本机开发服务器（`http://127.0.0.1:<端口>` 或 `localhost`）上的页面和交互。
-- 用户说“我已经打开的那个页面”：先调用 `tabs` 找到它，再用 `snapshot` 或 `screenshot` 并带上它的 `tabId`。**不要重新打开这个网址**，否则会丢失表单内容和登录状态。
+- 用户说“我已经打开的那个页面”：先调用 `tabs` 找到它，再用 `snapshot` 并带上它的 `tabId`。**不要重新打开这个网址**，否则会丢失表单内容和登录状态。
 - 需要用户 Chrome 里的登录态或扩展时，改用 `chrome-control`。
 - 服务提供了 API、CLI 或已安装的连接器时，优先使用这些，不走网页。
 
@@ -28,13 +28,15 @@ version: 1
    - 记下返回的 `tabId` 和 `observationId`。
 2. **观察**：
    - `snapshot` 读取语义结构和可交互目标（target）。内容多时用 `offset`/`limit` 分页。
-   - 需要看布局或图片时，用 `screenshot`，或加 `includeScreenshot:true`。
+   - 能从页面元素或文本完成的任务不要截图。只有任务需要视觉证据，或相关内容没有可用 DOM 表示时，才单独调用 `screenshot`；普通动作不附带截图。
 3. **操作**：
-   - 可用动作：`click`、`type`（`clear`/`submit`）、`select`（多选用 `values`）、`press`、`scroll`、`drag`。
-   - `target` 只能用 snapshot 返回的原样值。不要自己写 CSS 选择器，也不要用没看到过的坐标。
+   - 可用动作：`click`、`doubleClick`、`move`、`type`（`clear`/`submit`）、`select`（多选用 `values`）、`press`、`scroll`、`drag`。
+   - 优先使用 `locator` 直接定位：`{by:"role",value:"button",name:"保存"}`、`{by:"label",value:"姓名"}`，或 `text`、`placeholder`、`testId`；需要时使用 `css`。定位依据必须来自已观察的页面，`exact` 默认是 `true`。
+   - `locator` 必须匹配唯一可见元素。找不到或有多个匹配时，重新检查 DOM 并细化定位；不要自动改用截图。
+   - 也可使用 snapshot 返回的原样 `target`。`locator`、`target` 和坐标三者只选一种；拖拽目的地用 `endLocator`、`endTarget` 或 `endX`/`endY`。不要使用没看到过的坐标。
    - 每次交互都要带**最新的** observationId。旧的 observationId 会被拒绝，需要重新 snapshot。
 4. **验证**：
-   - 每次改变页面的操作之后，都要重新 snapshot 或 screenshot，确认预期变化已经出现，例如字段值、跳转后的网址、成功提示。
+   - 动作已返回新的 DOM 观察，先检查字段值、网址或成功提示；需要更多信息时再用 snapshot 分页。不要为确认普通表单操作额外截图。
    - 表单要逐项核对所有必填项，然后回顾整张表，再提交。
 5. **等待**：用 `wait`（≤5000ms）或重新 snapshot 轮询 1–3 次。不要长时间空等。
 6. **收尾**：`closeTab` 关闭本任务打开的页面。用户正在看的页面不要关。
@@ -47,8 +49,8 @@ version: 1
 
 ## 本地开发服务器调试
 1. 先确认服务在运行：执行 `lsof -iTCP:<端口> -sTCP:LISTEN`。没有运行时，征得同意后再启动，用 shell_run 的后台模式。
-2. `open http://127.0.0.1:<端口>/…` → snapshot 检查页面结构 → 截图检查视觉效果。
-3. 响应式检查：`resize` 到 1280×800 和 390×844，每个尺寸各截一张图。
+2. `open http://127.0.0.1:<端口>/…` → snapshot 检查页面结构，使用元素定位验证交互；需要检查视觉效果时才截图。
+3. 响应式视觉检查：`resize` 到 1280×800 和 390×844，每个尺寸各截一张图。普通交互检查使用 DOM 观察。
 4. 页面空白或报错时，查看页面上的错误提示和服务端日志（用 process_output 读后台进程输出），修改代码后再 `reload` 复查。
 
 ## 隐私

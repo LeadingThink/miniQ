@@ -607,7 +607,7 @@ it("gives the task browser the workbench without a competing review panel", asyn
   // This test checks panel ownership, not a real iframe navigation.
   const execute = vi.spyOn(embeddedBrowser, "executeEmbeddedBrowserRequest").mockResolvedValue({
     result: { url: "https://example.test/form" },
-    capabilities: { navigationControl: true, domSnapshot: true, screenshot: false, tabs: true, pointerInput: true, keyboardInput: true, selectInput: true },
+    capabilities: { navigationControl: true, domSnapshot: true, elementLocators: true, screenshot: false, tabs: true, pointerInput: true, independentPointer: true, keyboardInput: true, selectInput: true },
   });
   fake.mode = "local";
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });

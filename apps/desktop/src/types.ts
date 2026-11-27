@@ -463,9 +463,11 @@ export interface EventCursor {
 export interface BrowserCapabilities {
   navigationControl: boolean;
   domSnapshot: boolean;
+  elementLocators: boolean;
   screenshot: boolean;
   tabs: boolean;
   pointerInput: boolean;
+  independentPointer: boolean;
   keyboardInput: boolean;
   selectInput: boolean;
 }

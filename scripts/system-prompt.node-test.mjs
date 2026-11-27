@@ -24,6 +24,8 @@ test('the complete prompt already contains miniQ identity and tool bindings', ()
   assert.match(prompt, /Use shell_run for shell commands/);
   assert.match(prompt, /ask_user waits for a response; it is not asynchronous/);
   assert.match(prompt, /Read an installed skill through skill_read/);
+  assert.match(prompt, /browser_automation DOM snapshots and element locators first/);
+  assert.match(prompt, /Do not request screenshots when usable page elements are available/);
   assert.ok(prompt.trimEnd().endsWith('</miniq_runtime_bindings>'));
 });
 

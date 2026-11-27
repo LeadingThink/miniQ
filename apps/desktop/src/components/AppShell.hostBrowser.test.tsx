@@ -16,8 +16,8 @@ vi.mock("./SideConversationPanel", () => ({ SideConversationPanel: () => <aside 
 vi.mock("../browserWorkbench", async (original) => ({
   ...await original<typeof import("../browserWorkbench")>(),
   browserCapabilities: vi.fn(async () => ({
-    navigationControl: true, domSnapshot: true, screenshot: false,
-    tabs: true, pointerInput: true, keyboardInput: true, selectInput: true,
+    navigationControl: true, domSnapshot: true, elementLocators: true, screenshot: false,
+    tabs: true, pointerInput: true, independentPointer: true, keyboardInput: true, selectInput: true,
   })),
   openBrowser: vi.fn(async (url: string) => ({ url })),
   closeBrowser: vi.fn(async () => {}),

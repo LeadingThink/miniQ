@@ -12,8 +12,8 @@ afterEach(cleanup);
 vi.mock("../browserWorkbench", () => ({ browserCapabilities: async () => capabilities }));
 
 const capabilities: BrowserCapabilities = {
-  navigationControl: true, domSnapshot: true, screenshot: true, tabs: false,
-  pointerInput: true, keyboardInput: true, selectInput: true,
+  navigationControl: true, domSnapshot: true, elementLocators: true, screenshot: true, tabs: false,
+  pointerInput: true, independentPointer: true, keyboardInput: true, selectInput: true,
 };
 
 it("does not execute a remote host's browser requests in this computer's webview", () => {

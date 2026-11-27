@@ -9,9 +9,11 @@ import {
 const capabilities: BrowserCapabilities = {
   navigationControl: false,
   domSnapshot: true,
+  elementLocators: true,
   screenshot: false,
   tabs: false,
   pointerInput: true,
+  independentPointer: true,
   keyboardInput: true,
   selectInput: true,
 };

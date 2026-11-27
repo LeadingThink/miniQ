@@ -157,9 +157,11 @@ export async function browserCapabilities(): Promise<BrowserCapabilities> {
   if (!isTauriRuntime()) return {
     navigationControl: false,
     domSnapshot: false,
+    elementLocators: false,
     screenshot: false,
     tabs: false,
     pointerInput: false,
+    independentPointer: false,
     keyboardInput: false,
     selectInput: false,
   };

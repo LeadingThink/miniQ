@@ -399,11 +399,7 @@ export function useBrowserPanel(
         if (operation === "screenshot") {
           return captureBrowserObservation(viewId, () => observe(freshSnapshotArguments()));
         }
-        const result = await execute();
-        if (operation !== "close" && arguments_.includeScreenshot === true) {
-          return captureBrowserObservation(viewId, () => observe(freshSnapshotArguments()));
-        }
-        return result;
+        return execute();
       },
     });
   }, [load, rememberObservation, failLoad, requestedBrowserSessionId, surface, viewId]);
