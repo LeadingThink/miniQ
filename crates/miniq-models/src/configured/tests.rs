@@ -14,6 +14,13 @@ fn infers_native_protocols_for_well_known_model_families() {
         infer_protocol("gemini-3.1-pro"),
         ApiProtocol::ChatCompletions
     );
+    for model in [
+        "gemini-4-hydrogen",
+        "gemini-4-pro",
+        "google/gemini-4-hydrogen",
+    ] {
+        assert_eq!(infer_protocol(model), ApiProtocol::ChatCompletions);
+    }
 }
 
 #[test]

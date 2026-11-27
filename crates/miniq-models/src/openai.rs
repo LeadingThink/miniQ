@@ -75,21 +75,28 @@ impl OpenAiCompatProvider {
         if request.tools.is_empty() {
             body["tool_choice"] = json!("none");
         } else {
+            let gemini = crate::reasoning::family_name(&self.config.model).starts_with("gemini-");
             body["tools"] = Value::Array(
                 request
                     .tools
                     .iter()
                     .map(|t| {
-                        json!({
+                        let parameters = compatible_tool_schema(&t.parameters);
+                        let parameters = if gemini {
+                            crate::gemini_schema::tool_schema(parameters, &t.name)?
+                        } else {
+                            parameters
+                        };
+                        Ok(json!({
                             "type": "function",
                             "function": {
                                 "name": wire_name(&t.name),
                                 "description": t.description,
-                                "parameters": compatible_tool_schema(&t.parameters),
+                                "parameters": parameters,
                             }
-                        })
+                        }))
                     })
-                    .collect(),
+                    .collect::<Result<Vec<_>, ProviderError>>()?,
             );
         }
         Ok(body)

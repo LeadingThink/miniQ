@@ -1,6 +1,8 @@
 use super::*;
 use crate::{ApiProtocol, ToolSpec};
 
+mod gemini;
+
 #[test]
 fn reasoning_and_tool_signatures_survive_streaming_and_replay() {
     let mut decoder = ChatCompletionsDecoder::default();

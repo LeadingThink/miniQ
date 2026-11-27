@@ -7,6 +7,7 @@ mod anthropic;
 mod compat_schema;
 mod configured;
 mod error;
+mod gemini_schema;
 mod image;
 mod image_upload;
 mod media_upload;
