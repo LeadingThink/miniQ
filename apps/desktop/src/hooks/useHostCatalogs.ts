@@ -153,8 +153,8 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
           if (!catalog) return current;
           const unread = new Set(catalog.unreadSessionIds);
           const previous = catalog.sessions.find((session) => session.id === value.sessionId);
-          const completed = previous && isSessionRunning(previous.status)
-            && (value.type !== "session_status_changed" || isSessionTerminal(value.status));
+          const completed = value.type !== "session_status_changed"
+            || (previous !== undefined && isSessionRunning(previous.status) && isSessionTerminal(value.status));
           if (completed && !isViewing(host, value.sessionId)) unread.add(value.sessionId);
           const sessions = value.type === "session_status_changed"
             ? catalog.sessions.map((session) => session.id === value.sessionId ? { ...session, status: value.status } : session)
