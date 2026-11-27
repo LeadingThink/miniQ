@@ -73,6 +73,12 @@ it("only marks finished work unread, not empty sessions or repeated idle acknowl
   await act(async () => root.change("idle"));
   expect(screen.getByTestId("unread").textContent).toBe("0");
   await act(async () => root.emit({ type: "host_event", hostId: HOST, event: { type: "turn_completed", sessionId: "same-session" } }));
+  expect(screen.getByTestId("unread").textContent).toBe("0");
+  await act(async () => root.change("running"));
+  await act(async () => {
+    root.status = "idle";
+    root.emit({ type: "host_event", hostId: HOST, event: { type: "turn_completed", sessionId: "same-session" } });
+  });
   expect(screen.getByTestId("unread").textContent).toBe("1");
 });
 
